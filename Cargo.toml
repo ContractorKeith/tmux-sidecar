@@ -1,0 +1,37 @@
+[package]
+name = "tmux-sidecar"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+description = "Agent-aware sidecar for tmux"
+
+[features]
+test-util = []
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.29"
+libc = "0.2"
+ratatui = "0.30"
+rmcp = { version = "3", default-features = false, features = ["server", "transport-io"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+session-board = { git = "https://github.com/ContractorKeith/session-board", tag = "v0.1.0" }
+tokio = { version = "1", features = ["full"] }
+toml = "0.9"
+
+[dev-dependencies]
+tempfile = "3"
+tmux-sidecar = { path = ".", features = ["test-util"] }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "warn"
+redundant_clone = "warn"
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+todo = "warn"

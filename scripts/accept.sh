@@ -12,14 +12,24 @@ scratch="$(mktemp -d)"
 tsock="tsx-accept-$$"
 cleanup() {
   tmux -L "$tsock" kill-server 2>/dev/null || true
-  rm -rf "$scratch"
+  rm -r "$scratch" 2>/dev/null || true
 }
 trap cleanup EXIT
+
+echo "== isolate"
+# All tests and live checks use scratch agent configs, state and tmux sockets.
+export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_STATE_HOME="$scratch/state"
+export TMUX_SIDECAR_RUNTIME_DIR="$scratch/run" TMUX_SIDECAR_STATE_DIR="$scratch/data"
+export TMUX_TMPDIR="$scratch"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMUX_SIDECAR_RUNTIME_DIR" "$TMUX_SIDECAR_STATE_DIR"
+unset TMUX TMUX_PANE
 
 echo "== gate"
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
+TMUX_SIDECAR_E2E=1 cargo test --locked
+test "$(cargo tree -d --locked 2>/dev/null | grep -c 'libsqlite3-sys')" -eq 0
 
 echo "== build"
 cargo build --release --locked
@@ -28,13 +38,6 @@ bin="${ACCEPT_BIN:-$PWD/target/release/tmux-sidecar}"
 
 echo "== e2e (real tmux)"
 TMUX_SIDECAR_E2E=1 cargo test --locked --test e2e
-
-echo "== isolate"
-# Nothing below may touch real agent configs, real state or the default tmux server.
-export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_STATE_HOME="$scratch/state"
-export TMUX_SIDECAR_RUNTIME_DIR="$scratch/run" TMUX_SIDECAR_STATE_DIR="$scratch/data"
-mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME"
-unset TMUX TMUX_PANE
 
 echo "== live checks"
 # One block per milestone, expected result in a comment. M0 has none beyond --version.

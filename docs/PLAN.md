@@ -1,6 +1,6 @@
 # tmux-sidecar — Build Plan
 
-Status: planned, no code yet (2026-11-04). Sources studied: Herdr, TuiOS, Zellij, Muxy, and
+Status: M0 in progress (2026-11-04). Sources studied: Herdr, TuiOS, Zellij, Muxy, and
 Keith's own session-board (sboard). Decisions come from the 2026-11-04 grill; terms are in
 `CONTEXT.md`, and the hard-to-reverse choices are in `docs/adr/`.
 

@@ -10,7 +10,8 @@ terminals; tmux-sidecar owns the agent semantics. MIT. "Done" for v1 is every v1
 
 ## Status
 
-Planned, no code yet (2026-11-04). Milestones M0–M7 are GitHub issues #1–#8. M0 is next.
+M0 scaffold is in (2026-11-04): crate, seams, path/RPC types, CLI stubs and acceptance CI.
+Milestones M0–M7 are GitHub issues #1–#8. M1 is next.
 
 ## Commands
 
