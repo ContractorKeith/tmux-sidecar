@@ -33,6 +33,14 @@ impl TmuxGuard {
         for dir in ["home", "run", "state", "config", "bin"] {
             fs::create_dir(guard.scratch.path().join(dir)).unwrap();
         }
+        use std::os::unix::fs::PermissionsExt;
+        for dir in ["run", "state"] {
+            fs::set_permissions(
+                guard.scratch.path().join(dir),
+                fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
+        }
         let helper = guard.scratch.path().join("fake-agent");
         // Build the bin-less helper directly: `cargo test --test e2e` also works on a clean tree.
         let result = Command::new("rustc")
@@ -84,7 +92,7 @@ impl TmuxGuard {
         );
         guard
     }
-    fn isolate(&self, command: &mut Command) {
+    pub fn isolate(&self, command: &mut Command) {
         let root = self.scratch.path();
         command
             .env("HOME", root.join("home"))
@@ -102,12 +110,40 @@ impl TmuxGuard {
         command
     }
 }
+impl TmuxGuard {
+    pub fn socket(&self) -> PathBuf {
+        let output = self
+            .command()
+            .args(["display", "-p", "#{socket_path}"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).unwrap().trim().into()
+    }
+    pub fn sidecar(&self) -> Command {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
+        self.isolate(&mut cmd);
+        cmd.env("TMUX_SIDECAR_POLL_MS", "100")
+            .arg("--tmux-socket")
+            .arg(self.socket());
+        cmd
+    }
+}
 impl Drop for TmuxGuard {
     fn drop(&mut self) {
+        // Scoped to this scratch directory, including cleanup on an assertion failure.
+        if self.scratch.path().join("run/daemon.pid").exists() {
+            let mut cmd = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
+            self.isolate(&mut cmd);
+            cmd.arg("--tmux-socket")
+                .arg("/unused")
+                .args(["daemon", "stop"]);
+            let _ = cmd.output();
+        }
         let _ = self.command().arg("kill-server").output();
     }
 }
-struct ChildGuard(Child);
+pub struct ChildGuard(pub Child);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.0.kill();

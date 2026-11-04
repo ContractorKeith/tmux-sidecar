@@ -78,6 +78,13 @@ pub struct Response {
     pub outcome: Outcome,
 }
 
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.message, self.code)
+    }
+}
+impl std::error::Error for RpcError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

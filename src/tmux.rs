@@ -115,6 +115,24 @@ pub fn parse(mut input: &[u8]) -> io::Result<Vec<PaneSnapshot>> {
     }
     Ok(panes)
 }
+/// Used only when neither an explicit socket nor TMUX selects a server.
+pub fn default_socket() -> io::Result<PathBuf> {
+    let output = Command::new("tmux")
+        .args(["display", "-p", "#{socket_path}"])
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotConnected,
+            "no tmux server; start tmux or select one with --tmux-socket",
+        ));
+    }
+    let path = String::from_utf8(output.stdout).map_err(io::Error::other)?;
+    if path.trim().is_empty() {
+        return Err(io::Error::other("tmux returned an empty socket path"));
+    }
+    Ok(PathBuf::from(path.trim_end()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

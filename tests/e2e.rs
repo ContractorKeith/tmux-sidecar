@@ -51,3 +51,9 @@ fn dropping_guard_kills_server() {
             .success()
     );
 }
+
+#[path = "support/lifecycle.rs"]
+mod lifecycle;
+
+#[path = "support/protocol.rs"]
+mod protocol;
