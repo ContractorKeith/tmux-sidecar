@@ -1,5 +1,6 @@
 mod copy_fixture;
 mod fake_binary;
+pub mod load;
 mod process;
 pub mod socket;
 pub mod watchdog;

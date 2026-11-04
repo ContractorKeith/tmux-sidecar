@@ -85,15 +85,15 @@ test ! -s "$scratch/hook.stderr"
 # M3: a permission fixture puts a live run first in the attention queue.
 echo "== state live checks"
 cp "$(command -v sleep)" "$scratch/claude"
-tmux -L "$tsock" respawn-pane -k "$scratch/claude 120"
+pane="$(tmux -L "$tsock" new-window -d -P -F '#{pane_id}' "$scratch/claude 120")"
 "$bin" --tmux-socket "$socket" list --json >/dev/null
-pane_pid="$(tmux -L "$tsock" display -p '#{pane_pid}')"
+pane_pid="$(tmux -L "$tsock" display -p -t "$pane" '#{pane_pid}')"
 server_start="$(tmux -L "$tsock" display -p '#{start_time}')"
-python3 - "$TMUX_SIDECAR_RUNTIME_DIR/sock" "$pane_pid" "$server_start" <<'PYLIVE'
+python3 - "$TMUX_SIDECAR_RUNTIME_DIR/sock" "$pane_pid" "$server_start" "$pane" <<'PYLIVE'
 import json, socket, sys, time
 payload = json.load(open('tests/fixtures/hooks/claude/Notification-permission_prompt.json'))
 frame = dict(jsonrpc='2.0', id=1, method='signal', params=dict(
-    server_start=int(sys.argv[3]), pane_id='%0', agent='claude', agent_pid=int(sys.argv[2]),
+    server_start=int(sys.argv[3]), pane_id=sys.argv[4], agent='claude', agent_pid=int(sys.argv[2]),
     at=int(time.time()*1000), nonce='0123456789abcdef0123456789abcdef', source='hook:claude',
     event='Notification', detail='permission_prompt', cwd='/', payload=payload))
 with socket.socket(socket.AF_UNIX) as client:

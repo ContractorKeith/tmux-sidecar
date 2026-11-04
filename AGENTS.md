@@ -63,6 +63,8 @@ cargo build --release                              # target/release/tmux-sidecar
   owner or RPC task. session-board ids carry an agent prefix; compare native hook ids after stripping it.
 - Focus read marks require pane_active + window_active + session_attached; covered with two
   control-mode attached clients, a hidden window and a detached tmux session.
+- Linux process exit probes treat both ENOENT and ESRCH from `/proc/<pid>/stat` as exited;
+  the daemon may disappear between signal-0 and the stat read.
 - Subscribers have 256-change queues and bounded writes; state_changed history commits with state.
 - Commits: `<type>: <description>`, author @ContractorKeith only.
 

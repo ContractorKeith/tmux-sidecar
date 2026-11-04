@@ -70,6 +70,7 @@ e2e_test!(project_groups_and_manual_membership_survive_restart, {
     let guard = TmuxGuard::start();
     let repo = guard.scratch.path().join("repo");
     fs::create_dir(&repo).unwrap();
+    let repo = repo.canonicalize().unwrap();
     assert!(
         crate::support::output(std::process::Command::new("git").arg("init").arg(&repo))
             .status

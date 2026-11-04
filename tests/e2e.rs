@@ -1,11 +1,17 @@
 use crate::support::BoundedCommand;
 macro_rules! e2e_test {
     ($name:ident, $body:block) => {
+        e2e_test!($name, false, $body);
+    };
+    ($name:ident, $stress:expr, $body:block) => {
         #[test]
         fn $name() {
             crate::support::watchdog::run(
                 concat!(module_path!(), "::", stringify!($name)),
-                move || $body,
+                move || {
+                    let _load = crate::support::load::enter($stress);
+                    $body
+                },
             );
         }
     };

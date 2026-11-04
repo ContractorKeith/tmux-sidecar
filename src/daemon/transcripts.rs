@@ -6,36 +6,30 @@ use session_board::{
     model::{Agent, Session},
     source,
 };
-use std::{collections::HashMap, io, path::Path};
+use std::{io, path::Path};
 #[derive(Default, Clone)]
 pub struct Reader {
-    last: std::sync::Arc<std::sync::Mutex<HashMap<String, u64>>>,
+    last: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
 }
 impl Reader {
     pub async fn tick(&self, worker: &StoreWorker, now: u64) -> io::Result<()> {
         let runs = worker.with(|s| s.active()).await??;
-        let due = {
+        if runs.is_empty() {
+            return Ok(());
+        }
+        {
             let mut last = self
                 .last
                 .lock()
                 .map_err(|_| io::Error::other("transcript schedule poisoned"))?;
-            last.retain(|id, _| runs.iter().any(|r| &r.id == id));
-            let due: Vec<_> = runs
-                .into_iter()
-                .filter(|r| {
-                    last.get(&r.id)
-                        .is_none_or(|at| now.saturating_sub(*at) >= 2000)
-                })
-                .collect();
-            for run in &due {
-                last.insert(run.id.clone(), now);
+            // Sources discover whole stores. A shared scan cadence also bounds reads of
+            // existing runs when new runs appear between ticks.
+            if last.is_some_and(|at| now.saturating_sub(at) < 2000) {
+                return Ok(());
             }
-            due
-        };
-        if due.is_empty() {
-            return Ok(());
+            *last = Some(now);
         }
-        let readings = tokio::task::spawn_blocking(move || read(&due))
+        let readings = tokio::task::spawn_blocking(move || read(&runs))
             .await
             .map_err(io::Error::other)?;
         worker

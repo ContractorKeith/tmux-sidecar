@@ -96,7 +96,7 @@ e2e_test!(fixture_states_attention_history_and_subscription, {
     drop(subscription);
     stop(&guard);
 });
-e2e_test!(parallel_stop_start_twenty_cycles, {
+e2e_test!(parallel_stop_start_twenty_cycles, true, {
     if !enabled() {
         return;
     }
