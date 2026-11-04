@@ -2,12 +2,8 @@
   "type": "permission.replied",
   "properties": {
     "sessionID": "ses_fake",
-    "id": "per_fake",
-    "permission": "bash",
-    "patterns": [
-      "true"
-    ],
-    "response": "once"
+    "requestID": "per_fake",
+    "reply": "once"
   },
   "cwd": "/home/user/project"
 }

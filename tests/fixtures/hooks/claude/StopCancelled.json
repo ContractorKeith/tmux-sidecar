@@ -3,5 +3,6 @@
   "cwd": "/home/user/project",
   "hook_event_name": "StopCancelled",
   "transcript_path": "/home/user/transcript.jsonl",
-  "reason": "user_interrupt"
+  "reason": "user_interrupt",
+  "permission_mode": "default"
 }

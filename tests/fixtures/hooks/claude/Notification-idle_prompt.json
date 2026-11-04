@@ -3,5 +3,7 @@
   "cwd": "/home/user/project",
   "hook_event_name": "Notification",
   "transcript_path": "/home/user/transcript.jsonl",
-  "notification_type": "idle_prompt"
+  "notification_type": "idle_prompt",
+  "permission_mode": "default",
+  "message": "Fixture notification"
 }

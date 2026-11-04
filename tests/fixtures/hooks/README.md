@@ -30,6 +30,10 @@ Schemas: [Claude](https://code.claude.com/docs/en/hooks),
 [Codex](https://learn.chatgpt.com/docs/hooks),
 [OpenCode plugins](https://opencode.ai/docs/plugins/), and Grok's installed
 `~/.grok/docs/user-guide/10-hooks.md` (camelCase envelope with snake_case aliases).
+Codex synthesized fixtures include every required field from its generated
+[command input schemas](https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated).
+Grok Stop uses the genuine `end_turn` capture, rather than its separate
+shutdown Stop event.
 StopCancelled is Grok-specific in its documentation; the Claude fixture is
 synthesized solely to cover PLAN §6 and its install list.
 

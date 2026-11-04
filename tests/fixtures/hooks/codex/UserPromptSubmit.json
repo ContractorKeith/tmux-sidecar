@@ -2,5 +2,9 @@
   "session_id": "00000000-0000-4000-8000-000000000001",
   "cwd": "/home/user/project",
   "hook_event_name": "UserPromptSubmit",
-  "transcript_path": "/home/user/transcript.jsonl"
+  "transcript_path": "/home/user/transcript.jsonl",
+  "model": "fixture-model",
+  "permission_mode": "default",
+  "turn_id": "turn_fake",
+  "prompt": "Run true, then reply ok."
 }

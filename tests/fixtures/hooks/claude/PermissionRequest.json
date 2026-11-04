@@ -6,5 +6,6 @@
   "tool_name": "Bash",
   "tool_input": {
     "command": "true"
-  }
+  },
+  "permission_mode": "default"
 }

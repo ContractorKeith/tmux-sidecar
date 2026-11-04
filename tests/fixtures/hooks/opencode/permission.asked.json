@@ -6,7 +6,11 @@
     "permission": "bash",
     "patterns": [
       "true"
-    ]
+    ],
+    "always": [
+      "true"
+    ],
+    "metadata": {}
   },
   "cwd": "/home/user/project"
 }

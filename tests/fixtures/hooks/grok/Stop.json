@@ -3,14 +3,19 @@
   "sessionId": "00000000-0000-4000-8000-000000000001",
   "cwd": "/home/user/project",
   "workspaceRoot": "/home/user/project",
-  "timestamp": "2026-11-04T20:29:27.590464359+00:00",
+  "timestamp": "2026-11-04T20:29:27.386288633+00:00",
   "transcriptPath": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/updates.jsonl",
+  "promptId": "00000000-0000-4000-8000-000000000001",
   "permissionMode": "default",
-  "reason": "shutdown",
+  "reason": "end_turn",
   "stopHookActive": false,
+  "lastAssistantMessage": "ok",
+  "backgroundTasks": [],
+  "sessionCrons": [],
   "hook_event_name": "Stop",
   "session_id": "00000000-0000-4000-8000-000000000001",
   "transcript_path": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/updates.jsonl",
   "permission_mode": "default",
-  "stop_hook_active": false
+  "stop_hook_active": false,
+  "last_assistant_message": "ok"
 }

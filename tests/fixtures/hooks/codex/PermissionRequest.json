@@ -6,5 +6,8 @@
   "tool_name": "Bash",
   "tool_input": {
     "command": "true"
-  }
+  },
+  "model": "fixture-model",
+  "permission_mode": "default",
+  "turn_id": "turn_fake"
 }
