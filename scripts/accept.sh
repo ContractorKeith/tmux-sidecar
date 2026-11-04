@@ -12,7 +12,7 @@ scratch="$(mktemp -d)"
 tsock="tsx-accept-$$"
 cleanup() {
   tmux -L "$tsock" kill-server 2>/dev/null || true
-  rm -rf "$scratch"
+  rm -r "$scratch"
 }
 trap cleanup EXIT
 
