@@ -1,13 +1,12 @@
 use super::lifecycle::{list, pid, stop};
 use super::{TmuxGuard, enabled};
+use crate::support::BoundedCommand;
 use serde_json::Value;
 use std::{
     io::{BufRead, BufReader, Write},
-    os::unix::net::UnixStream,
     time::Duration,
 };
-#[test]
-fn separate_servers_and_rpc_contract() {
+e2e_test!(separate_servers_and_rpc_contract, {
     if !enabled() {
         return;
     }
@@ -18,7 +17,7 @@ fn separate_servers_and_rpc_contract() {
     via_env
         .env("TMUX", format!("{},123,0", a.socket().display()))
         .args(["list", "--json"]);
-    let first = super::lifecycle::ok(via_env.output().unwrap());
+    let first = super::lifecycle::ok(via_env.bounded_output().unwrap());
     let second = list(&b);
     assert_ne!(first[0]["agent_pid"], second[0]["agent_pid"]);
     assert_ne!(pid(&a), pid(&b));
@@ -27,7 +26,7 @@ fn separate_servers_and_rpc_contract() {
         assert!(guard.scratch.path().join("run/sock").exists());
         assert!(guard.scratch.path().join("state/tmux-sidecar.db").exists());
     }
-    let stream = UnixStream::connect(a.scratch.path().join("run/sock")).unwrap();
+    let stream = crate::support::socket::connect(a.scratch.path().join("run/sock")).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
@@ -43,7 +42,9 @@ fn separate_servers_and_rpc_contract() {
     ] {
         writeln!(writer, "{request}").unwrap();
         let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
+        reader
+            .read_line(&mut line)
+            .expect("read RPC response within socket deadline");
         let response: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(response["error"]["code"], code);
     }
@@ -58,7 +59,9 @@ fn separate_servers_and_rpc_contract() {
         )
         .unwrap();
         let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
+        reader
+            .read_line(&mut line)
+            .expect("read RPC response within socket deadline");
         let response: Value = serde_json::from_str(&line).unwrap();
         if ["hello", "daemon.status"].contains(method) {
             assert!(response["result"].is_object());
@@ -75,14 +78,14 @@ fn separate_servers_and_rpc_contract() {
     let filtered = super::lifecycle::ok(
         a.sidecar()
             .args(["list", "--state", "done", "--json"])
-            .output()
+            .bounded_output()
             .unwrap(),
     );
     assert!(filtered.as_array().unwrap().is_empty());
     let group = a
         .sidecar()
         .args(["list", "--group", "test"])
-        .output()
+        .bounded_output()
         .unwrap();
     assert_eq!(group.status.code(), Some(2));
     assert!(
@@ -94,4 +97,4 @@ fn separate_servers_and_rpc_contract() {
     drop(reader);
     stop(&a);
     stop(&b);
-}
+});

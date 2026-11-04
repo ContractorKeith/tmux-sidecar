@@ -39,7 +39,13 @@ pub async fn request(
             tokio::time::timeout(Duration::from_secs(2), spawn::ensure(socket, paths))
                 .await
                 .map_err(|_| {
-                    io::Error::new(io::ErrorKind::TimedOut, "daemon did not start within 2 s")
+                    io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!(
+                            "waiting for daemon startup (spawn.lock/socket) in {} exceeded 2 s",
+                            paths.runtime.display()
+                        ),
+                    )
                 })??;
             connect(paths).await?
         }
@@ -62,7 +68,15 @@ pub async fn request(
         exchange(&mut stream, method, params).await
     })
     .await
-    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "daemon response timed out"))?
+    .map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!(
+                "RPC {method} from {} exceeded 2 s",
+                paths.runtime.join("sock").display()
+            ),
+        )
+    })?
 }
 async fn connect(paths: &Paths) -> io::Result<UnixStream> {
     tokio::time::timeout(
@@ -70,7 +84,15 @@ async fn connect(paths: &Paths) -> io::Result<UnixStream> {
         UnixStream::connect(paths.runtime.join("sock")),
     )
     .await
-    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "daemon connect timed out"))?
+    .map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!(
+                "connect to {} exceeded 250 ms",
+                paths.runtime.join("sock").display()
+            ),
+        )
+    })?
 }
 async fn exchange(
     stream: &mut BufReader<UnixStream>,

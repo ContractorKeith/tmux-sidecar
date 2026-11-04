@@ -1,11 +1,11 @@
 use super::{
     enabled,
-    lifecycle::{list, ok, pid, stop, until},
+    lifecycle::{list, ok, pid, stop},
     support::TmuxGuard,
 };
+use crate::support::BoundedCommand;
 use std::{fs, os::unix::fs::PermissionsExt};
-#[test]
-fn two_failed_ps_ticks_keep_serving_then_recover() {
+e2e_test!(two_failed_ps_ticks_keep_serving_then_recover, {
     if !enabled() {
         return;
     }
@@ -15,7 +15,7 @@ fn two_failed_ps_ticks_keep_serving_then_recover() {
     fs::set_permissions(ps, fs::Permissions::from_mode(0o700)).unwrap();
     let _ = list(&g);
     let original = pid(&g);
-    until(|| list(&g).as_array().unwrap().len() == 1);
+    until!(|| list(&g).as_array().unwrap().len() == 1);
     assert_eq!(pid(&g), original);
     let log = fs::read_to_string(g.scratch.path().join("state/daemon.log")).unwrap();
     assert!(
@@ -23,9 +23,8 @@ fn two_failed_ps_ticks_keep_serving_then_recover() {
         "{log}"
     );
     stop(&g);
-}
-#[test]
-fn sigterm_restart_adopts_active_run() {
+});
+e2e_test!(sigterm_restart_adopts_active_run, {
     if !enabled() {
         return;
     }
@@ -34,11 +33,10 @@ fn sigterm_restart_adopts_active_run() {
     let daemon = pid(&g);
     // SAFETY: positive daemon pid belongs to this scratch fixture.
     assert_eq!(unsafe { libc::kill(daemon, libc::SIGTERM) }, 0);
-    until(|| !g.scratch.path().join("run/sock").exists());
+    until!(|| !g.scratch.path().join("run/sock").exists());
     assert_eq!(list(&g), before);
-}
-#[test]
-fn history_is_newest_first_and_limited() {
+});
+e2e_test!(history_is_newest_first_and_limited, {
     if !enabled() {
         return;
     }
@@ -48,23 +46,22 @@ fn history_is_newest_first_and_limited() {
         g.command()
             .args(["new-window", "-d"])
             .arg(g.scratch.path().join("bin/codex"))
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .success()
     );
-    until(|| list(&g).as_array().unwrap().len() == 2);
+    until!(|| list(&g).as_array().unwrap().len() == 2);
     let result = ok(g
         .sidecar()
         .args(["list", "--all", "--limit", "1", "--json"])
-        .output()
+        .bounded_output()
         .unwrap());
     assert_eq!(result.as_array().unwrap().len(), 1);
     assert_eq!(result[0]["id"], "r2");
-}
+});
 
-#[test]
-fn five_failed_polls_exit_nonzero_with_a_log() {
+e2e_test!(five_failed_polls_exit_nonzero_with_a_log, {
     if !enabled() {
         return;
     }
@@ -80,18 +77,24 @@ fn five_failed_polls_exit_nonzero_with_a_log() {
             .spawn()
             .unwrap(),
     );
-    until(|| daemon.0.try_wait().unwrap().is_some());
-    assert!(!daemon.0.wait().unwrap().success());
+    until!(|| daemon.0.try_wait().unwrap().is_some());
+    assert!(
+        !daemon
+            .0
+            .try_wait()
+            .unwrap()
+            .expect("daemon exit already observed within deadline")
+            .success()
+    );
     let log = fs::read_to_string(g.scratch.path().join("state/daemon.log")).unwrap();
     assert!(
         log.contains("poll failure 5") && log.contains("5 consecutive poll failures"),
         "{log}"
     );
     assert!(!g.scratch.path().join("run/sock").exists());
-}
+});
 
-#[test]
-fn dropping_fixture_stops_daemon_before_the_next_poll() {
+e2e_test!(dropping_fixture_stops_daemon_before_the_next_poll, {
     if !enabled() {
         return;
     }
@@ -105,20 +108,25 @@ fn dropping_fixture_stops_daemon_before_the_next_poll() {
             .spawn()
             .unwrap(),
     );
-    until(|| g.scratch.path().join("run/daemon.pid").exists());
+    until!(|| g.scratch.path().join("run/daemon.pid").exists());
     drop(g);
-    until(|| daemon.0.try_wait().unwrap().is_some());
-    assert!(daemon.0.wait().unwrap().success());
-}
+    until!(|| daemon.0.try_wait().unwrap().is_some());
+    assert!(
+        daemon
+            .0
+            .try_wait()
+            .unwrap()
+            .expect("daemon exit already observed within deadline")
+            .success()
+    );
+});
 
-#[test]
-fn slow_process_snapshot_does_not_block_rpc() {
+e2e_test!(slow_process_snapshot_does_not_block_rpc, {
     if !enabled() {
         return;
     }
     use std::{
         io::{BufRead, BufReader, Write},
-        os::unix::net::UnixStream,
         time::Duration,
     };
     let g = TmuxGuard::start();
@@ -133,8 +141,8 @@ fn slow_process_snapshot_does_not_block_rpc() {
             .spawn()
             .unwrap(),
     );
-    until(|| g.scratch.path().join("home/slow").exists());
-    let mut stream = UnixStream::connect(g.scratch.path().join("run/sock")).unwrap();
+    until!(|| g.scratch.path().join("home/slow").exists());
+    let mut stream = crate::support::socket::connect(g.scratch.path().join("run/sock")).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(1)))
         .unwrap();
@@ -144,10 +152,33 @@ fn slow_process_snapshot_does_not_block_rpc() {
     )
     .unwrap();
     let mut line = String::new();
-    BufReader::new(stream).read_line(&mut line).unwrap();
+    BufReader::new(stream)
+        .read_line(&mut line)
+        .expect("read RPC response within socket deadline");
     let response: serde_json::Value = serde_json::from_str(&line).unwrap();
     assert_eq!(response["result"]["rpc_version"], 1);
     assert_eq!(list(&g).as_array().unwrap().len(), 1);
     stop(&g);
-    until(|| daemon.0.try_wait().unwrap().is_some());
-}
+    until!(|| daemon.0.try_wait().unwrap().is_some());
+});
+
+e2e_test!(spawn_lock_contention_reports_a_deadline, {
+    if !enabled() {
+        return;
+    }
+    let g = TmuxGuard::start();
+    let _lock =
+        tmux_sidecar::client::FileLock::try_acquire(&g.scratch.path().join("run/spawn.lock"))
+            .unwrap();
+    let result = g
+        .sidecar()
+        .args(["list", "--json"])
+        .bounded_output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(6));
+    let error = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        error.contains("spawn.lock") && error.contains("2 s"),
+        "{error}"
+    );
+});

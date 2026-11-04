@@ -9,15 +9,76 @@ pub struct ChildGuard(pub Child);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.0.kill();
-        let _ = self.0.wait();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while self.0.try_wait().ok().flatten().is_none() {
+            if Instant::now() >= deadline {
+                let message = format!("reap child pid {} after kill exceeded 1 s", self.0.id());
+                if std::thread::panicking() {
+                    stage(&message);
+                } else {
+                    panic!("{message}");
+                }
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 }
-fn reader(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<io::Result<Vec<u8>>> {
+pub trait BoundedCommand {
+    fn bounded_output(&mut self) -> io::Result<Output>;
+}
+impl BoundedCommand for Command {
+    fn bounded_output(&mut self) -> io::Result<Output> {
+        try_output(self)
+    }
+}
+pub fn wait_for(name: &str, mut condition: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while !condition() {
+        assert!(Instant::now() < deadline, "wait for {name} exceeded 4 s");
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+fn reader(
+    mut pipe: impl Read + std::os::fd::AsRawFd + Send + 'static,
+    deadline: Instant,
+    name: &'static str,
+) -> mpsc::Receiver<io::Result<Vec<u8>>> {
     let (send, receive) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let result = pipe.read_to_end(&mut bytes).map(|_| bytes);
-        let _ = send.send(result);
+        let mut read = || -> io::Result<Vec<u8>> {
+            // SAFETY: the owned pipe fd is valid; only this thread reads it.
+            let flags = unsafe { libc::fcntl(pipe.as_raw_fd(), libc::F_GETFL) };
+            if flags < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: F_SETFL changes this live pipe's flags, with no pointers.
+            let result =
+                unsafe { libc::fcntl(pipe.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) };
+            if result < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut bytes = Vec::new();
+            let mut buffer = [0; 8192];
+            loop {
+                if Instant::now() >= deadline {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!("{name} pipe EOF deadline expired"),
+                    ));
+                }
+                match pipe.read(&mut buffer) {
+                    Ok(0) => return Ok(bytes),
+                    Ok(n) => bytes.extend_from_slice(&buffer[..n]),
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(2))
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
+                    Err(error) => return Err(error),
+                }
+            }
+        };
+        let _ = send.send(read());
     });
     receive
 }
@@ -37,9 +98,9 @@ fn output_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<O
             .stderr(Stdio::piped())
             .spawn()?,
     );
-    let stdout = reader(child.0.stdout.take().unwrap());
-    let stderr = reader(child.0.stderr.take().unwrap());
     let deadline = Instant::now() + timeout;
+    let stdout = reader(child.0.stdout.take().unwrap(), deadline, "stdout");
+    let stderr = reader(child.0.stderr.take().unwrap(), deadline, "stderr");
     let status = loop {
         if let Some(status) = child.0.try_wait().unwrap() {
             break status;
@@ -91,8 +152,7 @@ fn diagnostics(command: &Command) -> String {
     format!("daemon pid={pid}, log={log}")
 }
 
-#[test]
-fn timeout_kills_and_reaps_the_owned_process() {
+e2e_test!(timeout_kills_and_reaps_the_owned_process, {
     let root = tempfile::tempdir().unwrap();
     let mut command = Command::new("/bin/sleep");
     command
@@ -104,7 +164,7 @@ fn timeout_kills_and_reaps_the_owned_process() {
     let error = output_with_timeout(&mut command, Duration::from_millis(20)).unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     assert!(start.elapsed() < Duration::from_secs(2));
-}
+});
 
 // Direct writes remain visible if the test harness is waiting on a hung child.
 pub fn stage(message: &str) {

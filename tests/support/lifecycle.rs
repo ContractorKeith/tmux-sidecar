@@ -1,13 +1,8 @@
 use super::support::stage;
 use super::{TmuxGuard, enabled};
+use crate::support::BoundedCommand;
 use serde_json::Value;
-use std::{
-    fs,
-    os::unix::{fs::MetadataExt, net::UnixStream},
-    process::Output,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{fs, os::unix::fs::MetadataExt, process::Output, thread};
 pub(super) fn ok(output: Output) -> Value {
     assert!(
         output.status.success(),
@@ -20,20 +15,13 @@ fn history(guard: &TmuxGuard) -> Value {
     ok(guard
         .sidecar()
         .args(["list", "--all", "--json"])
-        .output()
+        .bounded_output()
         .unwrap())
 }
 pub(super) fn list(guard: &TmuxGuard) -> Value {
     ok(super::support::output(
         guard.sidecar().args(["list", "--json"]),
     ))
-}
-pub(super) fn until(mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(4);
-    while !condition() {
-        assert!(Instant::now() < deadline, "condition timed out");
-        thread::sleep(Duration::from_millis(25));
-    }
 }
 pub(super) fn pid(guard: &TmuxGuard) -> i32 {
     fs::read_to_string(guard.scratch.path().join("run/daemon.pid"))
@@ -49,8 +37,7 @@ pub(super) fn stop(guard: &TmuxGuard) {
     );
     assert!(!guard.scratch.path().join("run/sock").exists());
 }
-#[test]
-fn run_discovery_exit_pane_close_and_server_exit() {
+e2e_test!(run_discovery_exit_pane_close_and_server_exit, {
     if !enabled() {
         return;
     }
@@ -59,7 +46,7 @@ fn run_discovery_exit_pane_close_and_server_exit() {
         guard
             .sidecar()
             .args(["daemon", "status"])
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .code(),
@@ -85,7 +72,7 @@ fn run_discovery_exit_pane_close_and_server_exit() {
         guard
             .command()
             .args(["new-window", "-d", "sleep 60"])
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .success()
@@ -93,60 +80,67 @@ fn run_discovery_exit_pane_close_and_server_exit() {
     let agent = run["agent_pid"].as_i64().unwrap() as i32;
     // SAFETY: pid came from this isolated pane; it is positive and belongs to our fake.
     assert_eq!(unsafe { libc::kill(agent, libc::SIGTERM) }, 0);
-    until(|| history(&guard)[0]["state"] == "done");
+    until!(|| history(&guard)[0]["state"] == "done");
     assert!(history(&guard)[0]["ended_at"].is_number());
     assert!(
         guard
             .command()
             .args(["new-window", "-d"])
             .arg(guard.scratch.path().join("bin/codex"))
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .success()
     );
-    until(|| history(&guard).as_array().unwrap().len() == 2);
+    until!(|| history(&guard).as_array().unwrap().len() == 2);
     let second = history(&guard)[0]["pane_id"].as_str().unwrap().to_owned();
     assert!(
         guard
             .command()
             .args(["kill-pane", "-t", &second])
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .success()
     );
-    until(|| history(&guard)[0]["state"] == "done");
+    until!(|| history(&guard)[0]["state"] == "done");
     assert!(
         guard
             .command()
             .arg("kill-server")
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .success()
     );
-    until(|| !guard.scratch.path().join("run/sock").exists());
-}
-#[test]
-fn concurrent_clients_and_crash_recovery_keep_history() {
+    until!(|| !guard.scratch.path().join("run/sock").exists());
+});
+e2e_test!(concurrent_clients_and_crash_recovery_keep_history, {
     if !enabled() {
         return;
     }
     let guard = TmuxGuard::start();
     stage("concurrent recovery: starting ten clients");
     let commands: Vec<_> = (0..10).map(|_| guard.sidecar()).collect();
-    thread::scope(|scope| {
-        let handles: Vec<_> = commands
-            .into_iter()
-            .map(|mut cmd| {
-                scope.spawn(move || ok(super::support::output(cmd.args(["list", "--json"]))))
-            })
-            .collect();
-        for h in handles {
-            assert_eq!(h.join().unwrap().as_array().unwrap().len(), 1);
-        }
-    });
+    let (send, receive) = std::sync::mpsc::channel();
+    for mut command in commands {
+        let send = send.clone();
+        thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                ok(super::support::output(command.args(["list", "--json"])))
+            }));
+            let _ = send.send(result);
+        });
+    }
+    drop(send);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    for _ in 0..10 {
+        let result = receive
+            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .expect("ten concurrent list clients did not finish within 10 s");
+        let runs = result.unwrap_or_else(|error| std::panic::resume_unwind(error));
+        assert_eq!(runs.as_array().unwrap().len(), 1);
+    }
     stage("concurrent recovery: ten clients returned");
     let old_pid = pid(&guard);
     let before = list(&guard);
@@ -158,7 +152,7 @@ fn concurrent_clients_and_crash_recovery_keep_history() {
     );
     // SAFETY: this positive pid was read from our isolated daemon's pid file.
     assert_eq!(unsafe { libc::kill(old_pid, libc::SIGKILL) }, 0);
-    until(|| UnixStream::connect(guard.scratch.path().join("run/sock")).is_err());
+    until!(|| crate::support::socket::connect(guard.scratch.path().join("run/sock")).is_err());
     stage("concurrent recovery: killed daemon, requesting recovery");
     let after = list(&guard);
     stage("concurrent recovery: replacement answered");
@@ -168,9 +162,8 @@ fn concurrent_clients_and_crash_recovery_keep_history() {
     assert!(guard.scratch.path().join("state/tmux-sidecar.db").exists());
     stop(&guard);
     stage("concurrent recovery: stopped replacement");
-}
-#[test]
-fn foreground_collision_and_sigterm_cleanup() {
+});
+e2e_test!(foreground_collision_and_sigterm_cleanup, {
     if !enabled() {
         return;
     }
@@ -184,14 +177,14 @@ fn foreground_collision_and_sigterm_cleanup() {
             .spawn()
             .unwrap(),
     );
-    until(|| guard.scratch.path().join("run/daemon.pid").exists());
+    until!(|| guard.scratch.path().join("run/daemon.pid").exists());
     let original_pid = pid(&guard);
     assert_eq!(original_pid as u32, child.0.id());
     assert!(
         !guard
             .sidecar()
             .args(["daemon", "run"])
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .success()
@@ -200,7 +193,7 @@ fn foreground_collision_and_sigterm_cleanup() {
     assert_eq!(list(&guard).as_array().unwrap().len(), 1);
     // SAFETY: ChildGuard owns this positive pid, reaping it even if an assertion fails.
     assert_eq!(unsafe { libc::kill(original_pid, libc::SIGTERM) }, 0);
-    until(|| child.0.try_wait().unwrap().is_some());
+    until!(|| child.0.try_wait().unwrap().is_some());
     assert!(!guard.scratch.path().join("run/sock").exists());
     assert!(!guard.scratch.path().join("run/daemon.pid").exists());
-}
+});

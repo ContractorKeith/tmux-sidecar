@@ -1,5 +1,8 @@
+mod copy_fixture;
 mod process;
-pub use process::{ChildGuard, output, stage};
+pub mod socket;
+pub mod watchdog;
+pub use process::{BoundedCommand, ChildGuard, output, stage, wait_for};
 use std::{
     ffi::OsString,
     fs,
@@ -34,6 +37,7 @@ impl TmuxGuard {
             path: OsString::new(),
             server_socket: PathBuf::new(),
         };
+        watchdog::register(guard.scratch.path());
         for dir in ["home", "run", "state", "config", "bin"] {
             fs::create_dir(guard.scratch.path().join(dir)).unwrap();
         }
@@ -51,7 +55,7 @@ impl TmuxGuard {
             .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_agent.rs"))
             .arg("-o")
             .arg(&helper)
-            .output()
+            .bounded_output()
             .unwrap();
         assert!(
             result.status.success(),
@@ -66,7 +70,10 @@ impl TmuxGuard {
         guard.path = std::env::join_paths(paths).unwrap();
         let mut shell = Command::new("/bin/sh");
         guard.isolate(&mut shell);
-        let output = shell.args(["-c", "command -v claude"]).output().unwrap();
+        let output = shell
+            .args(["-c", "command -v claude"])
+            .bounded_output()
+            .unwrap();
         assert!(output.status.success());
         assert_eq!(
             String::from_utf8(output.stdout).unwrap().trim(),
@@ -83,7 +90,7 @@ impl TmuxGuard {
             .args(["-f", "/dev/null", "new-session", "-d", "-s", "fixture"])
             .arg(guard.scratch.path().join("bin/claude"))
             .arg("--")
-            .output()
+            .bounded_output()
             .unwrap();
         assert!(
             output.status.success(),
@@ -92,11 +99,17 @@ impl TmuxGuard {
         );
         let socket = guard
             .command()
-            .args(["display", "-p", "#{socket_path}"])
-            .output()
+            .args(["display", "-p", "#{socket_path}\n#{pid}"])
+            .bounded_output()
             .unwrap();
         assert!(socket.status.success());
-        let socket = PathBuf::from(String::from_utf8(socket.stdout).unwrap().trim());
+        let text = String::from_utf8(socket.stdout).unwrap();
+        let mut fields = text.lines();
+        let socket = PathBuf::from(fields.next().unwrap());
+        watchdog::server(
+            guard.scratch.path(),
+            fields.next().unwrap().parse().unwrap(),
+        );
         guard.server_socket = tmux_sidecar::paths::canonical_socket(&socket).unwrap();
         guard
     }
@@ -142,7 +155,8 @@ impl Drop for TmuxGuard {
                 .args(["daemon", "stop"]);
             let _ = process::try_output(&mut cmd);
         }
-        let _ = self.command().arg("kill-server").output();
+        let _ = process::try_output(self.command().arg("kill-server"));
+        watchdog::unregister(self.scratch.path());
     }
 }
 // Concurrent forks can briefly inherit a copy's writable fd before exec closes it.
@@ -160,31 +174,4 @@ fn spawn_fixture(command: &mut Command) -> Child {
             Err(error) => panic!("fake agent startup: {error}"),
         }
     }
-}
-#[test]
-fn fixture_start_waits_for_a_transient_writer() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
-    let executable = root.path().join("fixture");
-    fs::write(&executable, b"#!/bin/sh\nexit 0\n").unwrap();
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-    let writer = fs::OpenOptions::new()
-        .write(true)
-        .open(&executable)
-        .unwrap();
-    std::thread::scope(|scope| {
-        scope.spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            drop(writer);
-        });
-        let mut command = Command::new(&executable);
-        command
-            .env("HOME", root.path())
-            .env_remove("BASH_ENV")
-            .env_remove("ENV")
-            .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
-            .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"));
-        let mut child = ChildGuard(spawn_fixture(&mut command));
-        assert!(child.0.wait().unwrap().success());
-    });
 }

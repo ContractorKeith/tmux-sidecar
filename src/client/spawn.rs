@@ -1,13 +1,11 @@
 use super::*;
 use std::{
     fs::{self, File, OpenOptions},
-    os::{
-        fd::AsRawFd,
-        unix::{fs::OpenOptionsExt, process::CommandExt},
-    },
-    process::{Child, Command, Stdio},
+    os::{fd::AsRawFd, unix::fs::OpenOptionsExt},
+    process::Stdio,
     time::Instant,
 };
+use tokio::process::{Child, Command};
 
 /// Locks live as long as their file; CLOEXEC prevents a spawned daemon inheriting them.
 pub struct FileLock(File);
@@ -19,7 +17,7 @@ impl FileLock {
             .create(true)
             .truncate(false)
             .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
             .open(path)?;
         // SAFETY: file owns a valid descriptor, flock takes no pointers.
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
@@ -45,19 +43,18 @@ struct StartingChild {
 }
 impl StartingChild {
     fn release(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            std::thread::spawn(move || {
-                let _ = child.wait();
-            });
-        }
+        // Tokio's Unix orphan queue reaps a dropped Child after SIGCHLD. There is
+        // no waiting thread, and kill_on_drop is false for a handed-over daemon.
+        drop(self.child.take());
     }
 }
 impl Drop for StartingChild {
     fn drop(&mut self) {
         if !self.socket.exists()
             && let Some(child) = &self.child
+            && let Some(pid) = child.id()
         {
-            crate::proc::terminate(child.id());
+            crate::proc::terminate(pid);
         }
         self.release();
     }
@@ -71,6 +68,15 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
             Ok(lock) => break lock,
             Err(e) if e.kind() == io::ErrorKind::WouldBlock && Instant::now() < deadline => {
                 tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!(
+                        "waiting for {} exceeded 2 s",
+                        paths.runtime.join("spawn.lock").display()
+                    ),
+                ));
             }
             Err(e) => return Err(e),
         }
@@ -95,6 +101,7 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
         .arg(socket)
         .env("TMUX_SIDECAR_DETACHED", "1")
         .args(["daemon", "run"])
+        .kill_on_drop(false)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);

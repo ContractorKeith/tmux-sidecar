@@ -49,6 +49,7 @@ cargo build --release                              # target/release/tmux-sidecar
 - Every test that starts a process (daemon, tmux, fake agent) kills it in a drop guard.
 - `/tmp` on Omarchy is a small tmpfs; set `TMPDIR` to a scratch dir outside any checkout if it fills.
 - `TMUX_SIDECAR_POLL_MS` overrides config `poll_ms` (default 1000); tests use 100.
+- Every e2e body has a 60 s watchdog with scratch-tree/log diagnostics; CI jobs time out at 20 min.
 - `daemon.log` is capped at 1 MiB and rotated once to `daemon.log.1`.
 - A detached daemon needs its own lifetime lock as well as `spawn.lock`: foreground starts
   must never unlink a live socket. Keep lock descriptors CLOEXEC.

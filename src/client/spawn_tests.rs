@@ -1,8 +1,8 @@
 use super::*;
-fn until(mut f: impl FnMut() -> bool) {
+fn until(name: &str, mut f: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(2);
     while !f() {
-        assert!(Instant::now() < deadline);
+        assert!(Instant::now() < deadline, "wait for {name} exceeded 2 s");
         std::thread::sleep(Duration::from_millis(10));
     }
 }
@@ -15,23 +15,25 @@ impl Drop for KillOnDrop {
 fn helper(root: &Path) -> (StartingChild, KillOnDrop) {
     let child = Command::new("/bin/sh").args(["-c", "trap 'echo term > \"$1/term\"; exit 0' TERM; echo ready > \"$1/ready\"; while :; do :; done", "fixture"])
         .arg(root).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
-    let guard = KillOnDrop(child.id());
+    let guard = KillOnDrop(child.id().expect("fresh helper pid"));
     let starting = StartingChild {
         child: Some(child),
         socket: root.join("sock"),
     };
-    until(|| root.join("ready").exists());
+    until("helper startup marker", || root.join("ready").exists());
     (starting, guard)
 }
-#[test]
-fn cancellation_before_bind_sends_term_instead_of_kill() {
+#[tokio::test(flavor = "current_thread")]
+async fn cancellation_before_bind_sends_term_instead_of_kill() {
     let root = tempfile::tempdir().unwrap();
     let (starting, _guard) = helper(root.path());
     drop(starting);
-    until(|| root.path().join("term").exists());
+    until("helper SIGTERM marker", || {
+        root.path().join("term").exists()
+    });
 }
-#[test]
-fn bound_socket_hands_child_over_without_killing_it() {
+#[tokio::test(flavor = "current_thread")]
+async fn bound_socket_hands_child_over_without_killing_it() {
     let root = tempfile::tempdir().unwrap();
     let (starting, guard) = helper(root.path());
     let _listener = std::os::unix::net::UnixListener::bind(root.path().join("sock")).unwrap();
@@ -39,5 +41,16 @@ fn bound_socket_hands_child_over_without_killing_it() {
     assert!(crate::proc::alive(guard.0 as i32));
     assert!(!root.path().join("term").exists());
     drop(guard);
-    until(|| root.path().join("term").exists());
+    until("helper SIGTERM marker", || {
+        root.path().join("term").exists()
+    });
+}
+
+#[test]
+fn lock_descriptor_cannot_survive_exec() {
+    let root = tempfile::tempdir().unwrap();
+    let lock = FileLock::try_acquire(&root.path().join("lock")).unwrap();
+    // SAFETY: the lock owns this live fd; F_GETFD takes no pointer.
+    let flags = unsafe { libc::fcntl(lock.0.as_raw_fd(), libc::F_GETFD) };
+    assert_ne!(flags & libc::FD_CLOEXEC, 0);
 }
