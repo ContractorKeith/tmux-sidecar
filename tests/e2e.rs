@@ -15,6 +15,10 @@ macro_rules! until {
         crate::support::wait_for(stringify!($condition), $condition)
     };
 }
+#[path = "support/hooks.rs"]
+mod hooks;
+#[path = "support/hooks_identity.rs"]
+mod hooks_identity;
 mod support;
 use support::TmuxGuard;
 use tmux_sidecar::seams::Tmux;

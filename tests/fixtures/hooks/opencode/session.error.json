@@ -1,0 +1,13 @@
+{
+  "type": "session.error",
+  "properties": {
+    "sessionID": "ses_fake",
+    "error": {
+      "name": "UnknownError",
+      "data": {
+        "message": "fixture error"
+      }
+    }
+  },
+  "cwd": "/home/user/project"
+}

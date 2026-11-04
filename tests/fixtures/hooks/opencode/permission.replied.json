@@ -1,0 +1,13 @@
+{
+  "type": "permission.replied",
+  "properties": {
+    "sessionID": "ses_fake",
+    "id": "per_fake",
+    "permission": "bash",
+    "patterns": [
+      "true"
+    ],
+    "response": "once"
+  },
+  "cwd": "/home/user/project"
+}

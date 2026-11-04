@@ -1,0 +1,9 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/home/user/.claude/projects/-tmp-tsx-m2-capture/00000000-0000-4000-8000-000000000001.jsonl",
+  "cwd": "/home/user/project",
+  "prompt_id": "00000000-0000-4000-8000-000000000001",
+  "permission_mode": "bypassPermissions",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "Run true with the shell tool, then reply ok."
+}

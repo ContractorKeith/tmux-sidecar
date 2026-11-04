@@ -71,14 +71,24 @@ impl TmuxGuard {
         let mut shell = Command::new("/bin/sh");
         guard.isolate(&mut shell);
         let output = shell
-            .args(["-c", "command -v claude"])
+            .args(["-c", "command -v claude codex grok opencode"])
             .bounded_output()
             .unwrap();
         assert!(output.status.success());
-        assert_eq!(
-            String::from_utf8(output.stdout).unwrap().trim(),
-            guard.scratch.path().join("bin/claude").to_str().unwrap()
-        );
+        let resolved = String::from_utf8(output.stdout).unwrap();
+        let expected: Vec<_> = ["claude", "codex", "grok", "opencode"]
+            .iter()
+            .map(|a| {
+                guard
+                    .scratch
+                    .path()
+                    .join("bin")
+                    .join(a)
+                    .display()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(resolved.lines().collect::<Vec<_>>(), expected);
         // Exercise a copied fake and ensure direct children are killed/reaped on failure too.
         let mut command = Command::new(guard.scratch.path().join("bin/codex"));
         guard.isolate(&mut command);

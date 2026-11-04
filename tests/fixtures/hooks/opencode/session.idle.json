@@ -1,0 +1,7 @@
+{
+  "type": "session.idle",
+  "properties": {
+    "sessionID": "ses_fake"
+  },
+  "cwd": "/home/user/project"
+}

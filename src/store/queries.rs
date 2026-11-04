@@ -4,7 +4,7 @@ impl Store {
         self.pane(run.server_start, &run.pane_id)?;
         self.insert_inner(run).map_err(|e| db_error(&self.path, e))
     }
-    fn insert_inner(&self, run: &AgentRun) -> rusqlite::Result<String> {
+    pub(super) fn insert_inner(&self, run: &AgentRun) -> rusqlite::Result<String> {
         self.connection.execute("INSERT INTO runs(server_start,pane_id,agent,agent_pid,agent_session_id,
             cwd,project_root,started_at,ended_at,state,state_since,state_source,read_at,
             last_assistant_text,transcript_path) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",

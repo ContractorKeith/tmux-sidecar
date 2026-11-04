@@ -1,0 +1,12 @@
+{
+  "type": "permission.asked",
+  "properties": {
+    "sessionID": "ses_fake",
+    "id": "per_fake",
+    "permission": "bash",
+    "patterns": [
+      "true"
+    ]
+  },
+  "cwd": "/home/user/project"
+}

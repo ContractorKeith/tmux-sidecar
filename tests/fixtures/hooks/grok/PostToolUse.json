@@ -1,0 +1,58 @@
+{
+  "hookEventName": "post_tool_use",
+  "sessionId": "00000000-0000-4000-8000-000000000001",
+  "cwd": "/home/user/project",
+  "workspaceRoot": "/home/user/project",
+  "timestamp": "2026-11-04T20:29:25.892264013+00:00",
+  "transcriptPath": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/updates.jsonl",
+  "permissionMode": "default",
+  "toolName": "run_terminal_command",
+  "toolUseId": "call-00000000-0000-4000-8000-000000000001-0",
+  "toolInput": {
+    "command": "true",
+    "description": "Run true command"
+  },
+  "toolResult": {
+    "type": "Bash",
+    "output": [],
+    "output_for_prompt": "exit: 0\n",
+    "exit_code": 0,
+    "command": "true",
+    "truncated": false,
+    "signal": null,
+    "timed_out": false,
+    "description": "Run true command",
+    "current_dir": "/home/user/project",
+    "output_file": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/terminal/call-00000000-0000-4000-8000-000000000001-0.log",
+    "total_bytes": 0
+  },
+  "toolInputTruncated": false,
+  "toolResultTruncated": false,
+  "durationMs": 52,
+  "isBackgrounded": false,
+  "hook_event_name": "PostToolUse",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/updates.jsonl",
+  "permission_mode": "default",
+  "tool_name": "run_terminal_command",
+  "tool_input": {
+    "command": "true",
+    "description": "Run true command"
+  },
+  "tool_response": {
+    "type": "Bash",
+    "output": [],
+    "output_for_prompt": "exit: 0\n",
+    "exit_code": 0,
+    "command": "true",
+    "truncated": false,
+    "signal": null,
+    "timed_out": false,
+    "description": "Run true command",
+    "current_dir": "/home/user/project",
+    "output_file": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/terminal/call-00000000-0000-4000-8000-000000000001-0.log",
+    "total_bytes": 0
+  },
+  "tool_use_id": "call-00000000-0000-4000-8000-000000000001-0",
+  "duration_ms": 52
+}

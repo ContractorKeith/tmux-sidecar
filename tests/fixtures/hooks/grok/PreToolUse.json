@@ -1,0 +1,26 @@
+{
+  "hookEventName": "pre_tool_use",
+  "sessionId": "00000000-0000-4000-8000-000000000001",
+  "cwd": "/home/user/project",
+  "workspaceRoot": "/home/user/project",
+  "timestamp": "2026-11-04T20:29:25.459660809+00:00",
+  "transcriptPath": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/updates.jsonl",
+  "permissionMode": "default",
+  "toolName": "run_terminal_command",
+  "toolUseId": "call-00000000-0000-4000-8000-000000000001-0",
+  "toolInput": {
+    "command": "true",
+    "description": "Run true command"
+  },
+  "toolInputTruncated": false,
+  "hook_event_name": "PreToolUse",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/updates.jsonl",
+  "permission_mode": "default",
+  "tool_name": "run_terminal_command",
+  "tool_input": {
+    "command": "true",
+    "description": "Run true command"
+  },
+  "tool_use_id": "call-00000000-0000-4000-8000-000000000001-0"
+}

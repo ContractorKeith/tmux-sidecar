@@ -4,6 +4,7 @@ mod methods;
 pub use methods::handle as dispatch;
 mod peer;
 mod poll;
+mod replay;
 mod store_worker;
 mod transport;
 use crate::{
@@ -68,6 +69,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         )?;
     }
     let store = store_worker::StoreWorker::open(db).await?;
+    replay::replay(paths.state.clone(), &store).await?;
     let poll_ms = poll_ms(paths)?;
     let mut health = poll::Health::default();
     let initial = poll::tick(socket.clone(), &store).await;
@@ -102,7 +104,13 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
             _ = term.recv() => break Ok(()),
             _ = interrupt.recv() => break Ok(()),
             _ = interval.tick(), if polling.is_none() => {
-                polling = Some(Box::pin(poll::tick(socket.clone(), &store)));
+                let socket = socket.clone();
+                let state = paths.state.clone();
+                let worker = &store;
+                polling = Some(Box::pin(async move {
+                    replay::replay(state, worker).await?;
+                    poll::tick(socket, worker).await
+                }));
             },
             result = async {
                 match &mut polling {
@@ -130,7 +138,8 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
             Some(call) = receiver.recv() => {
                 let stop = call.request.method == "daemon.stop" && methods::empty_params(&call.request);
                 let key = key.clone();
-                let response = store.with(move |store| dispatch(call.request, store, &key, poll_ms)).await?;
+                let prepared = methods::prepare(&call.request);
+                let response = store.with(move |store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared)).await?;
                 let _ = call.reply.send(response);
                 if stop { break Ok(()); }
             },

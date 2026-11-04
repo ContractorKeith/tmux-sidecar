@@ -1,0 +1,10 @@
+{
+  "type": "session.status",
+  "properties": {
+    "sessionID": "ses_fake",
+    "status": {
+      "type": "busy"
+    }
+  },
+  "cwd": "/home/user/project"
+}

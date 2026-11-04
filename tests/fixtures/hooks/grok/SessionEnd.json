@@ -1,0 +1,14 @@
+{
+  "hookEventName": "session_end",
+  "sessionId": "00000000-0000-4000-8000-000000000001",
+  "cwd": "/home/user/project",
+  "workspaceRoot": "/home/user/project",
+  "timestamp": "2026-11-04T20:29:27.562456441+00:00",
+  "transcriptPath": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/updates.jsonl",
+  "permissionMode": "default",
+  "reason": "shutdown",
+  "hook_event_name": "SessionEnd",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/home/user/.grok/sessions/%2Ftmp%2Ftsx%2Fm2-capture/00000000-0000-4000-8000-000000000001/updates.jsonl",
+  "permission_mode": "default"
+}
