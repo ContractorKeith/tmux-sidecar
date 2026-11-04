@@ -179,4 +179,23 @@ fn grok_only_entry_is_separate_even_when_claude_compatibility_is_disabled() {
     .unwrap();
     assert!(common["hooks"].get("StopCancelled").is_none());
     assert_eq!(common["hooks"].as_object().unwrap().len(), 8);
+    // Re-enabling shared hooks must remove our old native common commands.
+    fs::write(
+        root.path().join(".grok/config.toml"),
+        "claude_hooks_enabled=true\n",
+    )
+    .unwrap();
+    install::run(
+        root.path(),
+        Path::new("/bin/sidecar"),
+        &[AgentKind::Grok],
+        true,
+        false,
+        false,
+    )
+    .unwrap();
+    let common =
+        fs::read_to_string(root.path().join(".grok/hooks/tmux-sidecar-common.json")).unwrap();
+    assert!(!common.contains("hook grok"));
+    assert!(root.path().join(".claude/settings.json").exists());
 }

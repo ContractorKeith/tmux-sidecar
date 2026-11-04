@@ -64,9 +64,9 @@ pub fn run(
                 &["StopCancelled"],
             )
         })?;
-        if !shared || !install {
+        if !shared || !install || home.join(".grok/hooks/tmux-sidecar-common.json").exists() {
             prepare(".grok/hooks/tmux-sidecar-common.json", &|s, mode| {
-                claude::edit(s, mode, &format!("{} hook grok", quote(binary)))
+                claude::edit(s, mode && !shared, &format!("{} hook grok", quote(binary)))
             })?;
         }
     }
