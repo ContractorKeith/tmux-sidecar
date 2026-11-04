@@ -77,3 +77,6 @@ mod protocol;
 mod resilience;
 #[path = "support/round1.rs"]
 mod round1;
+
+#[path = "support/shutdown.rs"]
+mod shutdown;

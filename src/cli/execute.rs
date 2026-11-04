@@ -64,10 +64,19 @@ pub async fn execute(cli: Cli) -> Result<(), Failure> {
         .await
         .map_err(response_error)?;
     if method == "daemon.stop" {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-        while paths.runtime.join("sock").exists() {
+        let pid = result["pid"]
+            .as_i64()
+            .and_then(|pid| i32::try_from(pid).ok())
+            .filter(|pid| *pid > 0)
+            .ok_or_else(|| (6, "daemon.stop response did not identify its pid".into()))?;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while crate::proc::running(pid).map_err(unreachable)? || paths.runtime.join("sock").exists()
+        {
             if tokio::time::Instant::now() >= deadline {
-                return Err((6, "daemon did not stop within 2 s".into()));
+                return Err((
+                    6,
+                    format!("waiting for daemon pid {pid} to exit and socket cleanup exceeded 5 s"),
+                ));
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }

@@ -54,11 +54,11 @@ unreachable daemon gives exit 6.
 
 Request: `{"jsonrpc":"2.0","id":4,"method":"daemon.stop"}`
 
-Response: `{"jsonrpc":"2.0","id":4,"result":{"stopping":true}}`
+Response: `{"jsonrpc":"2.0","id":4,"result":{"stopping":true,"pid":123}}`
 
 Accepts omitted, null or empty object params. Preserves live runs, closes connections,
-removes socket and pid file, and exits. CLI stop waits for socket cleanup and never
-spawns. SIGTERM and SIGINT also preserve runs for re-adoption at startup. Only a
+removes socket and pid file, and exits. CLI stop waits up to five seconds for the acknowledged pid to exit (a zombie
+already counts as exited) and for socket cleanup; it never spawns. SIGTERM and SIGINT also preserve runs for re-adoption at startup. Only a
 confirmed tmux server exit ends all its runs. Poll errors are logged and retried;
 five consecutive failures stop the daemon without ending runs. RPC requests remain
 available while a process snapshot is being collected. Losing or replacing

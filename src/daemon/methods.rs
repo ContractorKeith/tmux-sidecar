@@ -24,7 +24,7 @@ pub fn handle(request: Request, store: &Store, key: &str, poll_ms: u64) -> Respo
         "daemon.status" => {
             Ok(json!({"running":true,"pid":std::process::id(),"server_key":key,"poll_ms":poll_ms}))
         }
-        "daemon.stop" => Ok(json!({"stopping":true})),
+        "daemon.stop" => Ok(json!({"stopping":true,"pid":std::process::id()})),
         "list" => list(&request, store),
         method => {
             let milestone = match method {

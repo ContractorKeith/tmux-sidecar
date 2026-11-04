@@ -1,5 +1,7 @@
 //! M0: process snapshot adapter for Linux and macOS.
+mod liveness;
 use crate::seams::{Process, ProcessSnapshot, ProcessTree};
+pub use liveness::running;
 use std::{io, path::Path, process::Command};
 
 pub struct PsProcessTree;
