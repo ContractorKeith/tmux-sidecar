@@ -7,9 +7,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod groups;
 mod queries;
 mod row;
 mod signals;
+mod state;
 use row::{enum_name, number, row, run_id};
 fn db_error(path: &Path, error: impl std::fmt::Display) -> io::Error {
     io::Error::other(format!(
@@ -69,6 +71,10 @@ impl Store {
                 CREATE TABLE signal_receipts(nonce TEXT PRIMARY KEY NOT NULL);
                 UPDATE meta SET schema_version=3;")?;
         }
+        tx.execute_batch(
+            "CREATE INDEX IF NOT EXISTS signals_changes ON signals(event,id);
+            CREATE INDEX IF NOT EXISTS signals_run ON signals(run_id,source);",
+        )?;
         tx.commit()?;
         let meta = std::fs::metadata(path)
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
@@ -107,7 +113,7 @@ impl Store {
             self.pane(pane.server_start, &pane.pane_id)?;
         }
         for id in &changes.end {
-            self.end(id, now)?;
+            self.end_inner(id, now)?;
         }
         for run in &changes.start {
             self.insert(run)?;

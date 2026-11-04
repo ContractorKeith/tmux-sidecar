@@ -65,6 +65,8 @@ async fn inner(
     if bytes.is_empty() {
         return Ok(());
     }
+    let mut signals = signals;
+    signals.sort_by_key(|signal| signal.at);
     for signal in signals {
         worker.with(move |store| store.signal(&signal)).await??;
     }

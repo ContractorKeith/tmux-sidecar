@@ -52,7 +52,10 @@ pub async fn execute(cli: Cli) -> Result<(), Failure> {
         )
         .map_err(|e| (1, e.to_string()));
     }
-    if !matches!(cli.command, Command::List { .. } | Command::Daemon { .. }) {
+    if !matches!(
+        cli.command,
+        Command::List { .. } | Command::Attention { .. } | Command::Daemon { .. }
+    ) {
         let (verb, milestone) = cli.command.pending();
         return Err((2, format!("{verb} is not implemented yet (M{milestone})")));
     }
@@ -67,6 +70,7 @@ pub async fn execute(cli: Cli) -> Result<(), Failure> {
             .map_err(|e| (1, e.to_string()));
     }
     let (method, params, spawn, json_output) = match cli.command {
+        Command::Attention { json } => ("attention", json!({}), true, json),
         Command::List {
             group,
             state,
@@ -112,7 +116,7 @@ pub async fn execute(cli: Cli) -> Result<(), Failure> {
             "{}",
             serde_json::to_string(&result).map_err(|e| (1, e.to_string()))?
         );
-    } else if method == "list" {
+    } else if method == "list" || method == "attention" {
         println!("RUN\tPANE\tAGENT\tSTATE\tPID\tCWD");
         if let Some(runs) = result.as_array() {
             for run in runs {

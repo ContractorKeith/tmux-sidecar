@@ -10,8 +10,9 @@ terminals; tmux-sidecar owns the agent semantics. MIT. "Done" for v1 is every v1
 
 ## Status
 
-M2 implemented (2026-11-04): bounded hook delivery, raw signal storage, durable spool replay,
-marked hook installers and four-agent fixtures. M3 state semantics are next.
+M3 implemented (2026-11-04): pure state transitions, transactional history, transcript
+fallback, attention/read marks, computed project and persistent manual groups, subscriptions.
+M4 CLI verbs are next; only attention's minimal CLI is included here.
 Milestones M0–M7 are GitHub issues #1–#8.
 
 ## Commands
@@ -58,6 +59,11 @@ cargo build --release                              # target/release/tmux-sidecar
 - Cache server_start in the runtime dir; keep hook ancestry/probes cheap and drain stdin before no-op paths.
 - OpenCode 2.2.5 uses a default id/setup plugin, V2 data fields, and the opencode.exe process name.
 - Codex inline hook edits use toml_edit; --chain preserves old notify argv after recording.
+- Transcript readers and per-request project resolution run on blocking tasks, never the SQLite
+  owner or RPC task. session-board ids carry an agent prefix; compare native hook ids after stripping it.
+- Focus read marks require pane_active + window_active + session_attached; covered with two
+  control-mode attached clients, a hidden window and a detached tmux session.
+- Subscribers have 256-change queues and bounded writes; state_changed history commits with state.
 - Commits: `<type>: <description>`, author @ContractorKeith only.
 
 ## Tracking

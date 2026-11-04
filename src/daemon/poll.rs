@@ -27,6 +27,7 @@ pub async fn tick(
     socket: PathBuf,
     worker: &StoreWorker,
     runtime: PathBuf,
+    idle_after_ms: u64,
 ) -> Result<bool, Failure> {
     worker
         .with(|store| store.verify_identity())
@@ -69,6 +70,7 @@ pub async fn tick(
                         now,
                     );
                     store.apply(&scan.panes, &changes, now)?;
+                    store.maintain(&scan.panes, now, idle_after_ms)?;
                     Ok(true)
                 }
             }

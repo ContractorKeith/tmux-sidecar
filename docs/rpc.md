@@ -35,8 +35,11 @@ Response (one run):
 Lists active runs by default, newest id first. Optional `all: true` also includes
 ended history, capped by `limit` (default 100, unsigned 32-bit count). The limit
 applies after filtering; active-only results are not capped. Optional `state` filters
-by working, waiting, blocked, idle, error or done. M1 creates waiting and done only.
-Optional `group` returns -32601, "not implemented yet (M3)". Unknown params and
+by working, waiting, blocked, idle, error or done.
+Optional `group` matches a manual group name or the absolute project root. Project roots
+are resolved afresh using session-board's git-root rules, outside the SQLite worker and
+RPC task; `project_root` in each list result contains the resolved path. Group filtering
+precedes the history limit. Unknown params and
 invalid states return -32602. Null and omitted filters are accepted.
 `list --json` prints the result array directly. `list --all --limit 100 --json`
 requests bounded history with `params: {"all":true,"limit":100}`.
@@ -67,11 +70,21 @@ the database file is fatal immediately and logged with its path.
 
 ## attention
 
-Reserved for M3; returns -32601, "not implemented yet (M3)".
+Accepts omitted, null or empty object params. Returns an array of active unread runs
+in blocked, error, waiting order, then `state_since` ascending (id breaks ties).
+A read mark at or after `state_since` removes the run. Each state change clears `read_at`.
+Polling marks focused panes read only when pane_active, window_active and session_attached
+are all true; detached sessions and hidden windows stay unread.
 
 ## history
 
-Reserved for M4; returns -32601, "not implemented yet (M4)".
+Params: `{"sel":"r1","limit":100}`. `sel` accepts a run id or current pane selector;
+`limit` is an unsigned 32-bit count, default 100. Returns all evidence and state changes,
+newest `at` first, then newest row id, capped by limit. Each row contains `id`, `run_id`,
+`at`, `source`, `event`, `detail` and decoded `payload`. State-change payloads contain
+`run_id`, `from`, `to`, `at`, and `cause` (the hook or transcript signal row id, or null
+for process and clock evidence). State-change rows have source `engine`; transcript
+readings have source `transcript` and event `transcript_reading`.
 
 ## wait
 
@@ -83,27 +96,44 @@ Reserved for M4; returns -32601, "not implemented yet (M4)".
 
 ## ack
 
-Reserved for M4; returns -32601, "not implemented yet (M4)".
+Params: `{"selectors":["r1","%2"]}` (or `{"sel":"r1"}`). All selectors are resolved
+before mutation. Sets `read_at` to daemon time; returns `{}`. Missing runs return -32005.
+An empty selector list or malformed selector returns -32602.
 
 ## name
 
-Reserved for M4; returns -32601, "not implemented yet (M4)".
+Params: `{"sel":"r1","name":"build"}`. Omitted or null `name` clears the pane name.
+Returns `{}`; names attach to pane keys and survive agent restarts. Missing runs return -32005.
 
 ## group.add
 
-Reserved for M3; returns -32601, "not implemented yet (M3)".
+Params: `{"group":"review","selectors":["r1","%2"]}` (single `sel` also accepted).
+Creates the manual group if necessary and adds pane keys idempotently; returns `{}`.
+All selectors are validated first. Membership survives agent restarts in the same pane,
+and does not transfer across tmux server restarts. Missing runs return -32005.
 
 ## group.rm
 
-Reserved for M3; returns -32601, "not implemented yet (M3)".
+Same params as `group.add`. Removes matching pane keys idempotently; returns `{}`.
+Empty groups remain listed.
 
 ## group.ls
 
-Reserved for M3; returns -32601, "not implemented yet (M3)".
+Accepts omitted, null or empty object params. Returns manual memberships as an array
+of `{"name":"review","server_start":1793800000,"pane_id":"%2"}` rows, sorted by name
+and pane key. An empty group has one row with null `server_start` and `pane_id`.
+Project groups are computed by `list` and are not stored here.
 
 ## subscribe
 
-Reserved for M3; returns -32601, "not implemented yet (M3)".
+Accepts omitted, null or empty object params. Returns `{"subscribed":true}`, then pushes
+`state_changed` notifications on the same connection for subsequent committed changes.
+There is no historical replay; repeating subscribe does not duplicate delivery. Requests
+can still be sent on the connection. Each subscriber has a bounded 256-change broadcast
+queue. On overflow the daemon attempts a final `subscription_error` notification with
+params `{"code":-32001,"message":"slow subscriber exceeded 256 changes"}` and closes
+the connection. Socket writes have a 250 ms deadline; an unresponsive socket may prevent
+the final error from reaching the peer. Subscribers never block daemon mutation or polling.
 
 ## signal
 
@@ -127,9 +157,18 @@ execution.failed to session.error; the original V2 event remains in `payload`.
 `nonce` is 128 random bits encoded as 32 hex characters, generated once per hook
 invocation. Receipt and signal commit together, deduplicating only that nonce.
 Two genuine calls with identical payload and timestamp are both retained.
-Unknown runs are created immediately with M1's initial waiting state. Session id
-and transcript metadata attach to existing runs, including ended runs. Signals
-never change state in M2. Requests may use an id and receive `{}` after storage;
+Unknown runs are created immediately with an initial waiting state. Session id
+and transcript metadata attach to existing runs, including ended runs. Each signal applies
+the exact per-agent event/detail state table. The receipt, signal,
+run state and any `state_changed` history row commit in one transaction. Unknown events
+retain state but establish hook precedence. Signals older than `state_since` retain
+history and metadata without changing state, except the first hook for a run. Spool
+batches are sorted by capture time. Process exit always wins over hooks and transcripts.
+Once a hook has arrived, transcripts only fill metadata; transcript-only runs follow
+session-board source derivation, scanned at most every two seconds per run on blocking
+tasks. Read waiting runs become idle after config `idle_after_secs` (default 1800). Re-reading
+the same completed transcript turn does not undo clock-derived idle. Requests may use an
+id and receive `{}` after storage;
 invalid params return -32602. Notifications receive no response.
 
 Stdin formats drain to EOF before context/ancestor checks, keeping up to 64 MiB
@@ -160,10 +199,10 @@ with a newline. SQLite work, file I/O and parsing retain their separate owners.
 argv payload first, then exec the previous program with its configured arguments
 and the unchanged appended payload. Uninstall restores the prior notify entry.
 
-### Reserved state_changed notification (M3)
+### state_changed notification
 
 ```json
-{"jsonrpc":"2.0","method":"state_changed","params":{"run_id":"r1","pane_id":"%0","state":"waiting","state_since":1793800000000}}
+{"jsonrpc":"2.0","method":"state_changed","params":{"run_id":"r1","from":"working","to":"waiting","at":1793800000000,"cause":42}}
 ```
 
 ### Errors
@@ -178,9 +217,9 @@ Error response example:
 | -32601 | Unknown or not yet implemented method |
 | -32602 | Invalid params |
 | -32603 | Internal failure |
-| -32001 | General error (reserved) |
+| -32001 | General error; slow subscription overflow |
 | -32002 | Usage error (reserved) |
 | -32003 | Refused (reserved) |
 | -32004 | Timeout (reserved) |
-| -32005 | Selector not found (reserved) |
+| -32005 | Selector not found |
 | -32006 | Daemon unreachable (reserved) |

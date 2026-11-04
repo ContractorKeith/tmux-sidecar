@@ -63,9 +63,11 @@ e2e_test!(separate_servers_and_rpc_contract, {
             .read_line(&mut line)
             .expect("read RPC response within socket deadline");
         let response: Value = serde_json::from_str(&line).unwrap();
-        if ["hello", "daemon.status"].contains(method) {
+        if ["hello", "daemon.status", "subscribe"].contains(method) {
             assert!(response["result"].is_object());
-        } else if *method == "signal" {
+        } else if ["attention", "group.ls"].contains(method) {
+            assert!(response["result"].is_array());
+        } else if ["signal", "ack", "history", "name", "group.add", "group.rm"].contains(method) {
             assert_eq!(response["error"]["code"], -32602);
         } else {
             assert_eq!(response["error"]["code"], -32601);
@@ -89,12 +91,7 @@ e2e_test!(separate_servers_and_rpc_contract, {
         .args(["list", "--group", "test"])
         .bounded_output()
         .unwrap();
-    assert_eq!(group.status.code(), Some(2));
-    assert!(
-        String::from_utf8(group.stderr)
-            .unwrap()
-            .contains("not implemented yet (M3)")
-    );
+    assert!(group.status.success());
     drop(writer);
     drop(reader);
     stop(&a);

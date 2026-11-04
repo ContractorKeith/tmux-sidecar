@@ -1,17 +1,20 @@
 //! One blocking owner keeps SQLite open, queries, transactions and close off tokio.
 use crate::store::Store;
 use std::{io, path::PathBuf, sync::mpsc};
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, oneshot};
 type Job = Box<dyn FnOnce(&Store) + Send>;
 pub struct StoreWorker {
     sender: mpsc::Sender<Job>,
-    done: oneshot::Receiver<()>,
+    pub events: broadcast::Sender<serde_json::Value>,
+    done: Option<oneshot::Receiver<()>>,
 }
 impl StoreWorker {
     pub async fn open(path: PathBuf) -> io::Result<Self> {
         let (sender, receiver) = mpsc::channel::<Job>();
         let (ready, result) = oneshot::channel();
         let (closed, done) = oneshot::channel();
+        let (events, _) = broadcast::channel(256);
+        let publish = events.clone();
         tokio::task::spawn_blocking(move || {
             let store = match Store::open(&path) {
                 Ok(store) => store,
@@ -23,14 +26,29 @@ impl StoreWorker {
             if ready.send(Ok(())).is_err() {
                 return;
             }
+            let mut cursor = store
+                .changes_since(0)
+                .ok()
+                .and_then(|rows| rows.last().map(|r| r.0))
+                .unwrap_or(0);
             while let Ok(job) = receiver.recv() {
                 job(&store);
+                if let Ok(changes) = store.changes_since(cursor) {
+                    for (id, payload) in changes {
+                        cursor = id;
+                        let _ = publish.send(payload);
+                    }
+                }
             }
             drop(store);
             let _ = closed.send(());
         });
         result.await.map_err(io::Error::other)??;
-        Ok(Self { sender, done })
+        Ok(Self {
+            sender,
+            done: Some(done),
+            events,
+        })
     }
     pub async fn with<T: Send + 'static>(
         &self,
@@ -46,7 +64,20 @@ impl StoreWorker {
     }
     pub async fn close(self) -> io::Result<()> {
         drop(self.sender);
-        self.done.await.map_err(io::Error::other)
+        self.done
+            .expect("only owner closes store worker")
+            .await
+            .map_err(io::Error::other)
+    }
+}
+
+impl Clone for StoreWorker {
+    fn clone(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+            events: self.events.clone(),
+            done: None,
+        }
     }
 }
 

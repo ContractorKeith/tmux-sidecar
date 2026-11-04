@@ -86,3 +86,10 @@ mod round1;
 
 #[path = "support/shutdown.rs"]
 mod shutdown;
+
+#[path = "support/focus.rs"]
+mod focus;
+#[path = "support/state.rs"]
+mod state;
+#[path = "support/transcript.rs"]
+mod transcript;

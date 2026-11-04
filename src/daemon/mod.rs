@@ -1,6 +1,10 @@
 //! One socket owner and one poller per tmux server.
+mod config;
+mod list;
 pub mod log;
 mod methods;
+mod state_methods;
+mod transcripts;
 pub use methods::handle as dispatch;
 mod peer;
 mod poll;
@@ -70,9 +74,11 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         )?;
     }
     let store = store_worker::StoreWorker::open(db).await?;
-    let poll_ms = poll_ms(paths)?;
+    let poll_ms = config::poll_ms(paths)?;
+    let idle_after_ms = config::idle_after_ms(paths)?;
+    let transcripts = transcripts::Reader::default();
     let mut health = poll::Health::default();
-    let initial = poll::tick(socket.clone(), &store, paths.runtime.clone()).await;
+    let initial = poll::tick(socket.clone(), &store, paths.runtime.clone(), idle_after_ms).await;
     health.record(&initial);
     match initial {
         Ok(false) => return Err(io::Error::other("tmux server is not running")),
@@ -115,9 +121,12 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 let state = paths.state.clone();
                 let worker = &store;
                 let runtime = paths.runtime.clone();
+                let transcripts = transcripts.clone();
                 polling = Some(Box::pin(async move {
                     replay::replay(state, runtime.clone(),socket.clone(), worker).await;
-                    poll::tick(socket, worker, runtime).await
+                    let alive = poll::tick(socket, worker, runtime, idle_after_ms).await?;
+                    if alive { transcripts.tick(worker, now()).await?; }
+                    Ok(alive)
                 }));
             },
             result = async {
@@ -140,11 +149,16 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 }
             },
             incoming = listener.accept() => match incoming {
-                Ok((stream, _)) => { let sender = sender.clone(); connections.spawn(async move { transport::serve(stream, sender).await }); },
+                Ok((stream, _)) => { let sender = sender.clone(); let events=store.events.subscribe(); connections.spawn(async move { transport::serve(stream, sender, events).await }); },
                 Err(e) => break Err(e),
             },
             Some(mut call) = receiver.recv() => {
                 if call.request.method=="signal" && let Some(params)=&mut call.request.params {crate::hook::context::resolve(params,&paths.runtime,&socket);}
+                if call.request.method == "list" {
+                    let worker=store.clone(); let key=key.clone();
+                    connections.spawn(async move {list::serve(call,worker,key,poll_ms).await;Ok(())});
+                    continue;
+                }
                 let stop = call.request.method == "daemon.stop" && methods::empty_params(&call.request);
                 let key = key.clone();
                 let prepared = methods::prepare(&call.request);
@@ -161,24 +175,6 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     store.close().await?;
     result.and(drained)
 }
-fn poll_ms(paths: &Paths) -> io::Result<u64> {
-    let config = match fs::read_to_string(&paths.config) {
-        Ok(text) => toml::from_str::<toml::Table>(&text).map_err(other)?,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => toml::Table::new(),
-        Err(e) => return Err(e),
-    };
-    let value = if let Ok(value) = std::env::var("TMUX_SIDECAR_POLL_MS") {
-        value.parse::<u64>().map_err(other)?
-    } else if let Some(value) = config.get("poll_ms") {
-        value
-            .as_integer()
-            .and_then(|n| n.try_into().ok())
-            .ok_or_else(|| io::Error::other("poll_ms must be a positive integer"))?
-    } else {
-        1000
-    };
-    if value == 0 {
-        return Err(io::Error::other("poll_ms must be positive"));
-    }
-    Ok(value)
-}
+
+#[cfg(test)]
+mod transport_tests;

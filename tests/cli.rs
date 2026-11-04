@@ -2,7 +2,6 @@ use std::process::Command;
 #[test]
 fn future_verbs_remain_explicit_stubs() {
     for (args, verb, milestone) in [
-        (vec!["attention", "--json"], "attention", 4),
         (vec!["watch", "--json"], "watch", 4),
         (
             vec![

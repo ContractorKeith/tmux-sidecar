@@ -123,6 +123,11 @@ impl TmuxGuard {
         let root = self.scratch.path();
         command
             .env("HOME", root.join("home"))
+            .env("CLAUDE_CONFIG_DIR", root.join("home/.claude"))
+            .env("CODEX_HOME", root.join("home/.codex"))
+            .env("GROK_HOME", root.join("home/.grok"))
+            .env("OPENCODE_DB", root.join("home/opencode.db"))
+            .env("XDG_DATA_HOME", root.join("home/.local/share"))
             .env("XDG_CONFIG_HOME", root.join("config"))
             .env("XDG_STATE_HOME", root.join("state"))
             .env("TMUX_SIDECAR_RUNTIME_DIR", root.join("run"))
