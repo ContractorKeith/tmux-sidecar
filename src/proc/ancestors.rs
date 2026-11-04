@@ -56,7 +56,7 @@ pub fn hook_ancestors() -> io::Result<Vec<(u32, Process)>> {
             break;
         };
         let parent = process.ppid;
-        if parent == 0 || seen.contains(&parent) {
+        if parent <= 1 || seen.contains(&parent) {
             break;
         }
         let Some(process) = mac_process(parent)? else {
@@ -84,7 +84,11 @@ fn mac_process(pid: u32) -> io::Result<Option<Process>> {
     };
     if count != size {
         let error = io::Error::last_os_error();
-        if error.raw_os_error() == Some(libc::ESRCH) {
+        if error.raw_os_error() == Some(libc::ESRCH)
+            || error.kind() == io::ErrorKind::PermissionDenied
+        {
+            // Ancestors can exit or cross into a root-owned launcher. Keep the
+            // readable nearest-parent chain instead of discarding a found agent.
             return Ok(None);
         }
         return Err(error);
@@ -106,6 +110,7 @@ fn mac_process(pid: u32) -> io::Result<Option<Process>> {
 mod tests {
     #[test]
     fn hook_walk_has_no_process_spawn_path() {
+        assert!(super::mac_process(std::process::id()).unwrap().is_some());
         let walk = super::hook_ancestors().unwrap();
         // SAFETY: getppid has no arguments or pointers and only queries our parent.
         let parent = unsafe { libc::getppid() };
