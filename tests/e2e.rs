@@ -5,6 +5,10 @@ fn enabled() -> bool {
     if std::env::var("TMUX_SIDECAR_E2E").as_deref() == Ok("1") {
         true
     } else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires TMUX_SIDECAR_E2E=1"
+        );
         eprintln!("skip: set TMUX_SIDECAR_E2E=1 for real tmux tests");
         false
     }

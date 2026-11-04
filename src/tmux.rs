@@ -89,6 +89,9 @@ pub fn parse(mut input: &[u8]) -> io::Result<Vec<PaneSnapshot>> {
             .map(|_| field(&mut input))
             .collect::<io::Result<_>>()?;
         input = input.strip_prefix(b"\n").ok_or_else(invalid)?;
+        if f[3].is_empty() {
+            continue;
+        }
         if !matches!(f[1].parse(), Ok(crate::model::RunSelector::Pane(_)))
             || !std::path::Path::new(f[3]).is_absolute()
         {
@@ -115,6 +118,26 @@ pub fn parse(mut input: &[u8]) -> io::Result<Vec<PaneSnapshot>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_cwd_only_skips_its_pane() {
+        let record = |cwd: &str| {
+            ["1234", "%7", "42", cwd, "codex", "1", "0", "0"]
+                .iter()
+                .map(|s| format!("{}:{s}", s.len()))
+                .collect::<String>()
+                + "\n"
+        };
+        let good = record("/project");
+        let missing = record("");
+        assert_eq!(
+            parse((missing.clone() + &good).as_bytes()).unwrap(),
+            parse(good.as_bytes()).unwrap()
+        );
+        assert_eq!(
+            parse((good.clone() + &missing).as_bytes()).unwrap(),
+            parse(good.as_bytes()).unwrap()
+        );
+    }
     #[test]
     fn canned_panes_and_malformed_records() {
         let fields = [
@@ -146,10 +169,9 @@ mod tests {
                 session_attached: true
             }
         );
-        for bad in ["1:x", "99999999999999999999999999:x", "x:bad", ""] {
-            if !bad.is_empty() {
-                assert!(parse(bad.as_bytes()).is_err());
-            }
+        assert_eq!(parse(b"").unwrap(), vec![]);
+        for bad in ["1:x", "99999999999999999999999999:x", "x:bad"] {
+            assert!(parse(bad.as_bytes()).is_err());
         }
         assert!(parse((record + "bad").as_bytes()).is_err());
     }

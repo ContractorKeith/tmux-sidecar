@@ -1,6 +1,7 @@
 //! Pure path resolution; callers create directories with mode 0700 in M1.
 use std::{
     ffi::{OsStr, OsString},
+    io,
     path::{Path, PathBuf},
 };
 
@@ -16,10 +17,19 @@ pub struct Paths {
     pub config: PathBuf,
 }
 
-/// FNV-1a 64-bit over socket path bytes, truncated to the low 48 bits (12 hex digits).
-/// No randomized hasher or canonicalization: the same socket path always has the same key.
-pub fn server_key(socket: &Path) -> String {
+/// Absolute socket path, resolving symlinks when the socket exists.
+/// A not-yet-created socket keeps its absolute spelling until it can be resolved.
+pub fn canonical_socket(socket: &Path) -> io::Result<PathBuf> {
+    socket
+        .canonicalize()
+        .or_else(|_| std::path::absolute(socket))
+}
+
+/// FNV-1a 64-bit over the canonical socket path bytes, truncated to 12 hex digits.
+/// Relative paths and existing symlinks identify the same server as its absolute path.
+pub fn server_key(socket: &Path) -> io::Result<String> {
     use std::os::unix::ffi::OsStrExt;
+    let socket = canonical_socket(socket)?;
     let hash = socket
         .as_os_str()
         .as_bytes()
@@ -27,10 +37,11 @@ pub fn server_key(socket: &Path) -> String {
         .fold(0xcbf29ce484222325u64, |hash, byte| {
             (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
         });
-    format!("{:012x}", hash & 0xffffffffffff)
+    Ok(format!("{:012x}", hash & 0xffffffffffff))
 }
 
 /// Overrides name the complete per-server directory, without appending a key.
+/// Linux without XDG_RUNTIME_DIR falls back to /tmp/tmux-sidecar-<uid>/<key>.
 pub fn resolve(
     platform: Platform,
     home: &Path,
@@ -142,11 +153,30 @@ mod tests {
         }
     }
     #[test]
+    fn socket_spellings_share_a_key() {
+        use std::os::unix::{fs::symlink, net::UnixListener};
+        let scratch = tempfile::tempdir().unwrap();
+        let socket = scratch.path().join("socket");
+        let _listener = UnixListener::bind(&socket).unwrap();
+        let alias = scratch.path().join("alias");
+        symlink(&socket, &alias).unwrap();
+        let cwd = std::env::current_dir().unwrap();
+        let mut relative = PathBuf::new();
+        for _ in cwd.components().skip(1) {
+            relative.push("..");
+        }
+        relative.push(socket.strip_prefix("/").unwrap());
+        assert_eq!(server_key(&relative).unwrap(), server_key(&socket).unwrap());
+        assert_eq!(server_key(&alias).unwrap(), server_key(&socket).unwrap());
+        let missing = scratch.path().join("missing");
+        assert_eq!(canonical_socket(&missing).unwrap(), missing);
+    }
+    #[test]
     fn stable_keys_and_socket() {
-        assert_eq!(server_key(Path::new("hello")), "d84680aabd0b");
+        assert_eq!(server_key(Path::new("/hello")).unwrap(), "545fbff8a45e");
         assert_ne!(
-            server_key(Path::new("/tmp/a")),
-            server_key(Path::new("/tmp/b"))
+            server_key(Path::new("/tmp/a")).unwrap(),
+            server_key(Path::new("/tmp/b")).unwrap()
         );
         assert_eq!(
             socket_from_tmux(OsStr::new("/tmp/tmux-42/default,123,0")),

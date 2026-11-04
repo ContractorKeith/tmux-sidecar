@@ -41,7 +41,6 @@ pub enum Version {
 pub enum Id {
     Number(i64),
     String(String),
-    Null,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Request {
@@ -66,7 +65,7 @@ pub struct RpcError {
     pub data: Option<Value>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum Outcome {
     Success { result: Value },
     Failure { error: RpcError },
@@ -89,6 +88,41 @@ mod tests {
         assert_eq!(serde_json::from_str::<T>(&json).unwrap(), value);
     }
     #[test]
+    fn exact_response_wire_shapes() {
+        let failure = Response {
+            jsonrpc: Version::V2,
+            id: None,
+            outcome: Outcome::Failure {
+                error: RpcError {
+                    code: PARSE_ERROR,
+                    message: "invalid JSON".into(),
+                    data: None,
+                },
+            },
+        };
+        assert_eq!(
+            serde_json::to_string(&failure).unwrap(),
+            r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"invalid JSON"}}"#
+        );
+        let success = Response {
+            jsonrpc: Version::V2,
+            id: Some(Id::Number(42)),
+            outcome: Outcome::Success {
+                result: Value::Null,
+            },
+        };
+        assert_eq!(
+            serde_json::to_string(&success).unwrap(),
+            r#"{"jsonrpc":"2.0","id":42,"result":null}"#
+        );
+        assert!(
+            serde_json::from_str::<Response>(
+                r#"{"jsonrpc":"2.0","id":42,"result":null,"error":{"code":-32700,"message":"bad"}}"#
+            )
+            .is_err()
+        );
+    }
+    #[test]
     fn wire_round_trips() {
         for method in METHODS {
             round_trip(Request {
@@ -98,12 +132,6 @@ mod tests {
                 params: Some(serde_json::json!({"sel":"%7"})),
             });
         }
-        round_trip(Request {
-            jsonrpc: Version::V2,
-            id: Id::Null,
-            method: "hello".into(),
-            params: None,
-        });
         round_trip(Notification {
             jsonrpc: Version::V2,
             method: "state_changed".into(),

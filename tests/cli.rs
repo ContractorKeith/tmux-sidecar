@@ -54,6 +54,7 @@ fn every_verb_is_an_explicit_stub() {
             2,
         ),
         (vec!["hook", "claude"], "hook", 2),
+        (vec!["hook", "codex", "-payload"], "hook", 2),
         (vec!["hook", "codex-notify", "{}"], "hook", 2),
         (vec!["daemon", "status", "--json"], "daemon status", 1),
         (vec!["daemon", "stop"], "daemon stop", 1),
@@ -84,6 +85,54 @@ fn help_and_version_work() {
             .unwrap();
         assert!(output.status.success());
         assert!(output.stderr.is_empty());
+        if arg == "--help" {
+            let help = String::from_utf8(output.stdout).unwrap();
+            for verb in [
+                "list",
+                "attention",
+                "watch",
+                "wait",
+                "send",
+                "ack",
+                "history",
+                "name",
+                "group",
+                "hooks",
+                "hook",
+                "daemon",
+                "doctor",
+                "ui",
+                "mcp",
+            ] {
+                assert!(
+                    help.lines()
+                        .any(|line| line.split_whitespace().next() == Some(verb)),
+                    "missing {verb} in help"
+                );
+            }
+        }
+    }
+}
+#[test]
+fn nested_help_lists_every_subcommand() {
+    for (parent, verbs) in [
+        ("group", vec!["add", "rm", "ls"]),
+        ("hooks", vec!["install", "uninstall"]),
+        ("daemon", vec!["status", "stop", "run"]),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+            .args([parent, "--help"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let help = String::from_utf8(output.stdout).unwrap();
+        for verb in verbs {
+            assert!(
+                help.lines()
+                    .any(|line| line.split_whitespace().next() == Some(verb)),
+                "missing {parent} {verb}"
+            );
+        }
     }
 }
 #[test]
