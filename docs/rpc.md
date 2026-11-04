@@ -139,8 +139,8 @@ remain below 256 KiB; ordinary payloads retain their fields. Codex notify takes
 its payload from argv instead. The transport frame limit remains 1 MiB.
 
 The daemon writes `<runtime>/server_start` outside the SQLite worker, tied to the
-tmux socket device/inode so a replacement cannot reuse stale context. Hooks read
-that cache; only an absent cache requires a bounded tmux query. A durable frame
+tmux socket device/inode and change time so a replacement invalidates stale context.
+Hooks read that cache; only an absent cache requires a bounded tmux query. A durable frame
 may carry `server_start: 0` until the daemon's first poll supplies that context.
 The daemon resolves it before store validation. One O_APPEND write under
 `spool.lock` precedes tmux fallback, socket delivery, and detached startup. Live

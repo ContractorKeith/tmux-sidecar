@@ -30,10 +30,12 @@ pub(super) fn pid(guard: &TmuxGuard) -> i32 {
         .unwrap()
 }
 pub(super) fn stop(guard: &TmuxGuard) {
+    let output = super::support::output(guard.sidecar().args(["daemon", "stop"]));
     assert!(
-        super::support::output(guard.sidecar().args(["daemon", "stop"]))
-            .status
-            .success()
+        output.status.success(),
+        "daemon stop: {}\ndaemon log: {}",
+        String::from_utf8_lossy(&output.stderr),
+        fs::read_to_string(guard.scratch.path().join("state/daemon.log")).unwrap_or_default(),
     );
     assert!(!guard.scratch.path().join("run/sock").exists());
 }
