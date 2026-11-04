@@ -20,18 +20,24 @@ async fn inner(
     let claims = tokio::task::spawn_blocking(move || spool::claim(&dir))
         .await
         .map_err(io::Error::other)??;
+    let mut failure = None;
     for claim in claims {
-        replay_claim(
+        if let Err(error) = replay_claim(
             state.clone(),
             runtime.clone(),
             socket.clone(),
             worker,
             claim,
         )
-        .await?;
+        .await
+        {
+            // Retain the failed claim, but let independent claims make progress.
+            failure.get_or_insert(error);
+        }
     }
-    Ok(())
+    failure.map_or(Ok(()), Err)
 }
+
 async fn replay_claim(
     state: PathBuf,
     runtime: PathBuf,

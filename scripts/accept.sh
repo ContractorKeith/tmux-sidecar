@@ -84,8 +84,8 @@ test ! -s "$scratch/hook.stdout"
 test ! -s "$scratch/hook.stderr"
 # M3: a permission fixture puts a live run first in the attention queue.
 echo "== state live checks"
-cp "$(command -v sleep)" "$scratch/claude"
-tmux -L "$tsock" new-window -d -t fixture -n state "$scratch/claude 120"
+rustc --edition 2024 tests/support/fake_agent.rs -o "$scratch/claude"
+tmux -L "$tsock" new-window -d -t fixture -n state "$scratch/claude"
 "$bin" --tmux-socket "$socket" list --json >/dev/null
 pane_info="$(tmux -L "$tsock" list-panes -t fixture:state -F '#{pane_id} #{pane_pid} #{start_time}')"
 read -r pane pane_pid server_start <<PANE_INFO
