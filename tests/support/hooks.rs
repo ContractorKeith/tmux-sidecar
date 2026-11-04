@@ -7,12 +7,17 @@ pub(super) fn fire(guard: &TmuxGuard, pid: u64, format: &str, fixture: &Path) {
     let done = state.join(format!("fired-{pid}"));
     let _ = fs::remove_file(&done);
     fs::write(
-        state.join(format!("fire-{pid}")),
+        state.join(format!("fire-{pid}.new")),
         format!(
             "{}\n{format}\n{}",
             env!("CARGO_BIN_EXE_tmux-sidecar"),
             fixture.display()
         ),
+    )
+    .unwrap();
+    fs::rename(
+        state.join(format!("fire-{pid}.new")),
+        state.join(format!("fire-{pid}")),
     )
     .unwrap();
     until!(|| done.exists());
@@ -73,9 +78,18 @@ e2e_test!(every_fixture_is_delivered_by_its_real_ancestor, {
             count += 1;
         }
     }
+    // A busy daemon may legitimately make a hook spool; allow its next tick to replay.
+    let spool = guard.scratch.path().join("state/spool.ndjson");
+    until!(|| !spool.exists() || fs::read(&spool).unwrap().is_empty());
     super::lifecycle::stop(&guard);
     let signals = inspect(&guard);
-    assert_eq!(signals.len(), count);
+    assert_eq!(
+        signals.len(),
+        count,
+        "hook log: {}\ndaemon log: {}\nsignals: {signals:?}",
+        fs::read_to_string(guard.scratch.path().join("state/hook.log")).unwrap_or_default(),
+        fs::read_to_string(guard.scratch.path().join("state/daemon.log")).unwrap_or_default()
+    );
     for run in runs.as_array().unwrap() {
         let matching: Vec<_> = signals
             .iter()

@@ -26,7 +26,8 @@ fn main() {
             let mut stdout=String::new(); let mut stderr=String::new();
             std::io::BufReader::new(output).read_to_string(&mut stdout).unwrap();
             std::io::BufReader::new(error).read_to_string(&mut stderr).unwrap();
-            fs::write(root.join(format!("fired-{pid}")),format!("{}\n{}\n{}\n{}",status.success(),start.elapsed().as_millis(),stdout.len(),stderr.len())).unwrap();
+            fs::write(root.join(format!("fired-{pid}.new")),format!("{}\n{}\n{}\n{}",status.success(),start.elapsed().as_millis(),stdout.len(),stderr.len())).unwrap();
+            fs::rename(root.join(format!("fired-{pid}.new")),root.join(format!("fired-{pid}"))).unwrap();
         }
         std::thread::sleep(Duration::from_millis(5));
     }

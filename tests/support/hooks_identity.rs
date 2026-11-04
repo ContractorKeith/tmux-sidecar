@@ -94,3 +94,26 @@ e2e_test!(client_joins_an_already_starting_daemon, {
     assert_eq!(super::lifecycle::list(&guard).as_array().unwrap().len(), 1);
     super::lifecycle::stop(&guard);
 });
+e2e_test!(shutdown_drains_already_written_signal_notifications, {
+    if !enabled() {
+        return;
+    }
+    let guard = TmuxGuard::start();
+    let runs = super::lifecycle::list(&guard);
+    let run = &runs[0];
+    let mut stream =
+        crate::support::socket::connect(guard.scratch.path().join("run/sock")).unwrap();
+    for at in 1..=200 {
+        let frame = serde_json::json!({"jsonrpc":"2.0","method":"signal","params":{
+            "server_start":run["server_start"],"pane_id":run["pane_id"],"agent":run["agent"],"agent_pid":run["agent_pid"],
+            "at":at,"source":"hook:claude","kind":"Stop","agent_session_id":null,"transcript_path":null,"cwd":"/fixture","payload":{"hook_event_name":"Stop"}
+        }});
+        writeln!(stream, "{frame}").unwrap();
+    }
+    super::lifecycle::stop(&guard);
+    drop(stream);
+    let store =
+        tmux_sidecar::store::Store::open(&guard.scratch.path().join("state/tmux-sidecar.db"))
+            .unwrap();
+    assert_eq!(store.signal_history().unwrap().len(), 200);
+});
