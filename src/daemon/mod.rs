@@ -5,6 +5,7 @@ pub use methods::handle as dispatch;
 mod peer;
 mod poll;
 mod replay;
+mod shutdown;
 mod store_worker;
 mod transport;
 use crate::{
@@ -148,14 +149,9 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     };
     drop(polling);
     drop(listener);
-    // Let the stop response reach its client, then close any idle connections.
-    let _ = tokio::time::timeout(Duration::from_millis(100), async {
-        while connections.join_next().await.is_some() {}
-    })
-    .await;
-    connections.shutdown().await;
+    let drained = shutdown::drain(&mut connections, &mut receiver, &store, &key, poll_ms).await;
     store.close().await?;
-    result
+    result.and(drained)
 }
 fn poll_ms(paths: &Paths) -> io::Result<u64> {
     let config = match fs::read_to_string(&paths.config) {

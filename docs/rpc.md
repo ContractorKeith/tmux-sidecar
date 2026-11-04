@@ -56,7 +56,8 @@ Request: `{"jsonrpc":"2.0","id":4,"method":"daemon.stop"}`
 
 Response: `{"jsonrpc":"2.0","id":4,"result":{"stopping":true,"pid":123}}`
 
-Accepts omitted, null or empty object params. Preserves live runs, closes connections,
+Accepts omitted, null or empty object params. Preserves live runs, drains accepted
+signal notifications for up to one second (idle clients cannot hold shutdown), closes connections,
 removes socket and pid file, and exits. CLI stop waits up to five seconds for the acknowledged pid to exit (a zombie
 already counts as exited) and for socket cleanup; it never spawns. SIGTERM and SIGINT also preserve runs for re-adoption at startup. Only a
 confirmed tmux server exit ends all its runs. Poll errors are logged and retried;
