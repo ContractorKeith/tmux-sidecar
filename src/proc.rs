@@ -54,6 +54,17 @@ pub fn alive(pid: i32) -> bool {
     }
 }
 
+pub fn terminate(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    if let Ok(pid) = i32::try_from(pid) {
+        // SAFETY: positive pid is owned by the startup guard; SIGTERM permits cleanup.
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     #[test]

@@ -45,9 +45,24 @@ pub async fn request(
         }
         Err(error) => return Err(error),
     };
-    tokio::time::timeout(Duration::from_secs(2), exchange(stream, method, params))
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "daemon response timed out"))?
+    tokio::time::timeout(Duration::from_secs(2), async {
+        let mut stream = BufReader::new(stream);
+        let hello = exchange(&mut stream, "hello", serde_json::json!({})).await?;
+        let key = paths::server_key(socket)?;
+        if hello["server_key"].as_str() != Some(&key) {
+            return Err(io::Error::other(format!(
+                "wrong tmux server at TMUX_SIDECAR_RUNTIME_DIR {}; expected {key}, received {}",
+                paths.runtime.display(),
+                hello["server_key"]
+            )));
+        }
+        if method == "hello" {
+            return Ok(hello);
+        }
+        exchange(&mut stream, method, params).await
+    })
+    .await
+    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "daemon response timed out"))?
 }
 async fn connect(paths: &Paths) -> io::Result<UnixStream> {
     tokio::time::timeout(
@@ -57,7 +72,11 @@ async fn connect(paths: &Paths) -> io::Result<UnixStream> {
     .await
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "daemon connect timed out"))?
 }
-async fn exchange(mut stream: UnixStream, method: &str, params: Value) -> io::Result<Value> {
+async fn exchange(
+    stream: &mut BufReader<UnixStream>,
+    method: &str,
+    params: Value,
+) -> io::Result<Value> {
     let request = rpc::Request {
         jsonrpc: rpc::Version::V2,
         id: rpc::Id::Number(1),
@@ -66,9 +85,9 @@ async fn exchange(mut stream: UnixStream, method: &str, params: Value) -> io::Re
     };
     let mut bytes = serde_json::to_vec(&request)?;
     bytes.push(b'\n');
-    stream.write_all(&bytes).await?;
+    stream.get_mut().write_all(&bytes).await?;
     let mut line = String::new();
-    BufReader::new(stream).read_line(&mut line).await?;
+    stream.read_line(&mut line).await?;
     let response: rpc::Response = serde_json::from_str(&line)?;
     if response.id != Some(rpc::Id::Number(1)) {
         return Err(io::Error::other("mismatched RPC response id"));

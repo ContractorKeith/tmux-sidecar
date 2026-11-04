@@ -40,9 +40,18 @@ pub async fn execute(cli: Cli) -> Result<(), Failure> {
             .map_err(|e| (1, e.to_string()));
     }
     let (method, params, spawn, json_output) = match cli.command {
-        Command::List { group, state, json } => {
-            ("list", json!({"group":group,"state":state}), true, json)
-        }
+        Command::List {
+            group,
+            state,
+            json,
+            all,
+            limit,
+        } => (
+            "list",
+            json!({"group":group,"state":state,"all":all,"limit":limit}),
+            true,
+            json,
+        ),
         Command::Daemon {
             command: Daemon::Status { json },
         } => ("daemon.status", json!({}), false, json),

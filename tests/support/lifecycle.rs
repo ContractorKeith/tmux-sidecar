@@ -15,10 +15,17 @@ pub(super) fn ok(output: Output) -> Value {
     );
     serde_json::from_slice(&output.stdout).unwrap()
 }
+fn history(guard: &TmuxGuard) -> Value {
+    ok(guard
+        .sidecar()
+        .args(["list", "--all", "--json"])
+        .output()
+        .unwrap())
+}
 pub(super) fn list(guard: &TmuxGuard) -> Value {
     ok(guard.sidecar().args(["list", "--json"]).output().unwrap())
 }
-fn until(mut condition: impl FnMut() -> bool) {
+pub(super) fn until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(4);
     while !condition() {
         assert!(Instant::now() < deadline, "condition timed out");
@@ -87,8 +94,8 @@ fn run_discovery_exit_pane_close_and_server_exit() {
     let agent = run["agent_pid"].as_i64().unwrap() as i32;
     // SAFETY: pid came from this isolated pane; it is positive and belongs to our fake.
     assert_eq!(unsafe { libc::kill(agent, libc::SIGTERM) }, 0);
-    until(|| list(&guard)[0]["state"] == "done");
-    assert!(list(&guard)[0]["ended_at"].is_number());
+    until(|| history(&guard)[0]["state"] == "done");
+    assert!(history(&guard)[0]["ended_at"].is_number());
     assert!(
         guard
             .command()
@@ -99,8 +106,8 @@ fn run_discovery_exit_pane_close_and_server_exit() {
             .status
             .success()
     );
-    until(|| list(&guard).as_array().unwrap().len() == 2);
-    let second = list(&guard)[1]["pane_id"].as_str().unwrap().to_owned();
+    until(|| history(&guard).as_array().unwrap().len() == 2);
+    let second = history(&guard)[0]["pane_id"].as_str().unwrap().to_owned();
     assert!(
         guard
             .command()
@@ -110,7 +117,7 @@ fn run_discovery_exit_pane_close_and_server_exit() {
             .status
             .success()
     );
-    until(|| list(&guard)[1]["state"] == "done");
+    until(|| history(&guard)[0]["state"] == "done");
     assert!(
         guard
             .command()
@@ -141,7 +148,11 @@ fn concurrent_clients_and_crash_recovery_keep_history() {
     let old_pid = pid(&guard);
     let before = list(&guard);
     let log = fs::read_to_string(guard.scratch.path().join("state/daemon.log")).unwrap();
-    assert!(log.is_empty(), "racing foreground daemon started: {log}");
+    assert_eq!(log.matches("creating fresh database").count(), 1, "{log}");
+    assert!(
+        !log.contains("temporarily unavailable"),
+        "racing daemon: {log}"
+    );
     // SAFETY: this positive pid was read from our isolated daemon's pid file.
     assert_eq!(unsafe { libc::kill(old_pid, libc::SIGKILL) }, 0);
     until(|| UnixStream::connect(guard.scratch.path().join("run/sock")).is_err());
@@ -152,7 +163,6 @@ fn concurrent_clients_and_crash_recovery_keep_history() {
     assert!(guard.scratch.path().join("state/tmux-sidecar.db").exists());
     stop(&guard);
 }
-
 #[test]
 fn foreground_collision_and_sigterm_cleanup() {
     if !enabled() {

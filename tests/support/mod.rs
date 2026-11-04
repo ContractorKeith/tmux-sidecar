@@ -71,13 +71,9 @@ impl TmuxGuard {
         // Exercise a copied fake and ensure direct children are killed/reaped on failure too.
         let mut command = Command::new(guard.scratch.path().join("bin/codex"));
         guard.isolate(&mut command);
-        let _agent = ChildGuard(
-            command
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap(),
-        );
+        let _agent = ChildGuard(spawn_fixture(
+            command.stdout(Stdio::null()).stderr(Stdio::null()),
+        ));
         let output = guard
             .command()
             .args(["-f", "/dev/null", "new-session", "-d", "-s", "fixture"])
@@ -149,4 +145,48 @@ impl Drop for ChildGuard {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+// Concurrent forks can briefly inherit a copy's writable fd before exec closes it.
+fn spawn_fixture(command: &mut Command) -> Child {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    loop {
+        match command.spawn() {
+            Ok(child) => return child,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => panic!("fake agent startup: {error}"),
+        }
+    }
+}
+#[test]
+fn fixture_start_waits_for_a_transient_writer() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let executable = root.path().join("fixture");
+    fs::write(&executable, b"#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let writer = fs::OpenOptions::new()
+        .write(true)
+        .open(&executable)
+        .unwrap();
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            drop(writer);
+        });
+        let mut command = Command::new(&executable);
+        command
+            .env("HOME", root.path())
+            .env_remove("BASH_ENV")
+            .env_remove("ENV")
+            .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
+            .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"));
+        let mut child = ChildGuard(spawn_fixture(&mut command));
+        assert!(child.0.wait().unwrap().success());
+    });
 }

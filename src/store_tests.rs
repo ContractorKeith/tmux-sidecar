@@ -105,3 +105,54 @@ fn recovers_committed_wal_after_writer_is_killed() {
         Some("survives crash")
     );
 }
+
+#[test]
+fn failed_tick_rolls_back_and_write_errors_name_database() {
+    let root = tempfile::tempdir().unwrap();
+    let db = root.path().join("tick.db");
+    let store = Store::open(&db).unwrap();
+    let pane = PaneSnapshot {
+        server_start: 1,
+        pane_id: "%1".into(),
+        pane_pid: 42,
+        cwd: "/work".into(),
+        current_command: "claude".into(),
+        pane_active: false,
+        window_active: false,
+        session_attached: false,
+    };
+    let processes = [(
+        42,
+        Process {
+            ppid: 1,
+            comm: "claude".into(),
+        },
+    )]
+    .into();
+    let mut changes = engine::detect(std::slice::from_ref(&pane), &processes, &[], 1);
+    changes.start.push(changes.start[0].clone()); // uniqueness fails after the first insert
+    let error = store
+        .apply(std::slice::from_ref(&pane), &changes, 1)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(db.to_str().unwrap()) && error.contains("move it aside"));
+    assert!(store.active().unwrap().is_empty());
+    changes.start.pop();
+    store.apply(&[pane], &changes, 1).unwrap();
+    assert_eq!(store.active().unwrap().len(), 1);
+    for invalid in ["garbage", "r", "r0", "r+1", "r-1", "r9223372036854775808"] {
+        assert!(store.end(invalid, 2).is_err(), "{invalid}");
+    }
+    store.end("r1", 2).unwrap();
+    assert!(store.active().unwrap().is_empty());
+}
+#[test]
+fn replaced_database_is_detected_even_when_path_exists() {
+    let root = tempfile::tempdir().unwrap();
+    let db = root.path().join("test.db");
+    let store = Store::open(&db).unwrap();
+    std::fs::rename(&db, root.path().join("old.db")).unwrap();
+    std::fs::write(&db, b"different file").unwrap();
+    let error = store.verify_identity().unwrap_err().to_string();
+    assert!(error.contains("history file was replaced") && error.contains(db.to_str().unwrap()));
+}

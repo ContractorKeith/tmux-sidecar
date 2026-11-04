@@ -1,11 +1,31 @@
 //! The daemon's SQLite boundary. History is never pruned.
 use crate::model::{AgentRun, RunSelector};
 use rusqlite::{Connection, OptionalExtension, params};
-use std::path::Path;
+use std::{
+    io,
+    os::unix::fs::MetadataExt,
+    path::{Path, PathBuf},
+};
 
-pub struct Store(Connection);
+mod queries;
+mod row;
+use row::{enum_name, number, row, run_id};
+fn db_error(path: &Path, error: impl std::fmt::Display) -> io::Error {
+    io::Error::other(format!(
+        "database {}: {error}; move it aside to start fresh",
+        path.display()
+    ))
+}
+pub struct Store {
+    connection: Connection,
+    path: PathBuf,
+    identity: (u64, u64),
+}
 impl Store {
-    pub fn open(path: &Path) -> rusqlite::Result<Self> {
+    pub fn open(path: &Path) -> io::Result<Self> {
+        Self::open_inner(path).map_err(|e| db_error(path, e))
+    }
+    fn open_inner(path: &Path) -> rusqlite::Result<Self> {
         let mut connection = Connection::open(path)?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.pragma_update(None, "foreign_keys", true)?;
@@ -38,147 +58,74 @@ impl Store {
                 UPDATE meta SET schema_version=1;")?;
         }
         tx.commit()?;
-        Ok(Self(connection))
+        let meta = std::fs::metadata(path)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        Ok(Self {
+            connection,
+            path: path.to_owned(),
+            identity: (meta.dev(), meta.ino()),
+        })
     }
-    pub fn insert(&self, run: &AgentRun) -> rusqlite::Result<String> {
-        self.pane(run.server_start, &run.pane_id)?;
-        self.0.execute("INSERT INTO runs(server_start,pane_id,agent,agent_pid,agent_session_id,
-            cwd,project_root,started_at,ended_at,state,state_since,state_source,read_at,
-            last_assistant_text,transcript_path) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
-            params![number(run.server_start)?, run.pane_id, enum_name(&run.agent), run.agent_pid,
-                run.agent_session_id, run.cwd, run.project_root, number(run.started_at)?, run.ended_at.map(number).transpose()?,
-                enum_name(&run.state), number(run.state_since)?, run.state_source, run.read_at.map(number).transpose()?,
-                run.last_assistant_text, run.transcript_path])?;
-        Ok(format!("r{}", self.0.last_insert_rowid()))
-    }
-    pub fn end(&self, id: &str, now: u64) -> rusqlite::Result<()> {
-        self.0.execute(
-            "UPDATE runs SET ended_at=?1,state='done',state_since=?1,state_source='process'
-            WHERE id=?2 AND ended_at IS NULL",
-            params![number(now)?, id.strip_prefix('r')],
-        )?;
-        Ok(())
-    }
-    pub fn end_all(&self, now: u64) -> rusqlite::Result<()> {
-        self.0.execute(
-            "UPDATE runs SET ended_at=?1,state='done',state_since=?1,state_source='process'
-            WHERE ended_at IS NULL",
-            [number(now)?],
-        )?;
-        Ok(())
-    }
-    pub fn list(&self) -> rusqlite::Result<Vec<AgentRun>> {
-        self.0
-            .prepare("SELECT * FROM runs ORDER BY id")?
-            .query_map([], row)?
-            .collect()
-    }
-    pub fn active(&self) -> rusqlite::Result<Vec<AgentRun>> {
-        self.0
-            .prepare("SELECT * FROM runs WHERE ended_at IS NULL ORDER BY id")?
-            .query_map([], row)?
-            .collect()
-    }
-    pub fn get(
-        &self,
-        selector: RunSelector,
-        server_start: u64,
-    ) -> rusqlite::Result<Option<AgentRun>> {
-        match selector {
-            RunSelector::Run(id) => self
-                .0
-                .query_row("SELECT * FROM runs WHERE id=?1", [number(id)?], row)
-                .optional(),
-            RunSelector::Pane(id) => self
-                .0
-                .query_row(
-                    "SELECT * FROM runs WHERE server_start=?1 AND pane_id=?2
-                AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
-                    params![number(server_start)?, format!("%{id}")],
-                    row,
-                )
-                .optional(),
+}
+
+impl Store {
+    pub fn verify_identity(&self) -> io::Result<()> {
+        let meta = std::fs::metadata(&self.path)
+            .map_err(|e| db_error(&self.path, format!("history file disappeared: {e}")))?;
+        if (meta.dev(), meta.ino()) != self.identity {
+            return Err(db_error(
+                &self.path,
+                "history file was replaced while the daemon was running",
+            ));
         }
-    }
-    pub fn pane(&self, server_start: u64, pane_id: &str) -> rusqlite::Result<()> {
-        self.0.execute(
-            "INSERT OR IGNORE INTO panes(server_start,pane_id) VALUES (?1,?2)",
-            params![number(server_start)?, pane_id],
-        )?;
         Ok(())
     }
-    pub fn name_pane(
+    /// All changes from one snapshot commit together; a failure rolls back the tick.
+    pub fn apply(
         &self,
-        server_start: u64,
-        pane_id: &str,
-        name: Option<&str>,
-    ) -> rusqlite::Result<()> {
-        self.pane(server_start, pane_id)?;
-        self.0.execute(
-            "UPDATE panes SET name=?3 WHERE server_start=?1 AND pane_id=?2",
-            params![number(server_start)?, pane_id, name],
-        )?;
-        Ok(())
+        panes: &[crate::seams::PaneSnapshot],
+        changes: &crate::engine::Changes,
+        now: u64,
+    ) -> io::Result<()> {
+        let tx = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|e| db_error(&self.path, e))?;
+        for pane in panes {
+            self.pane(pane.server_start, &pane.pane_id)?;
+        }
+        for id in &changes.end {
+            self.end(id, now)?;
+        }
+        for run in &changes.start {
+            self.insert(run)?;
+        }
+        tx.commit().map_err(|e| db_error(&self.path, e))
     }
-    pub fn pane_name(&self, server_start: u64, pane_id: &str) -> rusqlite::Result<Option<String>> {
-        self.0
-            .query_row(
-                "SELECT name FROM panes WHERE server_start=?1 AND pane_id=?2",
-                params![number(server_start)?, pane_id],
-                |r| r.get(0),
-            )
-            .optional()
-            .map(Option::flatten)
+    pub fn query_runs(
+        &self,
+        all: bool,
+        state: Option<crate::model::AgentState>,
+        limit: u32,
+    ) -> io::Result<Vec<AgentRun>> {
+        (|| -> rusqlite::Result<_> {
+            self.connection
+                .prepare(
+                    "SELECT * FROM runs WHERE (?1 OR ended_at IS NULL)
+                AND (?2 IS NULL OR state=?2) ORDER BY id DESC LIMIT ?3",
+                )?
+                .query_map(
+                    params![
+                        all,
+                        state.as_ref().map(enum_name),
+                        if all { i64::from(limit) } else { -1 }
+                    ],
+                    row,
+                )?
+                .collect()
+        })()
+        .map_err(|e| db_error(&self.path, e))
     }
-}
-fn number(value: u64) -> rusqlite::Result<i64> {
-    i64::try_from(value).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-}
-fn unsigned(r: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> {
-    let value: i64 = r.get(index)?;
-    u64::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(index, value))
-}
-fn enum_name(value: &impl serde::Serialize) -> String {
-    serde_json::to_value(value)
-        .expect("fieldless enum serializes")
-        .as_str()
-        .expect("enum is a string")
-        .into()
-}
-fn enum_column<T: serde::de::DeserializeOwned>(
-    r: &rusqlite::Row<'_>,
-    index: usize,
-) -> rusqlite::Result<T> {
-    let value: String = r.get(index)?;
-    serde_json::from_value(value.into()).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(index, rusqlite::types::Type::Text, Box::new(e))
-    })
-}
-fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<AgentRun> {
-    Ok(AgentRun {
-        id: format!("r{}", r.get::<_, i64>(0)?),
-        server_start: unsigned(r, 1)?,
-        pane_id: r.get(2)?,
-        agent: enum_column(r, 3)?,
-        agent_pid: r.get(4)?,
-        agent_session_id: r.get(5)?,
-        cwd: r.get(6)?,
-        project_root: r.get(7)?,
-        started_at: unsigned(r, 8)?,
-        ended_at: r
-            .get::<_, Option<i64>>(9)?
-            .map(|v| u64::try_from(v).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(9, v)))
-            .transpose()?,
-        state: enum_column(r, 10)?,
-        state_since: unsigned(r, 11)?,
-        state_source: r.get(12)?,
-        read_at: r
-            .get::<_, Option<i64>>(13)?
-            .map(|v| u64::try_from(v).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(13, v)))
-            .transpose()?,
-        last_assistant_text: r.get(14)?,
-        transcript_path: r.get(15)?,
-    })
 }
 
 #[cfg(test)]

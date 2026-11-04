@@ -1,4 +1,4 @@
-use super::{other, transport::failure};
+use super::transport::failure;
 use crate::{
     model::AgentState,
     rpc::{self, Outcome, Request, Response, Version},
@@ -50,25 +50,35 @@ pub fn handle(request: Request, store: &Store, key: &str, poll_ms: u64) -> Respo
     }
 }
 fn list(request: &Request, store: &Store) -> Result<Value, (i32, String)> {
-    #[derive(serde::Deserialize, Default)]
+    #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Filters {
         group: Option<String>,
         state: Option<AgentState>,
+        #[serde(default)]
+        all: bool,
+        #[serde(default = "default_limit")]
+        limit: u32,
     }
     let filters: Filters = match request.params.as_ref().filter(|p| !p.is_null()) {
-        None => Filters::default(),
+        None => Filters {
+            group: None,
+            state: None,
+            all: false,
+            limit: default_limit(),
+        },
         Some(value) => serde_json::from_value(value.clone())
             .map_err(|e| (rpc::INVALID_PARAMS, e.to_string()))?,
     };
     if filters.group.is_some() {
         return Err((rpc::METHOD_NOT_FOUND, "not implemented yet (M3)".into()));
     }
-    let mut runs = store
-        .list()
-        .map_err(|e| (rpc::INTERNAL_ERROR, other(e).to_string()))?;
-    if let Some(state) = filters.state {
-        runs.retain(|run| run.state == state);
-    }
+    let runs = store
+        .query_runs(filters.all, filters.state, filters.limit)
+        .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))?;
     serde_json::to_value(runs).map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))
+}
+
+fn default_limit() -> u32 {
+    100
 }

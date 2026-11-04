@@ -158,3 +158,33 @@ fn ignores_nested_helpers_and_handles_missing_or_cyclic_ancestors() {
     );
     assert_eq!(detect(&[pane], &processes, &[], 2).start[0].agent_pid, 70);
 }
+
+#[test]
+fn skipped_pane_keeps_its_active_run() {
+    let pane = PaneSnapshot {
+        server_start: 1,
+        pane_id: "%7".into(),
+        pane_pid: 10,
+        cwd: "/work".into(),
+        current_command: "claude".into(),
+        pane_active: false,
+        window_active: false,
+        session_attached: false,
+    };
+    let processes = [(
+        10,
+        Process {
+            ppid: 1,
+            comm: "claude".into(),
+        },
+    )]
+    .into();
+    let mut run = detect(&[pane], &processes, &[], 1).start.remove(0);
+    run.id = "r1".into();
+    assert!(
+        detect_scan(&[], &["%7".into()], &processes, &[run.clone()], 2)
+            .end
+            .is_empty()
+    );
+    assert_eq!(detect_scan(&[], &[], &processes, &[run], 3).end, ["r1"]);
+}

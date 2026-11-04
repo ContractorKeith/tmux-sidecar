@@ -42,6 +42,10 @@ pub async fn serve(stream: UnixStream, sender: mpsc::Sender<Call>) -> std::io::R
             return Ok(());
         }
         if count > 1024 * 1024 {
+            let response = failure(None, rpc::INVALID_REQUEST, "frame exceeds 1 MiB");
+            let mut bytes = serde_json::to_vec(&response)?;
+            bytes.push(b'\n');
+            writer.write_all(&bytes).await?;
             return Ok(());
         }
         let response = match serde_json::from_slice::<Value>(&bytes) {

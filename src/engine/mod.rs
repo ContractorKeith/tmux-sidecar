@@ -17,6 +17,15 @@ pub fn detect(
     runs: &[AgentRun],
     now: u64,
 ) -> Changes {
+    detect_scan(panes, &[], processes, runs, now)
+}
+pub fn detect_scan(
+    panes: &[PaneSnapshot],
+    skipped: &[String],
+    processes: &ProcessSnapshot,
+    runs: &[AgentRun],
+    now: u64,
+) -> Changes {
     let mut detected = Vec::new();
     for pane in panes {
         // A pane may execute the agent directly, so include pane_pid itself.
@@ -74,7 +83,11 @@ pub fn detect(
     Changes {
         end: runs
             .iter()
-            .filter(|r| r.ended_at.is_none() && !detected.iter().any(|d| same(r, d)))
+            .filter(|r| {
+                r.ended_at.is_none()
+                    && !skipped.contains(&r.pane_id)
+                    && !detected.iter().any(|d| same(r, d))
+            })
             .map(|r| r.id.clone())
             .collect(),
         start: detected

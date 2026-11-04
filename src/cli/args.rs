@@ -17,6 +17,10 @@ pub enum Command {
     /// List agent runs on this tmux server.
     List {
         #[arg(long)]
+        all: bool,
+        #[arg(long, default_value_t = 100)]
+        limit: u32,
+        #[arg(long)]
         group: Option<String>,
         #[arg(long, value_enum)]
         state: Option<AgentState>,

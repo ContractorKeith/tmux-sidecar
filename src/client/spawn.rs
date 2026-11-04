@@ -37,14 +37,29 @@ impl Drop for FileLock {
     }
 }
 
-// Until startup succeeds, cancellation and every error path must reap the child.
-struct StartingChild(Option<Child>);
+// Binding the socket hands lifecycle ownership to the daemon. Cancellation before
+// that point sends SIGTERM and reaps asynchronously, allowing normal cleanup.
+struct StartingChild {
+    child: Option<Child>,
+    socket: PathBuf,
+}
+impl StartingChild {
+    fn release(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+    }
+}
 impl Drop for StartingChild {
     fn drop(&mut self) {
-        if let Some(child) = &mut self.0 {
-            let _ = child.kill();
-            let _ = child.wait();
+        if !self.socket.exists()
+            && let Some(child) = &self.child
+        {
+            crate::proc::terminate(child.id());
         }
+        self.release();
     }
 }
 
@@ -73,15 +88,12 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
             Err(e) => return Err(e),
         }
     }
-    let log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .mode(0o600)
-        .open(paths.state.join("daemon.log"))?;
+    let log = crate::daemon::log::open(&paths.state)?;
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("--tmux-socket")
         .arg(socket)
+        .env("TMUX_SIDECAR_DETACHED", "1")
         .args(["daemon", "run"])
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
@@ -95,25 +107,29 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
             Ok(())
         });
     }
-    let mut starting = StartingChild(Some(command.spawn()?));
+    let mut starting = StartingChild {
+        child: Some(command.spawn()?),
+        socket: paths.runtime.join("sock"),
+    };
     loop {
+        if starting.socket.exists() {
+            starting.release();
+        }
         if connect(paths).await.is_ok() {
-            // Reap when the caller stays alive (library users); the detached daemon otherwise
-            // outlives this CLI and is adopted by init.
-            let mut child = starting.0.take().expect("startup child is present");
-            std::thread::spawn(move || {
-                let _ = child.wait();
-            });
+            starting.release();
             return Ok(());
         }
-        if let Some(status) = starting
-            .0
-            .as_mut()
-            .expect("startup child is present")
-            .try_wait()?
+        if let Some(child) = &mut starting.child
+            && let Some(status) = child.try_wait()?
         {
+            let log = paths.state.join("daemon.log");
+            let detail = fs::read_to_string(&log)
+                .ok()
+                .and_then(|s| s.lines().last().map(str::to_owned))
+                .unwrap_or_default();
             return Err(io::Error::other(format!(
-                "daemon exited {status}; see daemon.log"
+                "daemon exited {status}: {detail}; see {}",
+                log.display()
             )));
         }
         if Instant::now() >= deadline {
@@ -125,3 +141,7 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
+
+#[cfg(test)]
+#[path = "spawn_tests.rs"]
+mod tests;

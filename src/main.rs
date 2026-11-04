@@ -6,10 +6,19 @@ use tmux_sidecar::cli::{self, Cli};
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    let detached = std::env::var_os("TMUX_SIDECAR_DETACHED").is_some()
+        && matches!(
+            &cli.command,
+            cli::Command::Daemon {
+                command: cli::Daemon::Run
+            }
+        );
     match cli::execute(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err((code, error)) => {
-            eprintln!("tmux-sidecar: {error}");
+            if !detached {
+                eprintln!("tmux-sidecar: {error}");
+            }
             ExitCode::from(code)
         }
     }

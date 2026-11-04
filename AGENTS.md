@@ -48,6 +48,8 @@ cargo build --release                              # target/release/tmux-sidecar
   `tmux -L tsx-<random>`. Assert fake agents are first on PATH before each e2e run.
 - Every test that starts a process (daemon, tmux, fake agent) kills it in a drop guard.
 - `/tmp` on Omarchy is a small tmpfs; set `TMPDIR` to a scratch dir outside any checkout if it fills.
+- `TMUX_SIDECAR_POLL_MS` overrides config `poll_ms` (default 1000); tests use 100.
+- `daemon.log` is capped at 1 MiB and rotated once to `daemon.log.1`.
 - A detached daemon needs its own lifetime lock as well as `spawn.lock`: foreground starts
   must never unlink a live socket. Keep lock descriptors CLOEXEC.
 - Commits: `<type>: <description>`, author @ContractorKeith only.

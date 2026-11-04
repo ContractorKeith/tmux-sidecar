@@ -57,3 +57,8 @@ mod lifecycle;
 
 #[path = "support/protocol.rs"]
 mod protocol;
+
+#[path = "support/resilience.rs"]
+mod resilience;
+#[path = "support/round1.rs"]
+mod round1;

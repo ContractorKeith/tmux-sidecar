@@ -1,15 +1,14 @@
 //! One socket owner and one poller per tmux server.
+pub mod log;
 mod methods;
+pub use methods::handle as dispatch;
 mod peer;
+mod poll;
+mod store_worker;
 mod transport;
 use crate::{
     client::FileLock,
-    engine,
     paths::{self, Paths},
-    proc::PsProcessTree,
-    seams::{ProcessTree, Tmux},
-    store::Store,
-    tmux::{RealTmux, Socket},
 };
 use std::{
     fs, io,
@@ -38,7 +37,16 @@ impl Drop for RuntimeGuard {
 }
 
 pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
-    paths::prepare(&paths)?;
+    let result = run_inner(socket, &paths).await;
+    if let Err(error) = &result
+        && paths::prepare(&paths).is_ok()
+    {
+        let _ = log::write(&paths.state, &error.to_string());
+    }
+    result
+}
+async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
+    paths::prepare(paths)?;
     // Also protects foreground starts; never unlink a live daemon's socket.
     let _lock = FileLock::try_acquire(&paths.runtime.join("daemon.lock"))?;
     let _guard = RuntimeGuard(paths.runtime.clone());
@@ -47,11 +55,25 @@ pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => (),
         Err(e) => return Err(e),
     }
-    let store = Store::open(&paths.state.join("tmux-sidecar.db")).map_err(other)?;
-    let poll_ms = poll_ms(&paths)?;
-    if !poll(&socket, &store).await? {
-        store.end_all(now()).map_err(other)?;
-        return Err(io::Error::other("tmux server is not running"));
+    let db = paths.state.join("tmux-sidecar.db");
+    if !db.exists() {
+        log::write(
+            &paths.state,
+            &format!("creating fresh database {}", db.display()),
+        )?;
+    }
+    let store = store_worker::StoreWorker::open(db).await?;
+    let poll_ms = poll_ms(paths)?;
+    let mut health = poll::Health::default();
+    let initial = poll::tick(socket.clone(), &store).await;
+    health.record(&initial);
+    match initial {
+        Ok(false) => return Err(io::Error::other("tmux server is not running")),
+        Err(f) if f.fatal => return Err(f.error),
+        Err(f) => {
+            log::write(&paths.state, &format!("initial poll failure: {}", f.error))?;
+        }
+        Ok(true) => (),
     }
     let listener = UnixListener::bind(paths.runtime.join("sock"))?;
     fs::set_permissions(
@@ -73,8 +95,19 @@ pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
         tokio::select! {
             _ = term.recv() => break Ok(()),
             _ = interrupt.recv() => break Ok(()),
-            _ = interval.tick() => match poll(&socket, &store).await {
-                Ok(true) => (), Ok(false) => break Ok(()), Err(e) => break Err(e),
+            _ = interval.tick() => {
+                let result = poll::tick(socket.clone(), &store).await;
+                let stop = health.record(&result);
+                match result {
+                    Ok(true) => (), Ok(false) => break Ok(()), Err(failure) => {
+                        let message = format!("poll failure {}: {}", health.failures(), failure.error);
+                        let _ = log::write(&paths.state, &message);
+                        if stop {
+                            let _ = log::write(&paths.state, "daemon exiting after fatal database loss or 5 consecutive poll failures");
+                            break Err(failure.error);
+                        }
+                    }
+                }
             },
             incoming = listener.accept() => match incoming {
                 Ok((stream, _)) => { let sender = sender.clone(); connections.spawn(async move { transport::serve(stream, sender).await }); },
@@ -82,14 +115,14 @@ pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
             },
             Some(call) = receiver.recv() => {
                 let stop = call.request.method == "daemon.stop" && methods::empty_params(&call.request);
-                let response = methods::handle(call.request, &store, &key, poll_ms);
+                let key = key.clone();
+                let response = store.with(move |store| dispatch(call.request, store, &key, poll_ms)).await?;
                 let _ = call.reply.send(response);
                 if stop { break Ok(()); }
             },
             Some(_) = connections.join_next(), if !connections.is_empty() => (),
         }
     };
-    store.end_all(now()).map_err(other)?;
     drop(listener);
     // Let the stop response reach its client, then close any idle connections.
     let _ = tokio::time::timeout(Duration::from_millis(100), async {
@@ -97,45 +130,8 @@ pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
     })
     .await;
     connections.shutdown().await;
+    store.close().await?;
     result
-}
-async fn poll(socket: &std::path::Path, store: &Store) -> io::Result<bool> {
-    let socket = socket.to_path_buf();
-    let snapshot = tokio::task::spawn_blocking(move || {
-        let tmux = RealTmux {
-            socket: Socket::Path(socket),
-        };
-        let panes = match tmux.list_panes() {
-            Ok(panes) => panes,
-            Err(e) => {
-                // A failed exec is an operational error; a failed tmux invocation means its server is gone.
-                if e.kind() == io::ErrorKind::Other {
-                    return Ok(None);
-                }
-                return Err(e);
-            }
-        };
-        Ok(Some((panes, PsProcessTree.snapshot()?)))
-    })
-    .await
-    .map_err(other)??;
-    let Some((panes, processes)) = snapshot else {
-        return Ok(false);
-    };
-    let now = now();
-    let changes = engine::detect(&panes, &processes, &store.active().map_err(other)?, now);
-    for pane in panes {
-        store
-            .pane(pane.server_start, &pane.pane_id)
-            .map_err(other)?;
-    }
-    for id in changes.end {
-        store.end(&id, now).map_err(other)?;
-    }
-    for run in changes.start {
-        store.insert(&run).map_err(other)?;
-    }
-    Ok(true)
 }
 fn poll_ms(paths: &Paths) -> io::Result<u64> {
     let config = match fs::read_to_string(&paths.config) {
