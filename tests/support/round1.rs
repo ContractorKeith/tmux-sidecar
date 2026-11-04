@@ -29,7 +29,15 @@ fn byte_cwd_is_discovered() {
         .scratch
         .path()
         .join(std::ffi::OsString::from_vec(b"bad-\xff".to_vec()));
-    fs::create_dir(&cwd).unwrap();
+    match fs::create_dir(&cwd) {
+        Ok(()) => (),
+        // APFS rejects invalid UTF-8 at mkdir; parser coverage still runs on macOS.
+        Err(error) if cfg!(target_os = "macos") && error.raw_os_error() == Some(libc::EILSEQ) => {
+            eprintln!("skip live byte-cwd fixture: filesystem rejects invalid UTF-8 ({error})");
+            return;
+        }
+        Err(error) => panic!("create byte-cwd fixture: {error}"),
+    }
     assert!(
         g.command()
             .args(["new-window", "-d", "-c"])
