@@ -1,1 +1,133 @@
-//! M1: store implementation.
+//! The daemon's SQLite boundary. History is never pruned.
+use crate::model::{AgentRun, RunSelector};
+use rusqlite::{Connection, OptionalExtension, params};
+use std::{
+    io,
+    os::unix::fs::MetadataExt,
+    path::{Path, PathBuf},
+};
+
+mod queries;
+mod row;
+use row::{enum_name, number, row, run_id};
+fn db_error(path: &Path, error: impl std::fmt::Display) -> io::Error {
+    io::Error::other(format!(
+        "database {}: {error}; move it aside to start fresh",
+        path.display()
+    ))
+}
+pub struct Store {
+    connection: Connection,
+    path: PathBuf,
+    identity: (u64, u64),
+}
+impl Store {
+    pub fn open(path: &Path) -> io::Result<Self> {
+        Self::open_inner(path).map_err(|e| db_error(path, e))
+    }
+    fn open_inner(path: &Path) -> rusqlite::Result<Self> {
+        let mut connection = Connection::open(path)?;
+        connection.pragma_update(None, "journal_mode", "WAL")?;
+        connection.pragma_update(None, "foreign_keys", true)?;
+        connection.busy_timeout(std::time::Duration::from_secs(2))?;
+        let tx = connection.transaction()?;
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meta(schema_version INTEGER NOT NULL);
+            INSERT INTO meta SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM meta);",
+        )?;
+        let version: u32 = tx.query_row("SELECT schema_version FROM meta", [], |r| r.get(0))?;
+        if version > 1 {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        if version == 0 {
+            tx.execute_batch("CREATE TABLE runs(
+                id INTEGER PRIMARY KEY, server_start INTEGER NOT NULL, pane_id TEXT NOT NULL,
+                agent TEXT NOT NULL, agent_pid INTEGER NOT NULL, agent_session_id TEXT,
+                cwd TEXT NOT NULL, project_root TEXT, started_at INTEGER NOT NULL, ended_at INTEGER,
+                state TEXT NOT NULL, state_since INTEGER NOT NULL, state_source TEXT NOT NULL,
+                read_at INTEGER, last_assistant_text TEXT NOT NULL, transcript_path TEXT);
+                CREATE UNIQUE INDEX active_run ON runs(server_start,pane_id,agent_pid) WHERE ended_at IS NULL;
+                CREATE TABLE signals(id INTEGER PRIMARY KEY, run_id INTEGER REFERENCES runs(id),
+                    at INTEGER, source TEXT, kind TEXT, payload_json TEXT);
+                CREATE TABLE panes(server_start INTEGER, pane_id TEXT, name TEXT,
+                    PRIMARY KEY(server_start,pane_id));
+                CREATE TABLE groups(id INTEGER PRIMARY KEY, name TEXT UNIQUE);
+                CREATE TABLE group_members(group_id INTEGER REFERENCES groups(id), server_start INTEGER,
+                    pane_id TEXT, PRIMARY KEY(group_id,server_start,pane_id),
+                    FOREIGN KEY(server_start,pane_id) REFERENCES panes(server_start,pane_id));
+                UPDATE meta SET schema_version=1;")?;
+        }
+        tx.commit()?;
+        let meta = std::fs::metadata(path)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        Ok(Self {
+            connection,
+            path: path.to_owned(),
+            identity: (meta.dev(), meta.ino()),
+        })
+    }
+}
+
+impl Store {
+    pub fn verify_identity(&self) -> io::Result<()> {
+        let meta = std::fs::metadata(&self.path)
+            .map_err(|e| db_error(&self.path, format!("history file disappeared: {e}")))?;
+        if (meta.dev(), meta.ino()) != self.identity {
+            return Err(db_error(
+                &self.path,
+                "history file was replaced while the daemon was running",
+            ));
+        }
+        Ok(())
+    }
+    /// All changes from one snapshot commit together; a failure rolls back the tick.
+    pub fn apply(
+        &self,
+        panes: &[crate::seams::PaneSnapshot],
+        changes: &crate::engine::Changes,
+        now: u64,
+    ) -> io::Result<()> {
+        let tx = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|e| db_error(&self.path, e))?;
+        for pane in panes {
+            self.pane(pane.server_start, &pane.pane_id)?;
+        }
+        for id in &changes.end {
+            self.end(id, now)?;
+        }
+        for run in &changes.start {
+            self.insert(run)?;
+        }
+        tx.commit().map_err(|e| db_error(&self.path, e))
+    }
+    pub fn query_runs(
+        &self,
+        all: bool,
+        state: Option<crate::model::AgentState>,
+        limit: u32,
+    ) -> io::Result<Vec<AgentRun>> {
+        (|| -> rusqlite::Result<_> {
+            self.connection
+                .prepare(
+                    "SELECT * FROM runs WHERE (?1 OR ended_at IS NULL)
+                AND (?2 IS NULL OR state=?2) ORDER BY id DESC LIMIT ?3",
+                )?
+                .query_map(
+                    params![
+                        all,
+                        state.as_ref().map(enum_name),
+                        if all { i64::from(limit) } else { -1 }
+                    ],
+                    row,
+                )?
+                .collect()
+        })()
+        .map_err(|e| db_error(&self.path, e))
+    }
+}
+
+#[cfg(test)]
+#[path = "store_tests.rs"]
+mod tests;

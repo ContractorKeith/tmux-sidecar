@@ -1,4 +1,6 @@
-//! Pure path resolution; callers create directories with mode 0700 in M1.
+//! Per-server paths and private runtime directories.
+mod runtime;
+pub use runtime::{current, prepare, uid};
 use std::{
     ffi::{OsStr, OsString},
     io,

@@ -1,12 +1,7 @@
 use std::process::Command;
 #[test]
-fn every_verb_is_an_explicit_stub() {
+fn future_verbs_remain_explicit_stubs() {
     for (args, verb, milestone) in [
-        (
-            vec!["list", "--group", "g", "--state", "blocked", "--json"],
-            "list",
-            1,
-        ),
         (vec!["attention", "--json"], "attention", 4),
         (vec!["watch", "--json"], "watch", 4),
         (
@@ -56,9 +51,6 @@ fn every_verb_is_an_explicit_stub() {
         (vec!["hook", "claude"], "hook", 2),
         (vec!["hook", "codex", "-payload"], "hook", 2),
         (vec!["hook", "codex-notify", "{}"], "hook", 2),
-        (vec!["daemon", "status", "--json"], "daemon status", 1),
-        (vec!["daemon", "stop"], "daemon stop", 1),
-        (vec!["daemon", "run"], "daemon run", 1),
         (vec!["doctor", "--json"], "doctor", 7),
         (vec!["ui"], "ui", 5),
         (vec!["mcp", "--allow-send"], "mcp", 6),
@@ -139,4 +131,25 @@ fn nested_help_lists_every_subcommand() {
 fn fakes_are_available_to_integration_tests() {
     use tmux_sidecar::seams::{Tmux, fakes::FakeTmux};
     assert!(FakeTmux::default().list_panes().unwrap().is_empty());
+}
+
+#[test]
+fn missing_default_server_is_clear_and_never_spawns() {
+    let root = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+        .env_remove("TMUX")
+        .env("TMUX_TMPDIR", root.path())
+        .env("HOME", root.path())
+        .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
+        .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"))
+        .args(["list", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(6));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("no tmux server")
+    );
+    assert!(!root.path().join("run").exists());
 }

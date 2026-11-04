@@ -1,11 +1,25 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 use clap::Parser;
 use std::process::ExitCode;
-use tmux_sidecar::cli::Cli;
+use tmux_sidecar::cli::{self, Cli};
 
-fn main() -> ExitCode {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let (verb, milestone) = cli.command.pending();
-    eprintln!("tmux-sidecar: {verb} is not implemented yet (M{milestone})");
-    ExitCode::from(2)
+    let detached = std::env::var_os("TMUX_SIDECAR_DETACHED").is_some()
+        && matches!(
+            &cli.command,
+            cli::Command::Daemon {
+                command: cli::Daemon::Run
+            }
+        );
+    match cli::execute(cli).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err((code, error)) => {
+            if !detached {
+                eprintln!("tmux-sidecar: {error}");
+            }
+            ExitCode::from(code)
+        }
+    }
 }

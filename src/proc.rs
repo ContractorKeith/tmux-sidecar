@@ -1,5 +1,7 @@
 //! M0: process snapshot adapter for Linux and macOS.
+mod liveness;
 use crate::seams::{Process, ProcessSnapshot, ProcessTree};
+pub use liveness::running;
 use std::{io, path::Path, process::Command};
 
 pub struct PsProcessTree;
@@ -43,6 +45,27 @@ pub fn parse(text: &str) -> ProcessSnapshot {
             ))
         })
         .collect()
+}
+pub fn alive(pid: i32) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    // SAFETY: signal 0 probes a positive pid without delivering a signal.
+    unsafe {
+        libc::kill(pid, 0) == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+}
+
+pub fn terminate(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    if let Ok(pid) = i32::try_from(pid) {
+        // SAFETY: positive pid is owned by the startup guard; SIGTERM permits cleanup.
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+    }
 }
 #[cfg(test)]
 mod tests {

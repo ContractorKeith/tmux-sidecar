@@ -1,3 +1,20 @@
+use crate::support::BoundedCommand;
+macro_rules! e2e_test {
+    ($name:ident, $body:block) => {
+        #[test]
+        fn $name() {
+            crate::support::watchdog::run(
+                concat!(module_path!(), "::", stringify!($name)),
+                move || $body,
+            );
+        }
+    };
+}
+macro_rules! until {
+    ($condition:expr) => {
+        crate::support::wait_for(stringify!($condition), $condition)
+    };
+}
 mod support;
 use support::TmuxGuard;
 use tmux_sidecar::seams::Tmux;
@@ -13,8 +30,7 @@ fn enabled() -> bool {
         false
     }
 }
-#[test]
-fn real_adapter_sees_isolated_pane() {
+e2e_test!(real_adapter_sees_isolated_pane, {
     if !enabled() {
         return;
     }
@@ -24,9 +40,8 @@ fn real_adapter_sees_isolated_pane() {
     assert_eq!(panes[0].pane_id, "%0");
     assert!(panes[0].pane_pid > 0);
     assert!(panes[0].server_start > 0);
-}
-#[test]
-fn dropping_guard_kills_server() {
+});
+e2e_test!(dropping_guard_kills_server, {
     if !enabled() {
         return;
     }
@@ -36,7 +51,7 @@ fn dropping_guard_kills_server() {
         guard
             .command()
             .arg("list-sessions")
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .success()
@@ -45,9 +60,23 @@ fn dropping_guard_kills_server() {
     assert!(
         !check
             .arg("list-sessions")
-            .output()
+            .bounded_output()
             .unwrap()
             .status
             .success()
     );
-}
+});
+
+#[path = "support/lifecycle.rs"]
+mod lifecycle;
+
+#[path = "support/protocol.rs"]
+mod protocol;
+
+#[path = "support/resilience.rs"]
+mod resilience;
+#[path = "support/round1.rs"]
+mod round1;
+
+#[path = "support/shutdown.rs"]
+mod shutdown;

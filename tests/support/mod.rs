@@ -1,3 +1,8 @@
+mod copy_fixture;
+mod process;
+pub mod socket;
+pub mod watchdog;
+pub use process::{BoundedCommand, ChildGuard, output, stage, wait_for};
 use std::{
     ffi::OsString,
     fs,
@@ -11,6 +16,7 @@ pub struct TmuxGuard {
     pub adapter: RealTmux,
     pub scratch: TempDir,
     path: OsString,
+    server_socket: PathBuf,
 }
 impl TmuxGuard {
     pub fn start() -> Self {
@@ -29,9 +35,19 @@ impl TmuxGuard {
             },
             scratch,
             path: OsString::new(),
+            server_socket: PathBuf::new(),
         };
+        watchdog::register(guard.scratch.path());
         for dir in ["home", "run", "state", "config", "bin"] {
             fs::create_dir(guard.scratch.path().join(dir)).unwrap();
+        }
+        use std::os::unix::fs::PermissionsExt;
+        for dir in ["run", "state"] {
+            fs::set_permissions(
+                guard.scratch.path().join(dir),
+                fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
         }
         let helper = guard.scratch.path().join("fake-agent");
         // Build the bin-less helper directly: `cargo test --test e2e` also works on a clean tree.
@@ -39,7 +55,7 @@ impl TmuxGuard {
             .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_agent.rs"))
             .arg("-o")
             .arg(&helper)
-            .output()
+            .bounded_output()
             .unwrap();
         assert!(
             result.status.success(),
@@ -54,7 +70,10 @@ impl TmuxGuard {
         guard.path = std::env::join_paths(paths).unwrap();
         let mut shell = Command::new("/bin/sh");
         guard.isolate(&mut shell);
-        let output = shell.args(["-c", "command -v claude"]).output().unwrap();
+        let output = shell
+            .args(["-c", "command -v claude"])
+            .bounded_output()
+            .unwrap();
         assert!(output.status.success());
         assert_eq!(
             String::from_utf8(output.stdout).unwrap().trim(),
@@ -63,28 +82,38 @@ impl TmuxGuard {
         // Exercise a copied fake and ensure direct children are killed/reaped on failure too.
         let mut command = Command::new(guard.scratch.path().join("bin/codex"));
         guard.isolate(&mut command);
-        let _agent = ChildGuard(
-            command
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap(),
-        );
+        let _agent = ChildGuard(spawn_fixture(
+            command.stdout(Stdio::null()).stderr(Stdio::null()),
+        ));
         let output = guard
             .command()
             .args(["-f", "/dev/null", "new-session", "-d", "-s", "fixture"])
             .arg(guard.scratch.path().join("bin/claude"))
             .arg("--")
-            .output()
+            .bounded_output()
             .unwrap();
         assert!(
             output.status.success(),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        let socket = guard
+            .command()
+            .args(["display", "-p", "#{socket_path}\n#{pid}"])
+            .bounded_output()
+            .unwrap();
+        assert!(socket.status.success());
+        let text = String::from_utf8(socket.stdout).unwrap();
+        let mut fields = text.lines();
+        let socket = PathBuf::from(fields.next().unwrap());
+        watchdog::server(
+            guard.scratch.path(),
+            fields.next().unwrap().parse().unwrap(),
+        );
+        guard.server_socket = tmux_sidecar::paths::canonical_socket(&socket).unwrap();
         guard
     }
-    fn isolate(&self, command: &mut Command) {
+    pub fn isolate(&self, command: &mut Command) {
         let root = self.scratch.path();
         command
             .env("HOME", root.join("home"))
@@ -102,15 +131,47 @@ impl TmuxGuard {
         command
     }
 }
-impl Drop for TmuxGuard {
-    fn drop(&mut self) {
-        let _ = self.command().arg("kill-server").output();
+impl TmuxGuard {
+    pub fn socket(&self) -> PathBuf {
+        self.server_socket.clone()
+    }
+    pub fn sidecar(&self) -> Command {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
+        self.isolate(&mut cmd);
+        cmd.env("TMUX_SIDECAR_POLL_MS", "100")
+            .arg("--tmux-socket")
+            .arg(self.socket());
+        cmd
     }
 }
-struct ChildGuard(Child);
-impl Drop for ChildGuard {
+impl Drop for TmuxGuard {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        // Scoped to this scratch directory, including cleanup on an assertion failure.
+        if self.scratch.path().join("run/daemon.pid").exists() {
+            let mut cmd = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
+            self.isolate(&mut cmd);
+            cmd.arg("--tmux-socket")
+                .arg(&self.server_socket)
+                .args(["daemon", "stop"]);
+            let _ = process::try_output(&mut cmd);
+        }
+        let _ = process::try_output(self.command().arg("kill-server"));
+        watchdog::unregister(self.scratch.path());
+    }
+}
+// Concurrent forks can briefly inherit a copy's writable fd before exec closes it.
+fn spawn_fixture(command: &mut Command) -> Child {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    loop {
+        match command.spawn() {
+            Ok(child) => return child,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => panic!("fake agent startup: {error}"),
+        }
     }
 }

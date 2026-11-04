@@ -11,6 +11,9 @@ command -v tmux >/dev/null || { echo "accept: tmux is required" >&2; exit 1; }
 scratch="$(mktemp -d)"
 tsock="tsx-accept-$$"
 cleanup() {
+  if [ -n "${bin:-}" ] && [ -n "${socket:-}" ]; then
+    "$bin" --tmux-socket "$socket" daemon stop >/dev/null 2>&1 || true
+  fi
   tmux -L "$tsock" kill-server 2>/dev/null || true
   rm -r "$scratch" 2>/dev/null || true
 }
@@ -23,6 +26,7 @@ export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_STATE_HOME="$s
 export TMUX_SIDECAR_RUNTIME_DIR="$scratch/run" TMUX_SIDECAR_STATE_DIR="$scratch/data"
 export TMUX_TMPDIR="$scratch"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMUX_SIDECAR_RUNTIME_DIR" "$TMUX_SIDECAR_STATE_DIR"
+chmod 700 "$TMUX_SIDECAR_RUNTIME_DIR" "$TMUX_SIDECAR_STATE_DIR"
 unset TMUX TMUX_PANE
 
 echo "== gate"
@@ -40,6 +44,23 @@ echo "== e2e (real tmux)"
 TMUX_SIDECAR_E2E=1 cargo test --locked --test e2e
 
 echo "== live checks"
-# One block per milestone, expected result in a comment. M0 has none beyond --version.
+# M1: the script owns this server and daemon; the EXIT trap handles failures too.
+tmux -L "$tsock" -f /dev/null new-session -d -s fixture 'sleep 120'
+socket="$(tmux -L "$tsock" display -p '#{socket_path}')"
+status=0
+"$bin" --tmux-socket "$socket" daemon status >/dev/null 2>&1 || status=$?
+test "$status" -eq 6
+"$bin" --tmux-socket "$socket" list --json
+"$bin" --tmux-socket "$socket" daemon status --json
+daemon_pid="$(cat "$TMUX_SIDECAR_RUNTIME_DIR/daemon.pid")"
+"$bin" --tmux-socket "$socket" daemon stop
+test ! -e "$TMUX_SIDECAR_RUNTIME_DIR/sock"
+if kill -0 "$daemon_pid" 2>/dev/null; then
+  # A just-exited orphan can briefly be a zombie; it is no longer a daemon.
+  if ps -p "$daemon_pid" -o args= | grep -q 'tmux-sidecar.*daemon.*run'; then
+    echo "accept: daemon still running" >&2
+    exit 1
+  fi
+fi
 
 echo "accept: ok"

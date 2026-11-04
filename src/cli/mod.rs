@@ -1,6 +1,8 @@
 //! M0: CLI grammar; handlers arrive in the indicated milestones.
 mod args;
+mod execute;
 pub use args::*;
+pub use execute::execute;
 
 impl Command {
     pub fn pending(&self) -> (&'static str, u8) {

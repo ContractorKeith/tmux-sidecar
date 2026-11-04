@@ -19,6 +19,12 @@ pub struct PaneSnapshot {
 
 pub trait Tmux {
     fn list_panes(&self) -> io::Result<Vec<PaneSnapshot>>;
+    fn scan(&self) -> io::Result<crate::tmux::PaneScan> {
+        Ok(crate::tmux::PaneScan {
+            panes: self.list_panes()?,
+            skipped: Vec::new(),
+        })
+    }
     fn paste_text(&self, pane: &str, text: &str) -> io::Result<()>;
     fn send_enter(&self, pane: &str) -> io::Result<()>;
     fn display_message(&self, pane: &str, text: &str) -> io::Result<()>;

@@ -48,6 +48,26 @@ impl FromStr for RunSelector {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentRun {
+    pub id: String,
+    pub server_start: u64,
+    pub pane_id: String,
+    pub agent: AgentKind,
+    pub agent_pid: u32,
+    pub agent_session_id: Option<String>,
+    pub cwd: String,
+    pub project_root: Option<String>,
+    pub started_at: u64,
+    pub ended_at: Option<u64>,
+    pub state: AgentState,
+    pub state_since: u64,
+    pub state_source: String,
+    pub read_at: Option<u64>,
+    pub last_assistant_text: String,
+    pub transcript_path: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

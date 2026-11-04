@@ -220,7 +220,7 @@ not stored. Manual groups are stored and contain pane keys.
 ## 7. CLI and API contract
 
 ```
-tmux-sidecar list [--group G] [--state S] [--json]        agent runs on this tmux server
+tmux-sidecar list [--group G] [--state S] [--all] [--limit N] [--json]  active runs; --all includes history (newest first, limit 100)
 tmux-sidecar attention [--json]                            the attention queue
 tmux-sidecar watch [--json]                                stream state changes until Ctrl-C
 tmux-sidecar wait <sel> --until waiting|blocked|done [--timeout SECS] [--json]
