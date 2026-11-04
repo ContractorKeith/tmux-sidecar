@@ -85,10 +85,13 @@ test ! -s "$scratch/hook.stderr"
 # M3: a permission fixture puts a live run first in the attention queue.
 echo "== state live checks"
 cp "$(command -v sleep)" "$scratch/claude"
-pane="$(tmux -L "$tsock" new-window -d -P -F '#{pane_id}' "$scratch/claude 120")"
+tmux -L "$tsock" new-window -d -t fixture -n state "$scratch/claude 120"
 "$bin" --tmux-socket "$socket" list --json >/dev/null
-pane_pid="$(tmux -L "$tsock" display -p -t "$pane" '#{pane_pid}')"
-server_start="$(tmux -L "$tsock" display -p '#{start_time}')"
+pane_info="$(tmux -L "$tsock" list-panes -t fixture:state -F '#{pane_id} #{pane_pid} #{start_time}')"
+read -r pane pane_pid server_start <<PANE_INFO
+$pane_info
+PANE_INFO
+test -n "$server_start" || { echo "accept: incomplete pane metadata: $pane_info" >&2; exit 1; }
 python3 - "$TMUX_SIDECAR_RUNTIME_DIR/sock" "$pane_pid" "$server_start" "$pane" <<'PYLIVE'
 import json, socket, sys, time
 payload = json.load(open('tests/fixtures/hooks/claude/Notification-permission_prompt.json'))
