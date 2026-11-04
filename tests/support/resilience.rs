@@ -89,3 +89,24 @@ fn five_failed_polls_exit_nonzero_with_a_log() {
     );
     assert!(!g.scratch.path().join("run/sock").exists());
 }
+
+#[test]
+fn dropping_fixture_stops_daemon_before_the_next_poll() {
+    if !enabled() {
+        return;
+    }
+    let g = TmuxGuard::start();
+    let mut daemon = super::support::ChildGuard(
+        g.sidecar()
+            .env("TMUX_SIDECAR_POLL_MS", "60000")
+            .args(["daemon", "run"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    until(|| g.scratch.path().join("run/daemon.pid").exists());
+    drop(g);
+    until(|| daemon.0.try_wait().unwrap().is_some());
+    assert!(daemon.0.wait().unwrap().success());
+}

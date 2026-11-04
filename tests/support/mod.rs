@@ -1,3 +1,5 @@
+mod process;
+pub use process::{ChildGuard, output, stage};
 use std::{
     ffi::OsString,
     fs,
@@ -11,6 +13,7 @@ pub struct TmuxGuard {
     pub adapter: RealTmux,
     pub scratch: TempDir,
     path: OsString,
+    server_socket: PathBuf,
 }
 impl TmuxGuard {
     pub fn start() -> Self {
@@ -29,6 +32,7 @@ impl TmuxGuard {
             },
             scratch,
             path: OsString::new(),
+            server_socket: PathBuf::new(),
         };
         for dir in ["home", "run", "state", "config", "bin"] {
             fs::create_dir(guard.scratch.path().join(dir)).unwrap();
@@ -86,6 +90,14 @@ impl TmuxGuard {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        let socket = guard
+            .command()
+            .args(["display", "-p", "#{socket_path}"])
+            .output()
+            .unwrap();
+        assert!(socket.status.success());
+        let socket = PathBuf::from(String::from_utf8(socket.stdout).unwrap().trim());
+        guard.server_socket = tmux_sidecar::paths::canonical_socket(&socket).unwrap();
         guard
     }
     pub fn isolate(&self, command: &mut Command) {
@@ -108,13 +120,7 @@ impl TmuxGuard {
 }
 impl TmuxGuard {
     pub fn socket(&self) -> PathBuf {
-        let output = self
-            .command()
-            .args(["display", "-p", "#{socket_path}"])
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        String::from_utf8(output.stdout).unwrap().trim().into()
+        self.server_socket.clone()
     }
     pub fn sidecar(&self) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
@@ -132,21 +138,13 @@ impl Drop for TmuxGuard {
             let mut cmd = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
             self.isolate(&mut cmd);
             cmd.arg("--tmux-socket")
-                .arg("/unused")
+                .arg(&self.server_socket)
                 .args(["daemon", "stop"]);
-            let _ = cmd.output();
+            let _ = process::try_output(&mut cmd);
         }
         let _ = self.command().arg("kill-server").output();
     }
 }
-pub struct ChildGuard(pub Child);
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
 // Concurrent forks can briefly inherit a copy's writable fd before exec closes it.
 fn spawn_fixture(command: &mut Command) -> Child {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);

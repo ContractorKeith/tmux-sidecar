@@ -1,3 +1,4 @@
+use super::support::stage;
 use super::{TmuxGuard, enabled};
 use serde_json::Value;
 use std::{
@@ -23,7 +24,9 @@ fn history(guard: &TmuxGuard) -> Value {
         .unwrap())
 }
 pub(super) fn list(guard: &TmuxGuard) -> Value {
-    ok(guard.sidecar().args(["list", "--json"]).output().unwrap())
+    ok(super::support::output(
+        guard.sidecar().args(["list", "--json"]),
+    ))
 }
 pub(super) fn until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(4);
@@ -40,11 +43,7 @@ pub(super) fn pid(guard: &TmuxGuard) -> i32 {
 }
 pub(super) fn stop(guard: &TmuxGuard) {
     assert!(
-        guard
-            .sidecar()
-            .args(["daemon", "stop"])
-            .output()
-            .unwrap()
+        super::support::output(guard.sidecar().args(["daemon", "stop"]))
             .status
             .success()
     );
@@ -135,16 +134,20 @@ fn concurrent_clients_and_crash_recovery_keep_history() {
         return;
     }
     let guard = TmuxGuard::start();
+    stage("concurrent recovery: starting ten clients");
     let commands: Vec<_> = (0..10).map(|_| guard.sidecar()).collect();
     thread::scope(|scope| {
         let handles: Vec<_> = commands
             .into_iter()
-            .map(|mut cmd| scope.spawn(move || ok(cmd.args(["list", "--json"]).output().unwrap())))
+            .map(|mut cmd| {
+                scope.spawn(move || ok(super::support::output(cmd.args(["list", "--json"]))))
+            })
             .collect();
         for h in handles {
             assert_eq!(h.join().unwrap().as_array().unwrap().len(), 1);
         }
     });
+    stage("concurrent recovery: ten clients returned");
     let old_pid = pid(&guard);
     let before = list(&guard);
     let log = fs::read_to_string(guard.scratch.path().join("state/daemon.log")).unwrap();
@@ -156,12 +159,15 @@ fn concurrent_clients_and_crash_recovery_keep_history() {
     // SAFETY: this positive pid was read from our isolated daemon's pid file.
     assert_eq!(unsafe { libc::kill(old_pid, libc::SIGKILL) }, 0);
     until(|| UnixStream::connect(guard.scratch.path().join("run/sock")).is_err());
+    stage("concurrent recovery: killed daemon, requesting recovery");
     let after = list(&guard);
+    stage("concurrent recovery: replacement answered");
     assert_ne!(pid(&guard), old_pid);
     assert_eq!(before[0]["id"], after[0]["id"]);
     assert_eq!(before[0]["started_at"], after[0]["started_at"]);
     assert!(guard.scratch.path().join("state/tmux-sidecar.db").exists());
     stop(&guard);
+    stage("concurrent recovery: stopped replacement");
 }
 #[test]
 fn foreground_collision_and_sigterm_cleanup() {
