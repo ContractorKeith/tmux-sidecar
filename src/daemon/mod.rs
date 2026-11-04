@@ -11,12 +11,17 @@ use crate::{
     paths::{self, Paths},
 };
 use std::{
-    fs, io,
+    fs,
+    future::Future,
+    io,
     os::unix::fs::PermissionsExt,
     path::PathBuf,
+    pin::Pin,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{net::UnixListener, sync::mpsc, task::JoinSet};
+
+type PollFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, poll::Failure>> + 'a>>;
 
 pub fn now() -> u64 {
     SystemTime::now()
@@ -91,12 +96,21 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    let mut polling: Option<PollFuture<'_>> = None;
     let result = loop {
         tokio::select! {
             _ = term.recv() => break Ok(()),
             _ = interrupt.recv() => break Ok(()),
-            _ = interval.tick() => {
-                let result = poll::tick(socket.clone(), &store).await;
+            _ = interval.tick(), if polling.is_none() => {
+                polling = Some(Box::pin(poll::tick(socket.clone(), &store)));
+            },
+            result = async {
+                match &mut polling {
+                    Some(poll) => poll.await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                polling = None;
                 let stop = health.record(&result);
                 match result {
                     Ok(true) => (), Ok(false) => break Ok(()), Err(failure) => {
@@ -123,6 +137,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
             Some(_) = connections.join_next(), if !connections.is_empty() => (),
         }
     };
+    drop(polling);
     drop(listener);
     // Let the stop response reach its client, then close any idle connections.
     let _ = tokio::time::timeout(Duration::from_millis(100), async {

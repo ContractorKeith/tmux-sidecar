@@ -60,7 +60,8 @@ Accepts omitted, null or empty object params. Preserves live runs, closes connec
 removes socket and pid file, and exits. CLI stop waits for socket cleanup and never
 spawns. SIGTERM and SIGINT also preserve runs for re-adoption at startup. Only a
 confirmed tmux server exit ends all its runs. Poll errors are logged and retried;
-five consecutive failures stop the daemon without ending runs. Losing or replacing
+five consecutive failures stop the daemon without ending runs. RPC requests remain
+available while a process snapshot is being collected. Losing or replacing
 the database file is fatal immediately and logged with its path.
 
 ## attention
