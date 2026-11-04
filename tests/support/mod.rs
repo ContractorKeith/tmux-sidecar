@@ -71,7 +71,10 @@ impl TmuxGuard {
         let mut shell = Command::new("/bin/sh");
         guard.isolate(&mut shell);
         let output = shell
-            .args(["-c", "command -v claude codex grok opencode"])
+            .args([
+                "-c",
+                "for agent in claude codex grok opencode; do command -v \"$agent\" || exit; done",
+            ])
             .bounded_output()
             .unwrap();
         assert!(output.status.success());

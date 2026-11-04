@@ -34,6 +34,8 @@ e2e_test!(
                     Err(e) => panic!("{e}"),
                 }
             };
+            // macOS inherits O_NONBLOCK from the listener; Linux does not.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(1)))
                 .unwrap();
