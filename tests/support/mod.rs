@@ -1,4 +1,5 @@
 mod copy_fixture;
+mod fake_binary;
 mod process;
 pub mod socket;
 pub mod watchdog;
@@ -50,18 +51,7 @@ impl TmuxGuard {
             .unwrap();
         }
         let helper = guard.scratch.path().join("fake-agent");
-        // Build the bin-less helper directly: `cargo test --test e2e` also works on a clean tree.
-        let result = Command::new("rustc")
-            .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_agent.rs"))
-            .arg("-o")
-            .arg(&helper)
-            .bounded_output()
-            .unwrap();
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
+        fake_binary::write(&helper);
         for agent in ["claude", "codex", "grok", "opencode"] {
             fs::copy(&helper, guard.scratch.path().join("bin").join(agent)).unwrap();
         }
@@ -124,6 +114,9 @@ impl TmuxGuard {
             fields.next().unwrap().parse().unwrap(),
         );
         guard.server_socket = tmux_sidecar::paths::canonical_socket(&socket).unwrap();
+        wait_for("fake Claude startup", || {
+            guard.scratch.path().join("state/ready-claude").exists()
+        });
         guard
     }
     pub fn isolate(&self, command: &mut Command) {

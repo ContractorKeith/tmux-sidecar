@@ -5,6 +5,9 @@ impl Drop for ChildGuard { fn drop(&mut self) { let _=self.0.kill(); let _=self.
 fn main() {
     let root=PathBuf::from(std::env::var_os("TMUX_SIDECAR_STATE_DIR").unwrap());
     let pid=std::process::id();
+    let executable=std::env::current_exe().unwrap();
+    let name=executable.file_name().unwrap().to_str().unwrap();
+    fs::write(root.join(format!("ready-{name}")),b"").unwrap();
     loop {
         let request=root.join(format!("fire-{pid}"));
         if let Ok(text)=fs::read_to_string(&request) {
