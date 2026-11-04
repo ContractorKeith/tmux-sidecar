@@ -190,10 +190,11 @@ meta(schema_version)
 |---|---|
 | Claude/Grok `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
 | Claude/Grok `Notification` `permission_prompt`, Claude `PermissionRequest` | blocked |
-| Claude/Grok `Stop`, `StopCancelled`, `Notification` `idle_prompt` | waiting |
-| Grok `StopFailure` | error |
+| Claude/Grok `Stop`, `Notification` `idle_prompt` | waiting |
+| Grok `StopCancelled` | waiting |
+| Claude/Grok `StopFailure` | error |
 | Claude/Grok/Codex `SessionEnd` | done |
-| Codex `notify` `agent-turn-complete`; Codex `Stop` | waiting |
+| Codex `notify` `agent-turn-complete`; Codex `Interrupt` | waiting |
 | Codex `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
 | Codex `PermissionRequest` | blocked |
 | OpenCode `session.status` busy | working |
@@ -269,13 +270,14 @@ to `spool.ndjson` under `flock`. Total budget 200 ms. The daemon replays and tru
 at start and whenever it sees the file grow.
 
 **Hooks install.** Claude Code: entries in `~/.claude/settings.json` for Notification,
-PermissionRequest, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopCancelled, SessionEnd,
+PermissionRequest, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure, SessionEnd,
 each command `tmux-sidecar hook claude` plus a marker (`"_tmux_sidecar": 1` in the entry, or a
 trailing `# tmux-sidecar` comment where the format has no extra fields). Grok reads that file
-by default, so Grok gets no file of its own unless `claude_hooks_enabled = false` in its
-config, in which case install writes `~/.grok/hooks/tmux-sidecar.json`. Codex: `notify` in
+by default. Grok-only StopCancelled always lives in `~/.grok/hooks/tmux-sidecar.json`.
+If `claude_hooks_enabled = false`, common Grok events instead live in the separate
+`~/.grok/hooks/tmux-sidecar-common.json`, so the Grok-only file never duplicates them. Codex: `notify` in
 `~/.codex/config.toml` (refuse and explain if the user already has a different `notify`
-program; offer `--chain`), plus its hooks. OpenCode: a plugin file
+program; offer `--chain`), plus UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Interrupt and SessionEnd hooks. OpenCode: a plugin file
 `~/.config/opencode/plugin/tmux-sidecar.js` that forwards the five events by spawning
 `tmux-sidecar hook opencode`. `--dry-run` prints a unified diff per file and changes nothing.
 Every write is atomic (temp file + rename) and keeps a `.tmux-sidecar.bak` of the first

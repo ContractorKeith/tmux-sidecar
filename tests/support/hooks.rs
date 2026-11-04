@@ -139,8 +139,8 @@ e2e_test!(down_daemon_spools_replays_in_order_and_deduplicates, {
     super::lifecycle::stop(&guard);
     let signals = inspect(&guard);
     assert_eq!(signals.len(), 2);
-    assert_eq!(signals[0]["kind"], "UserPromptSubmit");
-    assert_eq!(signals[1]["kind"], "Stop");
+    assert_eq!(signals[0]["event"], "UserPromptSubmit");
+    assert_eq!(signals[1]["event"], "Stop");
 });
 e2e_test!(outside_tmux_or_without_an_agent_records_nothing, {
     if !enabled() {

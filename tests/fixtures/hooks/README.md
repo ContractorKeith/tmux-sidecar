@@ -1,74 +1,97 @@
-# Hook payload fixtures
+# Hook payload fixtures and live integration proofs
 
-Captured on Linux, 2026-11-04. Versions: Claude Code 2.1.309, Codex CLI
-0.166.0, Grok 1.0.70, OpenCode 2.2.5. Paths and UUIDs are scrubbed;
-account/token fields are omitted. These fixtures contain no credentials.
+Versions tested on Linux, 2026-11-04: Claude Code 2.1.309, Codex CLI 0.166.0,
+Grok 1.0.70 and OpenCode 2.2.5. Home paths, session/event ids and UUIDs are
+scrubbed. No token or account fields are retained.
 
-A throwaway scratch git repo used a capture script that wrote stdin to
-`cap/<event>-$RANDOM.json`; notify wrote the last argv instead. Claude used
-`-p --settings <inline hooks>`; Grok used `--trust -p <prompt>` and project
-`.grok/hooks/capture.json`; Codex used `exec -c notify=[...]` and inline
-`hooks.<Event>` overrides. Prompts asked for `true` then `ok`.
-No installer was run on a real profile. Capture attempts were bounded at 50
-seconds and their process groups killed/reaped in a finally guard. Codex startup
-added scratch-project trust; removing only that section reproduced the exact
-pre-capture checksum. OpenCode unexpectedly started a detached service and
-created service.json; that capture-owned service was stopped and the new file
-removed. Final checksums match the original profile files.
+## Proven live
 
-OpenCode captures tried `OPENCODE_CONFIG_DIR` with both plugin/ and plugins/,
-then also a scratch `XDG_CONFIG_HOME` and `--standalone`. Debug config confirmed
-the scratch directory on that last attempt. All runs completed, but none
-emitted capture files. Codex notify was captured;
-inline command hooks did not produce capture files in exec even with
-features.hooks=true (existing SessionStart/tool hooks reported Failed).
-The remaining events, including interactive approval/cancel/error events,
-are synthesized from the documented vendor schemas. They are examples, not
-claims that the installed runtime emitted those events.
+- Claude: installed entries into a scratch HOME, replaced only the binary path
+  with a capture program, then used the real profile with
+  `claude -p --settings <scratch>/.claude/settings.json "reply ok"`.
+  Exit 0; our installed command shape fired UserPromptSubmit, Stop and SessionEnd.
+  The earlier real PreToolUse/PostToolUse captures asked Claude to run `true`.
+- Grok: project-local capture hooks in a scratch git repo with
+  `grok --trust -p "Run true with the shell tool, then reply ok."` produced the
+  five real payloads listed below. StopCancelled remains synthesized.
+- OpenCode: installed the generated default `{ id, setup(ctx) }` plugin in
+  `<scratch XDG_CONFIG_HOME>/opencode/plugins/tmux-sidecar.js`, replacing only
+  its executable path with a capture program. The installed 2.2.5 binary ran
+  `opencode --standalone --print-logs run "reply ok"` with scratch HOME and XDG
+  config/data/state/cache directories. Exit 0; its log named the loaded plugin;
+  the capture program recorded `hook opencode` twice and captured both
+  session.execution.started and session.execution.succeeded. Detached hook
+  children preserve the final notification during OpenCode teardown.
+- Codex notify: the original argv capture is real. **Codex inline hooks remain
+  unproven.** A new run used a scratch CODEX_HOME, copied authentication only
+  into that scratch directory, enabled features.hooks, and marked the scratch
+  git repo trusted there. `codex exec "Run true with the shell tool, then reply
+  ok."` exited 0 and ran true, but produced no inline-hook captures. The scratch
+  authentication copy was deleted afterward. We do not claim these fixtures
+  were emitted by Codex; Interrupt and the other inline payloads are synthesized.
 
-Schemas: [Claude](https://code.claude.com/docs/en/hooks),
-[Codex](https://learn.chatgpt.com/docs/hooks),
-[OpenCode plugins](https://opencode.ai/docs/plugins/), and Grok's installed
-`~/.grok/docs/user-guide/10-hooks.md` (camelCase envelope with snake_case aliases).
-Codex synthesized fixtures include every required field from its generated
-[command input schemas](https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated).
-Grok Stop uses the genuine `end_turn` capture, rather than its separate
-shutdown Stop event.
-StopCancelled is Grok-specific in its documentation; the Claude fixture is
-synthesized solely to cover PLAN §6 and its install list.
+All live runs had 50-second deadlines and process-group cleanup. The initial
+capture round's incidental real Codex trust and OpenCode service writes were
+restored to the original hashes. Round-1 proof runs used isolated profiles or
+per-invocation settings; before/after real-config hashes are recorded separately.
+Real agent CLIs are never invoked by CI.
 
-## Real captures
+## Versioned schemas and adapters
 
-- `claude/UserPromptSubmit.json`
-- `claude/PreToolUse.json`
+OpenCode's published @opencode/plugin, @opencode/client and @opencode/schema
+2.2.5 packages were inspected. Its Promise API uses a default definition with
+id/setup and `ctx.event.subscribe({ signal })`; V2 payloads use data/sessionID
+and location/directory, not V1 properties. The filenames preserve the M3
+semantic names: execution.started -> session.status with detail busy;
+execution.succeeded/interrupted -> session.idle; execution.failed -> session.error.
+The captured original type/data remain untouched in each fixture and stored
+payload. Legacy event spellings are also accepted. Error and permission
+fixtures are synthesized from the 2.2.5 package types.
+
+Claude's installer excludes StopCancelled; it belongs to Grok only. Grok always
+gets its own StopCancelled entry, with common hooks shared from Claude. If that
+compatibility is disabled, common hooks use a separate native common file.
+Codex installs Interrupt, not Stop. Interrupt includes all required fields and
+no unknown fields from its generated command-input schema.
+
+Sources: [Claude hooks](https://code.claude.com/docs/en/hooks),
+[Codex hooks](https://learn.chatgpt.com/docs/hooks),
+[Codex generated schemas](https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated),
+[OpenCode 2.2.5 plugin package](https://www.npmjs.com/package/@opencode/plugin/v/2.2.5),
+and Grok's installed `~/.grok/docs/user-guide/10-hooks.md`.
+
+## Real captures (13)
+
 - `claude/PostToolUse.json`
-- `claude/Stop.json`
+- `claude/PreToolUse.json`
 - `claude/SessionEnd.json`
-- `grok/UserPromptSubmit.json`
-- `grok/PreToolUse.json`
-- `grok/PostToolUse.json`
-- `grok/Stop.json`
-- `grok/SessionEnd.json`
+- `claude/Stop.json`
+- `claude/UserPromptSubmit.json`
 - `codex/notify.json`
+- `grok/PostToolUse.json`
+- `grok/PreToolUse.json`
+- `grok/SessionEnd.json`
+- `grok/Stop.json`
+- `grok/UserPromptSubmit.json`
+- `opencode/session.idle.json`
+- `opencode/session.status.json`
 
-## Synthesized
+## Synthesized (17)
 
+- `claude/Notification-idle_prompt.json` — synthesized
 - `claude/Notification-permission_prompt.json` — synthesized
 - `claude/PermissionRequest.json` — synthesized
-- `claude/StopCancelled.json` — synthesized
-- `claude/Notification-idle_prompt.json` — synthesized
+- `claude/StopFailure.json` — synthesized
+- `codex/Interrupt.json` — synthesized
+- `codex/PermissionRequest.json` — synthesized
+- `codex/PostToolUse.json` — synthesized
+- `codex/PreToolUse.json` — synthesized
+- `codex/SessionEnd.json` — synthesized
+- `codex/UserPromptSubmit.json` — synthesized
+- `grok/Notification-idle_prompt.json` — synthesized
 - `grok/Notification-permission_prompt.json` — synthesized
 - `grok/StopCancelled.json` — synthesized
-- `grok/Notification-idle_prompt.json` — synthesized
 - `grok/StopFailure.json` — synthesized
-- `codex/Stop.json` — synthesized
-- `codex/UserPromptSubmit.json` — synthesized
-- `codex/PreToolUse.json` — synthesized
-- `codex/PostToolUse.json` — synthesized
-- `codex/PermissionRequest.json` — synthesized
-- `codex/SessionEnd.json` — synthesized
-- `opencode/session.status.json` — synthesized
-- `opencode/session.idle.json` — synthesized
-- `opencode/session.error.json` — synthesized
 - `opencode/permission.asked.json` — synthesized
 - `opencode/permission.replied.json` — synthesized
+- `opencode/session.error.json` — synthesized

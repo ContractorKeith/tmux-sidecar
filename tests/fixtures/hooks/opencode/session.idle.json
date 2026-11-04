@@ -1,6 +1,13 @@
 {
-  "type": "session.idle",
-  "properties": {
+  "id": "evt_fake",
+  "created": 1793828651953,
+  "type": "session.execution.succeeded",
+  "durable": {
+    "aggregateID": "ses_fake",
+    "seq": 10,
+    "version": 1
+  },
+  "data": {
     "sessionID": "ses_fake"
   },
   "cwd": "/home/user/project"

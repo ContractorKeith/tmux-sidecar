@@ -1,16 +1,16 @@
 {
-  "type": "permission.asked",
-  "properties": {
-    "sessionID": "ses_fake",
-    "id": "per_fake",
-    "permission": "bash",
-    "patterns": [
-      "true"
-    ],
-    "always": [
-      "true"
-    ],
-    "metadata": {}
+  "id": "evt_fake",
+  "created": 1793800000000,
+  "location": {
+    "directory": "/home/user/project"
   },
-  "cwd": "/home/user/project"
+  "type": "permission.asked",
+  "data": {
+    "id": "per_fake",
+    "sessionID": "ses_fake",
+    "action": "bash",
+    "resources": [
+      "true"
+    ]
+  }
 }

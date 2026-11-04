@@ -1,34 +1,82 @@
 use super::store_worker::StoreWorker;
-use crate::hook::{signal::Signal, spool};
+use crate::hook::{context, signal::Signal, spool};
 use std::{io, path::PathBuf};
-pub async fn replay(state: PathBuf, worker: &StoreWorker) -> io::Result<()> {
+/// Replay failures are logged, never charged to tmux/process poll health.
+pub async fn replay(state: PathBuf, runtime: PathBuf, socket: PathBuf, worker: &StoreWorker) {
+    if let Err(error) = inner(state.clone(), runtime, socket, worker).await {
+        let _ = tokio::task::spawn_blocking(move || {
+            super::log::write(&state, &format!("spool replay: {error}"))
+        })
+        .await;
+    }
+}
+async fn inner(
+    state: PathBuf,
+    runtime: PathBuf,
+    socket: PathBuf,
+    worker: &StoreWorker,
+) -> io::Result<()> {
     let dir = state.clone();
-    let bytes = tokio::task::spawn_blocking(move || spool::read(&dir))
+    let (bytes, signals, rejected, pending) =
+        tokio::task::spawn_blocking(move || -> io::Result<_> {
+            let bytes = spool::read(&dir)?;
+            let mut signals = Vec::new();
+            let mut rejected = Vec::new();
+            let mut pending = false;
+            for line in bytes.split_inclusive(|b| *b == b'\n') {
+                if line.iter().all(u8::is_ascii_whitespace) {
+                    continue;
+                }
+                let parsed = (|| -> io::Result<Signal> {
+                    let value: serde_json::Value = serde_json::from_slice(line)?;
+                    if value["jsonrpc"] != "2.0" || value["method"] != "signal" {
+                        return Err(io::Error::other("not a signal frame"));
+                    }
+                    let signal: Signal = serde_json::from_value(value["params"].clone())?;
+                    signal.validate_frame()?;
+                    Ok(signal)
+                })();
+                match parsed {
+                    Ok(mut signal) => {
+                        if signal.server_start == 0 {
+                            match context::read(&runtime, &socket) {
+                                Ok(start) => signal.server_start = start,
+                                Err(_) => {
+                                    pending = true;
+                                    continue;
+                                }
+                            }
+                        }
+                        signals.push(signal);
+                    }
+                    Err(error) => {
+                        rejected.extend_from_slice(line);
+                        if !line.ends_with(b"\n") {
+                            rejected.push(b'\n');
+                        }
+                        let _ = super::log::write(&dir, &format!("rejected spool line: {error}"));
+                    }
+                }
+            }
+            Ok((bytes, signals, rejected, pending))
+        })
         .await
         .map_err(io::Error::other)??;
     if bytes.is_empty() {
         return Ok(());
     }
-    // Leave an incomplete final frame for a future append, never discard it.
-    let end = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-    if end == 0 {
-        return Ok(());
-    }
-    let mut signals = Vec::new();
-    for line in bytes[..end]
-        .split(|b| *b == b'\n')
-        .filter(|b| !b.is_empty())
-    {
-        let value: serde_json::Value = serde_json::from_slice(line)?;
-        let signal: Signal = serde_json::from_value(value["params"].clone())?;
-        signal.validate()?;
-        signals.push(signal);
-    }
     for signal in signals {
         worker.with(move |store| store.signal(&signal)).await??;
     }
-    let prefix = bytes[..end].to_vec();
-    tokio::task::spawn_blocking(move || spool::acknowledge(&state, &prefix))
-        .await
-        .map_err(io::Error::other)?
+    tokio::task::spawn_blocking(move || {
+        if !rejected.is_empty() {
+            spool::reject(&state, &rejected)?;
+        }
+        if pending {
+            return Ok(());
+        }
+        spool::acknowledge(&state, &bytes)
+    })
+    .await
+    .map_err(io::Error::other)?
 }

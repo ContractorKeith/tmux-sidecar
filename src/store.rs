@@ -37,7 +37,7 @@ impl Store {
             INSERT INTO meta SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM meta);",
         )?;
         let version: u32 = tx.query_row("SELECT schema_version FROM meta", [], |r| r.get(0))?;
-        if version > 2 {
+        if version > 3 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         if version == 0 {
@@ -60,6 +60,14 @@ impl Store {
         }
         if version < 2 {
             tx.execute_batch("CREATE TABLE signal_receipts(at INTEGER NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(at,fingerprint)); UPDATE meta SET schema_version=2;")?;
+        }
+        if version < 3 {
+            tx.execute_batch("ALTER TABLE signals RENAME COLUMN kind TO event;
+                ALTER TABLE signals ADD COLUMN detail TEXT;
+                UPDATE signals SET detail=substr(event,instr(event,':')+1),event=substr(event,1,instr(event,':')-1) WHERE instr(event,':')>0;
+                DROP TABLE signal_receipts;
+                CREATE TABLE signal_receipts(nonce TEXT PRIMARY KEY NOT NULL);
+                UPDATE meta SET schema_version=3;")?;
         }
         tx.commit()?;
         let meta = std::fs::metadata(path)

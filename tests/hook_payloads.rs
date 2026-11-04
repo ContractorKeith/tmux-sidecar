@@ -23,7 +23,13 @@ fn fixture_metadata_and_event_kinds_parse_without_losing_raw_fields() {
                 .or_else(|| payload.get("transcriptPath"))
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned);
-            let (kind, session, cwd, transcript) = signal::parse(format, payload).unwrap();
+            let parsed = signal::parse(format, &payload).unwrap();
+            let (kind, session, cwd, transcript) = (
+                parsed.event,
+                parsed.session_id,
+                parsed.cwd,
+                parsed.transcript_path,
+            );
             assert!(!kind.is_empty());
             assert!(session.is_some(), "{}", file.display());
             assert_eq!(cwd, "/home/user/project");
@@ -77,4 +83,20 @@ async fn wrong_server_hello_is_rejected_before_signal_delivery() {
             .contains("wrong tmux server")
     );
     task.await.unwrap();
+}
+#[test]
+fn a_crashed_partial_append_is_separated_from_the_next_whole_frame() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = tmux_sidecar::paths::Paths {
+        runtime: root.path().join("run"),
+        state: root.path().join("state"),
+        config: root.path().join("config"),
+    };
+    tmux_sidecar::paths::prepare(&paths).unwrap();
+    fs::write(paths.state.join("spool.ndjson"), b"{\"partial\":").unwrap();
+    spool::append(&paths, b"complete\n").unwrap();
+    assert_eq!(
+        fs::read(paths.state.join("spool.ndjson")).unwrap(),
+        b"{\"partial\":\ncomplete\n"
+    );
 }

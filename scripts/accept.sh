@@ -31,6 +31,7 @@ unset TMUX TMUX_PANE
 
 echo "== gate"
 cargo fmt --all --check
+rustfmt --edition 2024 --check tests/support/fake_agent.rs
 cargo clippy --locked --all-targets -- -D warnings
 TMUX_SIDECAR_E2E=1 cargo test --locked
 test "$(cargo tree -d --locked 2>/dev/null | grep -c 'libsqlite3-sys')" -eq 0

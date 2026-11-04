@@ -106,7 +106,7 @@ e2e_test!(shutdown_drains_already_written_signal_notifications, {
     for at in 1..=200 {
         let frame = serde_json::json!({"jsonrpc":"2.0","method":"signal","params":{
             "server_start":run["server_start"],"pane_id":run["pane_id"],"agent":run["agent"],"agent_pid":run["agent_pid"],
-            "at":at,"source":"hook:claude","kind":"Stop","agent_session_id":null,"transcript_path":null,"cwd":"/fixture","payload":{"hook_event_name":"Stop"}
+            "at":at,"nonce":format!("{at:032x}"),"source":"hook:claude","event":"Stop","detail":null,"agent_session_id":null,"transcript_path":null,"cwd":"/fixture","payload":{"hook_event_name":"Stop"}
         }});
         writeln!(stream, "{frame}").unwrap();
     }

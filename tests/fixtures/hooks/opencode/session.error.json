@@ -1,13 +1,20 @@
 {
-  "type": "session.error",
-  "properties": {
+  "id": "evt_fake",
+  "created": 1793800000000,
+  "location": {
+    "directory": "/home/user/project"
+  },
+  "type": "session.execution.failed",
+  "data": {
     "sessionID": "ses_fake",
     "error": {
-      "name": "UnknownError",
-      "data": {
-        "message": "fixture error"
-      }
+      "type": "unknown",
+      "message": "fixture error"
     }
   },
-  "cwd": "/home/user/project"
+  "durable": {
+    "aggregateID": "ses_fake",
+    "seq": 1,
+    "version": 1
+  }
 }

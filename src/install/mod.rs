@@ -25,7 +25,7 @@ pub fn run(
         .to_str()
         .ok_or_else(|| io::Error::other("binary path is not UTF-8"))?;
     let selected = |a| agents.is_empty() || agents.contains(&a);
-    let shared = grok::shared(home)?;
+    let shared = !selected(AgentKind::Grok) || grok::shared(home)?;
     let mut plans: Vec<(PathBuf, String, Option<String>)> = Vec::new();
     let mut prepare =
         |relative: &str, editor: &dyn Fn(&str, bool) -> io::Result<String>| -> io::Result<()> {
@@ -55,10 +55,20 @@ pub fn run(
             claude::edit(s, mode, &format!("{} hook claude", quote(binary)))
         })?;
     }
-    if selected(AgentKind::Grok) && !shared {
+    if selected(AgentKind::Grok) {
         prepare(".grok/hooks/tmux-sidecar.json", &|s, mode| {
-            claude::edit(s, mode, &format!("{} hook grok", quote(binary)))
+            claude::edit_events(
+                s,
+                mode,
+                &format!("{} hook grok", quote(binary)),
+                &["StopCancelled"],
+            )
         })?;
+        if !shared || !install {
+            prepare(".grok/hooks/tmux-sidecar-common.json", &|s, mode| {
+                claude::edit(s, mode, &format!("{} hook grok", quote(binary)))
+            })?;
+        }
     }
     if selected(AgentKind::Codex) {
         prepare(".codex/config.toml", &|s, mode| {
@@ -66,27 +76,26 @@ pub fn run(
         })?;
     }
     if selected(AgentKind::Opencode) {
-        prepare(".config/opencode/plugin/tmux-sidecar.js", &|s, mode| {
-            if !s.is_empty() && !s.starts_with(opencode::MARKER) {
-                return if mode {
-                    Err(io::Error::other(
-                        "refusing to overwrite unmarked OpenCode plugin",
-                    ))
-                } else {
-                    Ok(s.to_owned())
-                };
-            }
-            Ok(if mode {
-                opencode::plugin(binary)
-            } else {
-                String::new()
-            })
+        prepare(".config/opencode/plugins/tmux-sidecar.js", &|s, mode| {
+            opencode::edit(s, mode, binary)
         })?;
+        // Remove the marked pre-v2 integration at the old path during upgrades.
+        if home
+            .join(".config/opencode/plugin/tmux-sidecar.js")
+            .exists()
+        {
+            prepare(".config/opencode/plugin/tmux-sidecar.js", &|s, _| {
+                opencode::edit(s, false, binary)
+            })?;
+        }
     }
     for (path, before, after) in plans {
         files::apply(&path, &before, after.as_deref(), dry_run, install)?;
     }
     if install {
+        println!(
+            "Live-proven: Claude Code 2.1.309 command entries, Grok 1.0.70 payload captures, OpenCode 2.2.5 v2 plugin forwarding, Codex 0.166.0 notify. Codex inline hooks remain unproven: the trusted scratch run produced no captures. See tests/fixtures/hooks/README.md."
+        );
         println!(
             "tmux popup binding: bind-key a display-popup -E -w 80% -h 80% {} ui",
             quote(binary)

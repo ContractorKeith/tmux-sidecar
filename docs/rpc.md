@@ -107,36 +107,54 @@ Reserved for M3; returns -32601, "not implemented yet (M3)".
 
 ## signal
 
-Hooks call `hello` and verify `server_key`, then send one notification:
+Hooks append a durable frame first, call `hello` and verify `server_key`, then
+attempt live delivery of the same invocation:
 
 ```json
-{"jsonrpc":"2.0","method":"signal","params":{"server_start":1793800000,"pane_id":"%0","agent":"grok","agent_pid":1234,"at":1793800000000,"source":"hook:claude","kind":"Notification:permission_prompt","agent_session_id":"fake-session","cwd":"/work","transcript_path":null,"payload":{"hook_event_name":"Notification","notification_type":"permission_prompt"}}}
+{"jsonrpc":"2.0","method":"signal","params":{"server_start":1793800000,"pane_id":"%0","agent":"grok","agent_pid":1234,"at":1793800000000,"nonce":"8f221dfd42762f2bef936db976722638c","source":"hook:claude","event":"Notification","detail":"permission_prompt","agent_session_id":"fake-session","cwd":"/work","transcript_path":null,"payload":{"hook_event_name":"Notification","notification_type":"permission_prompt"}}}
 ```
 
 `agent` and `agent_pid` identify the nearest agent ancestor, independent of the
 payload parser named by `source` (`hook:claude`, `hook:codex`,
-`hook:codex-notify`, `hook:grok`, `hook:opencode`). `server_start` is tmux's
-start time in seconds; `at` is capture time in Unix milliseconds. `kind` is
-the vendor event, with `:<notification type/tool matcher/reason/status type>`
-when supplied. `payload` is the complete JSON payload, not a normalized copy.
-Session id, cwd and transcript path are extracted from vendor-specific fields.
-All keys shown above are required except nullable metadata fields. Unknown keys
-and malformed identity values return -32602 for requests. An optional request
-id receives `{}` on successful storage; notifications receive no response.
+`hook:codex-notify`, `hook:grok`, `hook:opencode`). Linux ancestry reads `/proc`
+directly; macOS uses the process snapshot adapter. `server_start` is tmux's start
+time in seconds; `at` is capture time in Unix milliseconds. `event` is the hook
+event name; optional `detail` holds notification type, tool matcher, reason or
+status type. Both are stored separately. OpenCode V2 execution.started maps to
+session.status/busy, execution.succeeded/interrupted to session.idle, and
+execution.failed to session.error; the original V2 event remains in `payload`.
 
-Unknown runs are created immediately with M1's initial waiting state. Metadata
-attaches to an existing run, including ended runs during replay. Signals never
-change state in M2. Source, kind, timestamp and raw payload are persisted.
-Receipt and signal commit in one transaction; repeated payload/timestamp pairs
-for the same run are idempotent. The receipt includes a payload hash and the
-canonical payload to avoid hash collisions losing evidence.
+`nonce` is 128 random bits encoded as 32 hex characters, generated once per hook
+invocation. Receipt and signal commit together, deduplicating only that nonce.
+Two genuine calls with identical payload and timestamp are both retained.
+Unknown runs are created immediately with M1's initial waiting state. Session id
+and transcript metadata attach to existing runs, including ended runs. Signals
+never change state in M2. Requests may use an id and receive `{}` after storage;
+invalid params return -32602. Notifications receive no response.
 
-On connect/hello/write failure, the hook appends this exact notification frame
-under `spool.lock`, triggers detached startup, and exits silently. Delivery has
-a 100 ms timeout; the entire hook has a 180 ms deadline. The daemon replays at
-startup and each poll tick, then atomically removes only the committed prefix
-under the same lock, retaining concurrent appends. Incomplete trailing frames
-are retained. SQLite calls run on the store worker; spool I/O runs outside it.
+Stdin formats drain to EOF before context/ancestor checks, keeping up to 64 MiB
+of input. Bulky payload values become bounded previews (up to 4 KiB per string,
+with `…truncated` and a root `_tmux_sidecar_truncated` marker). Stored payloads
+remain below 256 KiB; ordinary payloads retain their fields. Codex notify takes
+its payload from argv instead. The transport frame limit remains 1 MiB.
+
+The daemon writes `<runtime>/server_start` outside the SQLite worker, tied to the
+tmux socket device/inode so a replacement cannot reuse stale context. Hooks read
+that cache; only an absent cache requires a bounded tmux query. A durable frame
+may carry `server_start: 0` until the daemon's first poll supplies that context.
+The daemon resolves it before store validation. One O_APPEND write under
+`spool.lock` precedes tmux fallback, socket delivery, and detached startup. Live
+delivery uses at most 100 ms of the remaining 180 ms budget. Overruns are logged;
+there is no worker thread that can abandon or tear an append. Append failure is
+logged as a lost signal. Spool, rejected-file and hook-log opens refuse symlinks
+and non-regular files.
+
+Replay runs after initial context discovery and on poll ticks, in order. Bad or
+incomplete lines move to `spool.rejected` and are logged; good lines continue.
+Replay errors are logged independently and never fail startup or consume the
+five-failure process-poll budget. Only a committed prefix is removed atomically,
+retaining concurrent appends. A new append separates an existing partial tail
+with a newline. SQLite work, file I/O and parsing retain their separate owners.
 
 `hooks install --chain` wraps an existing Codex notify program: record the last
 argv payload first, then exec the previous program with its configured arguments

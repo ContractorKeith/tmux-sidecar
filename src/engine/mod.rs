@@ -102,7 +102,7 @@ fn kind(comm: &str) -> Option<AgentKind> {
         "claude" => Some(AgentKind::Claude),
         "codex" => Some(AgentKind::Codex),
         "grok" => Some(AgentKind::Grok),
-        "opencode" => Some(AgentKind::Opencode),
+        "opencode" | "opencode.exe" => Some(AgentKind::Opencode),
         _ => None,
     }
 }

@@ -1,36 +1,48 @@
-//! The hook caller has a hard deadline independent of stdin, process probes and I/O.
+//! Hook input is drained and a whole durable frame is appended before live delivery.
+pub mod context;
 mod delivery;
+pub(crate) mod files;
+pub mod input;
 pub mod signal;
 pub mod spool;
-use std::{io, time::Duration};
-
-pub fn entry(args: Vec<String>) {
-    let (send, receive) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let result = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .and_then(|rt| rt.block_on(delivery::run(args)));
-        let _ = send.send(result);
-    });
-    let _ = receive.recv_timeout(Duration::from_millis(180));
+use std::io;
+pub async fn entry(args: Vec<String>) {
+    let _ = delivery::run(args).await;
 }
 pub fn log(state: &std::path::Path, error: &dyn std::fmt::Display) -> io::Result<()> {
     use std::{
         fs::{self, OpenOptions},
         io::Write,
-        os::unix::fs::OpenOptionsExt,
     };
     let path = state.join("hook.log");
-    if fs::metadata(&path).is_ok_and(|m| m.len() >= 1024 * 1024) {
+    let mut file = files::regular(OpenOptions::new().create(true).append(true), &path)?;
+    if file.metadata()?.len() >= 1024 * 1024 {
         fs::rename(&path, state.join("hook.log.1"))?;
+        file = files::regular(OpenOptions::new().create(true).append(true), &path)?;
     }
-    writeln!(
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(0o600)
-            .open(path)?,
-        "{error}"
-    )
+    writeln!(file, "{error}")
+}
+
+/// Invalid formats still have a log destination when invoked outside tmux.
+pub(crate) fn unknown_format() -> io::Result<()> {
+    let home = std::env::var_os("HOME").ok_or_else(|| io::Error::other("HOME missing"))?;
+    let platform = if cfg!(target_os = "macos") {
+        crate::paths::Platform::Macos
+    } else {
+        crate::paths::Platform::Linux
+    };
+    let scoped = std::env::var_os("TMUX")
+        .and_then(|value| crate::paths::socket_from_tmux(&value))
+        .and_then(|socket| crate::paths::current(&socket).ok());
+    let paths = scoped.unwrap_or_else(|| {
+        crate::paths::resolve(
+            platform,
+            std::path::Path::new(&home),
+            crate::paths::uid(),
+            "unscoped",
+            |name| std::env::var_os(name),
+        )
+    });
+    crate::paths::prepare(&paths)?;
+    log(&paths.state, &"unknown hook format")
 }

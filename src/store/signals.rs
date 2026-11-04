@@ -3,9 +3,9 @@ use crate::{hook::signal::Signal, model::AgentState};
 impl Store {
     pub fn signal_history(&self) -> io::Result<Vec<serde_json::Value>> {
         (|| -> rusqlite::Result<_> {
-            self.connection.prepare("SELECT run_id,at,source,kind,payload_json FROM signals ORDER BY id")?
+            self.connection.prepare("SELECT run_id,at,source,event,payload_json,detail FROM signals ORDER BY id")?
                 .query_map([],|r| Ok(serde_json::json!({"run_id":format!("r{}",r.get::<_,i64>(0)?), "at":r.get::<_,i64>(1)?,
-                    "source":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"payload_json":r.get::<_,String>(4)?})))?.collect()
+                    "source":r.get::<_,String>(2)?,"event":r.get::<_,String>(3)?,"detail":r.get::<_,Option<String>>(5)?,"payload_json":r.get::<_,String>(4)?})))?.collect()
         })().map_err(|e|db_error(&self.path,e))
     }
 
@@ -13,22 +13,14 @@ impl Store {
     pub fn signal(&self, signal: &Signal) -> io::Result<()> {
         signal.validate()?;
         let payload = serde_json::to_string(&signal.payload)?;
-        // Store the canonical payload alongside its hash to make collisions harmless.
-        let hash = payload.bytes().fold(0xcbf29ce484222325u64, |h, b| {
-            (h ^ u64::from(b)).wrapping_mul(0x100000001b3)
-        });
-        let fingerprint = format!(
-            "{}:{}:{}:{hash:x}:{payload}",
-            signal.server_start, signal.pane_id, signal.agent_pid
-        );
         let tx = self
             .connection
             .unchecked_transaction()
             .map_err(|e| db_error(&self.path, e))?;
         let result = (|| -> rusqlite::Result<()> {
             if tx.execute(
-                "INSERT OR IGNORE INTO signal_receipts VALUES (?1,?2)",
-                params![number(signal.at)?, fingerprint],
+                "INSERT OR IGNORE INTO signal_receipts VALUES (?1)",
+                params![signal.nonce],
             )? == 0
             {
                 return Ok(());
@@ -65,8 +57,8 @@ impl Store {
             tx.execute("UPDATE runs SET agent_session_id=COALESCE(?1,agent_session_id), transcript_path=COALESCE(?2,transcript_path) WHERE id=?3",
                 params![signal.agent_session_id,signal.transcript_path,id])?;
             tx.execute(
-                "INSERT INTO signals(run_id,at,source,kind,payload_json) VALUES (?1,?2,?3,?4,?5)",
-                params![id, number(signal.at)?, signal.source, signal.kind, payload],
+                "INSERT INTO signals(run_id,at,source,event,payload_json,detail) VALUES (?1,?2,?3,?4,?5,?6)",
+                params![id, number(signal.at)?, signal.source, signal.event, payload,signal.detail],
             )?;
             Ok(())
         })();
@@ -88,7 +80,9 @@ mod tests {
             agent_pid: 100,
             at: 1000,
             source: "hook:claude".into(),
-            kind: "Stop".into(),
+            nonce: "00000000000000000000000000000001".into(),
+            event: "Stop".into(),
+            detail: None,
             agent_session_id: Some("fake".into()),
             cwd: "/work".into(),
             transcript_path: Some("/transcript".into()),
@@ -100,7 +94,7 @@ mod tests {
         assert_eq!(run.state, AgentState::Waiting);
         assert_eq!(run.agent_session_id.as_deref(), Some("fake"));
         store.end(&run.id, 2000).unwrap();
-        signal.at += 1;
+        signal.nonce = "00000000000000000000000000000002".into();
         store.signal(&signal).unwrap();
         let runs = store.list().unwrap();
         assert_eq!(runs.len(), 1);
@@ -110,5 +104,56 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM signals", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 2);
+        let longest: i64 = store
+            .connection
+            .query_row("SELECT MAX(length(nonce)) FROM signal_receipts", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(longest, 32);
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+    #[test]
+    fn draft_v2_history_migrates_kind_and_detail_without_losing_rows() {
+        let root = tempfile::tempdir().unwrap();
+        let db = root.path().join("db");
+        let store = Store::open(&db).unwrap();
+        let signal = Signal {
+            server_start: 1,
+            pane_id: "%0".into(),
+            agent: crate::model::AgentKind::Claude,
+            agent_pid: 42,
+            at: 10,
+            nonce: "00000000000000000000000000000001".into(),
+            source: "hook:claude".into(),
+            event: "Stop".into(),
+            detail: None,
+            agent_session_id: None,
+            cwd: "/work".into(),
+            transcript_path: None,
+            payload: serde_json::json!({"hook_event_name":"Stop"}),
+        };
+        store.signal(&signal).unwrap();
+        store
+            .connection
+            .execute_batch(
+                "UPDATE signals SET event='Stop:end_turn';
+            ALTER TABLE signals DROP COLUMN detail;
+            ALTER TABLE signals RENAME COLUMN event TO kind;
+            DROP TABLE signal_receipts;
+            CREATE TABLE signal_receipts(at INTEGER,fingerprint TEXT,PRIMARY KEY(at,fingerprint));
+            UPDATE meta SET schema_version=2;",
+            )
+            .unwrap();
+        drop(store);
+        let reopened = Store::open(&db).unwrap();
+        let rows = reopened.signal_history().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["event"], "Stop");
+        assert_eq!(rows[0]["detail"], "end_turn");
     }
 }

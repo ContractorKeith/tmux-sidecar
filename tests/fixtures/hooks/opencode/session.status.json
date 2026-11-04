@@ -1,10 +1,14 @@
 {
-  "type": "session.status",
-  "properties": {
-    "sessionID": "ses_fake",
-    "status": {
-      "type": "busy"
-    }
+  "id": "evt_fake",
+  "created": 1793828650178,
+  "type": "session.execution.started",
+  "durable": {
+    "aggregateID": "ses_fake",
+    "seq": 2,
+    "version": 1
+  },
+  "data": {
+    "sessionID": "ses_fake"
   },
   "cwd": "/home/user/project"
 }

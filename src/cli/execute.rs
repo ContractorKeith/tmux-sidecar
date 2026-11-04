@@ -26,16 +26,9 @@ fn unreachable(error: io::Error) -> Failure {
 
 pub async fn execute(cli: Cli) -> Result<(), Failure> {
     if let Command::Hook { agent, payload } = &cli.command {
-        let format = match agent {
-            HookAgent::Claude => "claude",
-            HookAgent::Codex => "codex",
-            HookAgent::CodexNotify => "codex-notify",
-            HookAgent::Grok => "grok",
-            HookAgent::Opencode => "opencode",
-        };
-        let mut args = vec![format.to_owned()];
+        let mut args = vec![agent.to_owned()];
         args.extend(payload.iter().cloned());
-        crate::hook::entry(args);
+        crate::hook::entry(args).await;
         return Ok(());
     }
     if let Command::Hooks { command } = &cli.command {

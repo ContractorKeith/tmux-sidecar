@@ -70,10 +70,9 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         )?;
     }
     let store = store_worker::StoreWorker::open(db).await?;
-    replay::replay(paths.state.clone(), &store).await?;
     let poll_ms = poll_ms(paths)?;
     let mut health = poll::Health::default();
-    let initial = poll::tick(socket.clone(), &store).await;
+    let initial = poll::tick(socket.clone(), &store, paths.runtime.clone()).await;
     health.record(&initial);
     match initial {
         Ok(false) => return Err(io::Error::other("tmux server is not running")),
@@ -83,6 +82,13 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         }
         Ok(true) => (),
     }
+    replay::replay(
+        paths.state.clone(),
+        paths.runtime.clone(),
+        socket.clone(),
+        &store,
+    )
+    .await;
     let listener = UnixListener::bind(paths.runtime.join("sock"))?;
     fs::set_permissions(
         paths.runtime.join("sock"),
@@ -108,9 +114,10 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 let socket = socket.clone();
                 let state = paths.state.clone();
                 let worker = &store;
+                let runtime = paths.runtime.clone();
                 polling = Some(Box::pin(async move {
-                    replay::replay(state, worker).await?;
-                    poll::tick(socket, worker).await
+                    replay::replay(state, runtime.clone(),socket.clone(), worker).await;
+                    poll::tick(socket, worker, runtime).await
                 }));
             },
             result = async {
@@ -136,7 +143,8 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 Ok((stream, _)) => { let sender = sender.clone(); connections.spawn(async move { transport::serve(stream, sender).await }); },
                 Err(e) => break Err(e),
             },
-            Some(call) = receiver.recv() => {
+            Some(mut call) = receiver.recv() => {
+                if call.request.method=="signal" && let Some(params)=&mut call.request.params {crate::hook::context::resolve(params,&paths.runtime,&socket);}
                 let stop = call.request.method == "daemon.stop" && methods::empty_params(&call.request);
                 let key = key.clone();
                 let prepared = methods::prepare(&call.request);

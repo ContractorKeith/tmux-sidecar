@@ -19,6 +19,8 @@ macro_rules! until {
 mod hooks;
 #[path = "support/hooks_identity.rs"]
 mod hooks_identity;
+#[path = "support/review.rs"]
+mod review;
 mod support;
 use support::TmuxGuard;
 use tmux_sidecar::seams::Tmux;

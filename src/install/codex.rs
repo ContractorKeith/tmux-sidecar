@@ -1,12 +1,12 @@
 use std::io;
-use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, Value, value};
+use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, Value};
 const MARKER: &str = "# tmux-sidecar";
 const EVENTS: &[&str] = &[
     "UserPromptSubmit",
     "PreToolUse",
     "PostToolUse",
     "PermissionRequest",
-    "Stop",
+    "Interrupt",
     "SessionEnd",
 ];
 fn marked(item: &Item) -> bool {
@@ -50,6 +50,9 @@ pub fn edit(text: &str, install: bool, chain: bool, binary: &str) -> io::Result<
             }
         }
         let mut notify = Value::Array(notify);
+        if let Some(previous) = doc.get("notify").and_then(Item::as_value) {
+            *notify.decor_mut() = previous.decor().clone();
+        }
         notify.decor_mut().set_suffix(format!(" {MARKER}"));
         doc["notify"] = Item::Value(notify);
     } else if !install && ours {
@@ -57,9 +60,16 @@ pub fn edit(text: &str, install: bool, chain: bool, binary: &str) -> io::Result<
             .as_array()
             .filter(|a| a.get(3).and_then(Value::as_str) == Some("tmux-sidecar"))
             .map(|a| a.iter().skip(4).cloned().collect::<Array>());
-        doc.remove("notify");
         if let Some(old) = old {
-            doc["notify"] = value(old);
+            let decor = doc["notify"].as_value().map(|v| v.decor().clone());
+            let mut replacement = Value::Array(old);
+            if let Some(decor) = decor {
+                *replacement.decor_mut() = decor;
+            }
+            replacement.decor_mut().set_suffix("");
+            doc["notify"] = Item::Value(replacement);
+        } else {
+            doc.remove("notify");
         }
     }
     if install && !doc.contains_key("hooks") {
@@ -69,12 +79,12 @@ pub fn edit(text: &str, install: bool, chain: bool, binary: &str) -> io::Result<
         let hooks = hooks
             .as_table_mut()
             .ok_or_else(|| io::Error::other("hooks must be a table"))?;
-        for event in EVENTS {
-            if install && !hooks.contains_key(event) {
+        for event in EVENTS.iter().chain(std::iter::once(&"Stop")) {
+            if install && *event != "Stop" && !hooks.contains_key(event) {
                 hooks[event] = Item::ArrayOfTables(ArrayOfTables::new());
             }
             if let Some(groups) = hooks.get_mut(event)
-                && super::codex_groups::edit(groups, install, binary)?
+                && super::codex_groups::edit(groups, install && *event != "Stop", binary)?
             {
                 hooks.remove(event);
             }

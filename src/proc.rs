@@ -1,6 +1,8 @@
 //! M0: process snapshot adapter for Linux and macOS.
+mod ancestors;
 mod liveness;
 use crate::seams::{Process, ProcessSnapshot, ProcessTree};
+pub use ancestors::hook_ancestors;
 pub use liveness::running;
 use std::{io, path::Path, process::Command};
 
@@ -9,7 +11,7 @@ pub fn agent_kind(comm: &str) -> Option<crate::model::AgentKind> {
         "claude" => Some(crate::model::AgentKind::Claude),
         "codex" => Some(crate::model::AgentKind::Codex),
         "grok" => Some(crate::model::AgentKind::Grok),
-        "opencode" => Some(crate::model::AgentKind::Opencode),
+        "opencode" | "opencode.exe" => Some(crate::model::AgentKind::Opencode),
         _ => None,
     }
 }
