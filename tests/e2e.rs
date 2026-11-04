@@ -95,6 +95,8 @@ mod shutdown;
 
 #[path = "support/focus.rs"]
 mod focus;
+#[path = "support/spool_load.rs"]
+mod spool_load;
 #[path = "support/state.rs"]
 mod state;
 #[path = "support/transcript.rs"]

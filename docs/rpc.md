@@ -147,7 +147,8 @@ attempt live delivery of the same invocation:
 `agent` and `agent_pid` identify the nearest agent ancestor, independent of the
 payload parser named by `source` (`hook:claude`, `hook:codex`,
 `hook:codex-notify`, `hook:grok`, `hook:opencode`). Linux ancestry reads `/proc`
-directly; macOS uses the process snapshot adapter. `server_start` is tmux's start
+directly; macOS reads ppid and comm per pid with `proc_pidinfo`. Neither hook ancestor
+walk spawns a process. `server_start` is tmux's start
 time in seconds; `at` is capture time in Unix milliseconds. `event` is the hook
 event name; optional `detail` holds notification type, tool matcher, reason or
 status type. Both are stored separately. OpenCode V2 execution.started maps to
@@ -181,8 +182,11 @@ The daemon writes `<runtime>/server_start` outside the SQLite worker, tied to th
 tmux socket device/inode and change time so a replacement invalidates stale context.
 Hooks read that cache; only an absent cache requires a bounded tmux query. A durable frame
 may carry `server_start: 0` until the daemon's first poll supplies that context.
-The daemon resolves it before store validation. One O_APPEND write under
-`spool.lock` precedes tmux fallback, socket delivery, and detached startup. Live
+The daemon resolves it before store validation. One lock-free O_APPEND write of the
+complete frame precedes tmux fallback,
+socket delivery, and detached startup. After writing, an appender verifies that its inode
+still names the live spool. If replay renamed it meanwhile, the appender retries the same
+nonce in the fresh live spool; receipts deduplicate either copy. Live
 delivery uses at most 100 ms of the remaining 180 ms budget. Overruns are logged;
 there is no worker thread that can abandon or tear an append. Append failure is
 logged as a lost signal. Spool, rejected-file and hook-log opens refuse symlinks
@@ -191,8 +195,12 @@ and non-regular files.
 Replay runs after initial context discovery and on poll ticks, in order. Bad or
 incomplete lines move to `spool.rejected` and are logged; good lines continue.
 Replay errors are logged independently and never fail startup or consume the
-five-failure process-poll budget. Only a committed prefix is removed atomically,
-retaining concurrent appends. A new append separates an existing partial tail
+five-failure process-poll budget. Replay first recovers leftover `spool.replaying.*` files,
+then claims the live spool by
+renaming it to `spool.replaying.<pid>.<nonce>` and creates a fresh live spool. A claim is
+removed only after its good signals commit and rejected lines are preserved. Failed or
+interrupted claims remain for restart recovery; concurrent appenders never need a lock.
+A new append separates an existing partial tail
 with a newline. SQLite work, file I/O and parsing retain their separate owners.
 
 `hooks install --chain` wraps an existing Codex notify program: record the last

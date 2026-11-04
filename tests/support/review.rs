@@ -48,9 +48,7 @@ e2e_test!(
         let payload = guard.scratch.path().join("large.json");
         fs::write(&payload,serde_json::to_vec(&json!({"hook_event_name":"PostToolUse","tool_name":"Bash","session_id":"large-fake","cwd":"/fixture","tool_response":{"stdout":"x".repeat(5*1024*1024)}})).unwrap()).unwrap();
         super::hooks::fire(&guard, pid, "claude", &payload);
-        until!(|| fs::read(guard.scratch.path().join("state/spool.ndjson"))
-            .unwrap()
-            .is_empty());
+        until!(|| tmux_sidecar::hook::spool::drained(&guard.scratch.path().join("state")).unwrap());
         super::lifecycle::stop(&guard);
         let signals = history(&guard);
         assert_eq!(signals.len(), 1);
@@ -95,9 +93,7 @@ e2e_test!(
             "claude",
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks/claude/Stop.json"),
         );
-        until!(|| fs::read(guard.scratch.path().join("state/spool.ndjson"))
-            .unwrap()
-            .is_empty());
+        until!(|| tmux_sidecar::hook::spool::drained(&guard.scratch.path().join("state")).unwrap());
         assert!(
             !guard.scratch.path().join("home/hook-probe").exists(),
             "hook forked tmux despite cached context"

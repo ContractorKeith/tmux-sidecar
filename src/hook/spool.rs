@@ -1,82 +1,108 @@
+//! Lock-free appenders; replay owns renamed files, never rewrites the live spool.
 use super::files;
-use crate::{client::FileLock, paths::Paths};
-use std::os::unix::fs::FileExt;
+use crate::paths::Paths;
 use std::{
     fs::{self, OpenOptions},
-    io::{self, Read, Write},
-    path::Path,
-    time::{Duration, Instant},
+    io::{self, Write},
+    os::unix::fs::{FileExt, MetadataExt},
+    path::{Path, PathBuf},
 };
-
-fn lock(state: &Path) -> io::Result<FileLock> {
-    let deadline = Instant::now() + Duration::from_millis(15);
+pub fn append(paths: &Paths, line: &[u8]) -> io::Result<()> {
+    append_inner(paths, line, || Ok(()))
+}
+fn append_inner(
+    paths: &Paths,
+    line: &[u8],
+    after_open: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
+    crate::paths::prepare(paths)?;
+    let path = paths.state.join("spool.ndjson");
+    let mut after_open = Some(after_open);
     loop {
-        match FileLock::try_acquire(&state.join("spool.lock")) {
-            Ok(lock) => return Ok(lock),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock && Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(1))
+        let mut file = files::regular(
+            OpenOptions::new().read(true).create(true).append(true),
+            &path,
+        )?;
+        if let Some(callback) = after_open.take() {
+            callback()?;
+        }
+        let length = file.metadata()?.len();
+        let mut tail = *b"\n";
+        if length > 0 {
+            file.read_at(&mut tail, length - 1)?;
+        }
+        let mut bytes = Vec::with_capacity(line.len() + 1);
+        if tail[0] != b'\n' {
+            bytes.push(b'\n');
+        }
+        bytes.extend_from_slice(line);
+        // One write with O_APPEND: frames cannot interleave with another appender.
+        if file.write(&bytes)? != bytes.len() {
+            return Err(io::Error::other("short spool append"));
+        }
+        let written = file.metadata()?;
+        match fs::symlink_metadata(&path) {
+            Ok(live)
+                if live.is_file() && (live.dev(), live.ino()) == (written.dev(), written.ino()) =>
+            {
+                return Ok(());
             }
+            Ok(_) => (),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => (),
             Err(e) => return Err(e),
         }
+        // Replay may have read/unlinked an already-open inode. Retry the same
+        // nonce in the fresh live spool; SQLite receipts deduplicate either copy.
     }
 }
-pub fn append(paths: &Paths, line: &[u8]) -> io::Result<()> {
-    crate::paths::prepare(paths)?;
-    let _lock = lock(&paths.state)?;
-    let mut file = files::regular(
-        OpenOptions::new().read(true).create(true).append(true),
-        &paths.state.join("spool.ndjson"),
-    )?;
-    let length = file.metadata()?.len();
-    let mut tail = *b"\n";
-    if length > 0 {
-        file.read_at(&mut tail, length - 1)?;
+/// Recover prior claims first, then atomically claim the live file.
+pub fn claim(state: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut claims = Vec::new();
+    for entry in fs::read_dir(state)? {
+        let entry = entry?;
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("spool.replaying.")
+        {
+            claims.push(entry.path());
+        }
     }
-    let line = if tail[0] != b'\n' {
-        let mut separated = vec![b'\n'];
-        separated.extend_from_slice(line);
-        separated
-    } else {
-        line.to_vec()
+    claims.sort();
+    let path = state.join("spool.ndjson");
+    let file = match files::regular(OpenOptions::new().read(true), &path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(claims),
+        Err(e) => return Err(e),
     };
-    if file.write(&line)? != line.len() {
-        return Err(io::Error::other("short spool append"));
+    if file.metadata()?.len() == 0 {
+        return Ok(claims);
     }
-    Ok(())
+    let claimed = state.join(format!(
+        "spool.replaying.{}.{}",
+        std::process::id(),
+        super::signal::nonce()?
+    ));
+    fs::rename(&path, &claimed)?;
+    // Keep a live file for new appenders and clients inspecting spool health.
+    files::regular(OpenOptions::new().create(true).append(true), &path)?;
+    claims.push(claimed);
+    Ok(claims)
 }
-
 pub fn read(state: &Path) -> io::Result<Vec<u8>> {
-    let _lock = lock(state)?;
     match files::read(&state.join("spool.ndjson")) {
         Ok(bytes) => Ok(bytes),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(e),
     }
 }
-/// Remove only the committed prefix; hooks may have appended while SQLite was busy.
-pub fn acknowledge(state: &Path, prefix: &[u8]) -> io::Result<()> {
-    let _lock = lock(state)?;
-    let path = state.join("spool.ndjson");
-    let mut file = files::regular(OpenOptions::new().read(true).write(true), &path)?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
-    if !bytes.starts_with(prefix) {
-        return Err(io::Error::other("spool prefix changed"));
-    }
-    let remaining = &bytes[prefix.len()..];
-    // Atomic replacement prevents a crash during truncation from corrupting a suffix.
-    let temp = state.join("spool.replay");
-    let mut replacement = files::regular(
-        OpenOptions::new().create(true).truncate(true).write(true),
-        &temp,
-    )?;
-    replacement.write_all(remaining)?;
-    replacement.sync_all()?;
-    fs::rename(temp, path)
+pub fn read_claim(path: &Path) -> io::Result<Vec<u8>> {
+    files::read(path)
 }
-
+pub fn acknowledge(claim: &Path) -> io::Result<()> {
+    fs::remove_file(claim)
+}
 pub fn reject(state: &Path, bytes: &[u8]) -> io::Result<()> {
-    let _lock = lock(state)?;
     let mut file = files::regular(
         OpenOptions::new().create(true).append(true),
         &state.join("spool.rejected"),
@@ -84,3 +110,20 @@ pub fn reject(state: &Path, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)?;
     file.sync_all()
 }
+/// Test diagnostics must account for claimed data as well as the live spool.
+#[cfg(feature = "test-util")]
+pub fn drained(state: &Path) -> io::Result<bool> {
+    if !read(state)?.is_empty() {
+        return Ok(false);
+    }
+    Ok(!fs::read_dir(state)?.any(|entry| {
+        entry.is_ok_and(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("spool.replaying.")
+        })
+    }))
+}
+#[cfg(test)]
+#[path = "spool_tests.rs"]
+mod tests;

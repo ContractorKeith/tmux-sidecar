@@ -38,7 +38,7 @@ fn fixture_metadata_and_event_kinds_parse_without_losing_raw_fields() {
     }
 }
 #[test]
-fn spool_ack_retains_concurrent_suffix() {
+fn spool_claim_retains_concurrent_append() {
     let root = tempfile::tempdir().unwrap();
     let paths = tmux_sidecar::paths::Paths {
         runtime: root.path().join("run"),
@@ -46,9 +46,10 @@ fn spool_ack_retains_concurrent_suffix() {
         config: root.path().join("config"),
     };
     spool::append(&paths, b"first\n").unwrap();
-    let prefix = spool::read(&paths.state).unwrap();
+    let claims = spool::claim(&paths.state).unwrap();
+    assert_eq!(spool::read_claim(&claims[0]).unwrap(), b"first\n");
     spool::append(&paths, b"second\n").unwrap();
-    spool::acknowledge(&paths.state, &prefix).unwrap();
+    spool::acknowledge(&claims[0]).unwrap();
     assert_eq!(spool::read(&paths.state).unwrap(), b"second\n");
 }
 #[tokio::test(flavor = "current_thread")]

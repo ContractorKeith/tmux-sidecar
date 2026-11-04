@@ -13,6 +13,11 @@ impl Drop for ChildGuard {
     }
 }
 fn main() {
+    let args: Vec<_> = std::env::args().collect();
+    if args.get(1).is_some_and(|s| s == "--hook-burst") {
+        burst(&args[2], &args[3]);
+        return;
+    }
     let root = PathBuf::from(std::env::var_os("TMUX_SIDECAR_STATE_DIR").unwrap());
     let pid = std::process::id();
     let executable = std::env::current_exe().unwrap();
@@ -75,4 +80,34 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(5));
     }
+}
+
+fn burst(binary: &str, fixture: &str) {
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(200));
+    std::thread::scope(|scope| {
+        for _ in 0..200 {
+            let barrier = barrier.clone();
+            scope.spawn(move || {
+                barrier.wait();
+                let mut child = ChildGuard(
+                    Command::new(binary)
+                        .args(["hook", "claude"])
+                        .stdin(fs::File::open(fixture).unwrap())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .unwrap(),
+                );
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                loop {
+                    if let Some(status) = child.0.try_wait().unwrap() {
+                        assert!(status.success());
+                        break;
+                    }
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            });
+        }
+    });
 }

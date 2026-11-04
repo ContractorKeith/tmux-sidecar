@@ -55,6 +55,9 @@ cargo build --release                              # target/release/tmux-sidecar
 - A detached daemon needs its own lifetime lock as well as `spawn.lock`: foreground starts
   must never unlink a live socket. Keep lock descriptors CLOEXEC.
 - Hook payload format is independent of ancestor identity: Grok uses Claude entries by default.
+- Appenders never lock: one O_APPEND frame write plus an inode check/retry covers replay rename
+  races. Replay owns `spool.replaying.*` claims and recovers leftovers before the live spool.
+- Both hook ancestor walks avoid subprocesses: `/proc` on Linux, `proc_pidinfo` on macOS.
 - Spool before live delivery; receipts dedupe invocation nonces, not equal payloads. Reject bad lines without stopping the daemon.
 - Cache server_start in the runtime dir; keep hook ancestry/probes cheap and drain stdin before no-op paths.
 - OpenCode 2.2.5 uses a default id/setup plugin, V2 data fields, and the opencode.exe process name.
