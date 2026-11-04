@@ -1,4 +1,5 @@
 mod copy_fixture;
+mod fake_binary;
 mod process;
 pub mod socket;
 pub mod watchdog;
@@ -50,18 +51,7 @@ impl TmuxGuard {
             .unwrap();
         }
         let helper = guard.scratch.path().join("fake-agent");
-        // Build the bin-less helper directly: `cargo test --test e2e` also works on a clean tree.
-        let result = Command::new("rustc")
-            .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_agent.rs"))
-            .arg("-o")
-            .arg(&helper)
-            .bounded_output()
-            .unwrap();
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
+        fake_binary::write(&helper);
         for agent in ["claude", "codex", "grok", "opencode"] {
             fs::copy(&helper, guard.scratch.path().join("bin").join(agent)).unwrap();
         }
@@ -71,14 +61,27 @@ impl TmuxGuard {
         let mut shell = Command::new("/bin/sh");
         guard.isolate(&mut shell);
         let output = shell
-            .args(["-c", "command -v claude"])
+            .args([
+                "-c",
+                "for agent in claude codex grok opencode; do command -v \"$agent\" || exit; done",
+            ])
             .bounded_output()
             .unwrap();
         assert!(output.status.success());
-        assert_eq!(
-            String::from_utf8(output.stdout).unwrap().trim(),
-            guard.scratch.path().join("bin/claude").to_str().unwrap()
-        );
+        let resolved = String::from_utf8(output.stdout).unwrap();
+        let expected: Vec<_> = ["claude", "codex", "grok", "opencode"]
+            .iter()
+            .map(|a| {
+                guard
+                    .scratch
+                    .path()
+                    .join("bin")
+                    .join(a)
+                    .display()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(resolved.lines().collect::<Vec<_>>(), expected);
         // Exercise a copied fake and ensure direct children are killed/reaped on failure too.
         let mut command = Command::new(guard.scratch.path().join("bin/codex"));
         guard.isolate(&mut command);
@@ -111,6 +114,9 @@ impl TmuxGuard {
             fields.next().unwrap().parse().unwrap(),
         );
         guard.server_socket = tmux_sidecar::paths::canonical_socket(&socket).unwrap();
+        wait_for("fake Claude startup", || {
+            guard.scratch.path().join("state/ready-claude").exists()
+        });
         guard
     }
     pub fn isolate(&self, command: &mut Command) {

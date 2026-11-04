@@ -25,6 +25,33 @@ fn unreachable(error: io::Error) -> Failure {
 }
 
 pub async fn execute(cli: Cli) -> Result<(), Failure> {
+    if let Command::Hook { agent, payload } = &cli.command {
+        let mut args = vec![agent.to_owned()];
+        args.extend(payload.iter().cloned());
+        crate::hook::entry(args).await;
+        return Ok(());
+    }
+    if let Command::Hooks { command } = &cli.command {
+        let (install, chain, agent, dry_run) = match command {
+            Hooks::Install {
+                chain,
+                agent,
+                dry_run,
+            } => (true, *chain, agent, *dry_run),
+            Hooks::Uninstall { agent, dry_run } => (false, false, agent, *dry_run),
+        };
+        let home = std::env::var_os("HOME").ok_or_else(|| (1, "HOME is missing".into()))?;
+        let binary = std::env::current_exe().map_err(|e| (1, e.to_string()))?;
+        return crate::install::run(
+            std::path::Path::new(&home),
+            &binary,
+            agent,
+            install,
+            chain,
+            dry_run,
+        )
+        .map_err(|e| (1, e.to_string()));
+    }
     if !matches!(cli.command, Command::List { .. } | Command::Daemon { .. }) {
         let (verb, milestone) = cli.command.pending();
         return Err((2, format!("{verb} is not implemented yet (M{milestone})")));

@@ -78,7 +78,7 @@ pub async fn request(
         )
     })?
 }
-async fn connect(paths: &Paths) -> io::Result<UnixStream> {
+pub(crate) async fn connect(paths: &Paths) -> io::Result<UnixStream> {
     tokio::time::timeout(
         Duration::from_millis(250),
         UnixStream::connect(paths.runtime.join("sock")),
@@ -94,8 +94,16 @@ async fn connect(paths: &Paths) -> io::Result<UnixStream> {
         )
     })?
 }
-async fn exchange(
-    stream: &mut BufReader<UnixStream>,
+pub(crate) async fn verify(stream: &mut UnixStream, socket: &Path) -> io::Result<()> {
+    let hello = exchange(&mut BufReader::new(stream), "hello", serde_json::json!({})).await?;
+    if hello["server_key"].as_str() != Some(&paths::server_key(socket)?) {
+        return Err(io::Error::other("wrong tmux server"));
+    }
+    Ok(())
+}
+pub use spawn::trigger_spawn;
+async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+    stream: &mut BufReader<S>,
     method: &str,
     params: Value,
 ) -> io::Result<Value> {

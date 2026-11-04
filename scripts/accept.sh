@@ -31,6 +31,7 @@ unset TMUX TMUX_PANE
 
 echo "== gate"
 cargo fmt --all --check
+rustfmt --edition 2024 --check tests/support/fake_agent.rs
 cargo clippy --locked --all-targets -- -D warnings
 TMUX_SIDECAR_E2E=1 cargo test --locked
 test "$(cargo tree -d --locked 2>/dev/null | grep -c 'libsqlite3-sys')" -eq 0
@@ -63,4 +64,20 @@ if kill -0 "$daemon_pid" 2>/dev/null; then
   fi
 fi
 
+# M2: dry-run must leave the scratch agent config tree unchanged.
+echo "== hook live checks"
+mkdir -p "$HOME/.claude" "$HOME/.codex"
+printf '%s\n' '{"user": true}' > "$HOME/.claude/settings.json"
+printf '%s\n' '# user comment' 'model = "fixture"' > "$HOME/.codex/config.toml"
+cp "$HOME/.claude/settings.json" "$scratch/claude.before"
+cp "$HOME/.codex/config.toml" "$scratch/codex.before"
+"$bin" hooks install --dry-run > "$scratch/hooks.diff"
+test -s "$scratch/hooks.diff"
+cmp "$scratch/claude.before" "$HOME/.claude/settings.json"
+cmp "$scratch/codex.before" "$HOME/.codex/config.toml"
+test ! -e "$HOME/.claude/settings.json.tmux-sidecar.bak"
+test ! -e "$HOME/.config/opencode/plugin/tmux-sidecar.js"
+"$bin" hook claude </dev/null > "$scratch/hook.stdout" 2> "$scratch/hook.stderr"
+test ! -s "$scratch/hook.stdout"
+test ! -s "$scratch/hook.stderr"
 echo "accept: ok"

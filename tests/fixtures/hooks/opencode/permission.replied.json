@@ -1,0 +1,13 @@
+{
+  "id": "evt_fake",
+  "created": 1793800000000,
+  "location": {
+    "directory": "/home/user/project"
+  },
+  "type": "permission.replied",
+  "data": {
+    "sessionID": "ses_fake",
+    "requestID": "per_fake",
+    "reply": "once"
+  }
+}

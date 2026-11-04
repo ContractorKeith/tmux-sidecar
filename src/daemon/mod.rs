@@ -4,6 +4,8 @@ mod methods;
 pub use methods::handle as dispatch;
 mod peer;
 mod poll;
+mod replay;
+mod shutdown;
 mod store_worker;
 mod transport;
 use crate::{
@@ -70,7 +72,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     let store = store_worker::StoreWorker::open(db).await?;
     let poll_ms = poll_ms(paths)?;
     let mut health = poll::Health::default();
-    let initial = poll::tick(socket.clone(), &store).await;
+    let initial = poll::tick(socket.clone(), &store, paths.runtime.clone()).await;
     health.record(&initial);
     match initial {
         Ok(false) => return Err(io::Error::other("tmux server is not running")),
@@ -80,6 +82,13 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         }
         Ok(true) => (),
     }
+    replay::replay(
+        paths.state.clone(),
+        paths.runtime.clone(),
+        socket.clone(),
+        &store,
+    )
+    .await;
     let listener = UnixListener::bind(paths.runtime.join("sock"))?;
     fs::set_permissions(
         paths.runtime.join("sock"),
@@ -102,7 +111,14 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
             _ = term.recv() => break Ok(()),
             _ = interrupt.recv() => break Ok(()),
             _ = interval.tick(), if polling.is_none() => {
-                polling = Some(Box::pin(poll::tick(socket.clone(), &store)));
+                let socket = socket.clone();
+                let state = paths.state.clone();
+                let worker = &store;
+                let runtime = paths.runtime.clone();
+                polling = Some(Box::pin(async move {
+                    replay::replay(state, runtime.clone(),socket.clone(), worker).await;
+                    poll::tick(socket, worker, runtime).await
+                }));
             },
             result = async {
                 match &mut polling {
@@ -127,10 +143,12 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 Ok((stream, _)) => { let sender = sender.clone(); connections.spawn(async move { transport::serve(stream, sender).await }); },
                 Err(e) => break Err(e),
             },
-            Some(call) = receiver.recv() => {
+            Some(mut call) = receiver.recv() => {
+                if call.request.method=="signal" && let Some(params)=&mut call.request.params {crate::hook::context::resolve(params,&paths.runtime,&socket);}
                 let stop = call.request.method == "daemon.stop" && methods::empty_params(&call.request);
                 let key = key.clone();
-                let response = store.with(move |store| dispatch(call.request, store, &key, poll_ms)).await?;
+                let prepared = methods::prepare(&call.request);
+                let response = store.with(move |store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared)).await?;
                 let _ = call.reply.send(response);
                 if stop { break Ok(()); }
             },
@@ -139,14 +157,9 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     };
     drop(polling);
     drop(listener);
-    // Let the stop response reach its client, then close any idle connections.
-    let _ = tokio::time::timeout(Duration::from_millis(100), async {
-        while connections.join_next().await.is_some() {}
-    })
-    .await;
-    connections.shutdown().await;
+    let drained = shutdown::drain(&mut connections, &mut receiver, &store, &key, poll_ms).await;
     store.close().await?;
-    result
+    result.and(drained)
 }
 fn poll_ms(paths: &Paths) -> io::Result<u64> {
     let config = match fs::read_to_string(&paths.config) {

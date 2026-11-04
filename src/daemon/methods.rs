@@ -12,7 +12,27 @@ pub fn empty_params(request: &Request) -> bool {
         .as_ref()
         .is_none_or(|p| p.is_null() || p.as_object().is_some_and(|o| o.is_empty()))
 }
+type Prepared = Option<Result<crate::hook::signal::Signal, String>>;
+pub fn prepare(request: &Request) -> Prepared {
+    (request.method == "signal").then(|| {
+        let signal: crate::hook::signal::Signal =
+            serde_json::from_value(request.params.clone().unwrap_or(Value::Null))
+                .map_err(|e| e.to_string())?;
+        signal.validate().map_err(|e| e.to_string())?;
+        Ok(signal)
+    })
+}
 pub fn handle(request: Request, store: &Store, key: &str, poll_ms: u64) -> Response {
+    let prepared = prepare(&request);
+    handle_prepared(request, store, key, poll_ms, prepared)
+}
+pub fn handle_prepared(
+    request: Request,
+    store: &Store,
+    key: &str,
+    poll_ms: u64,
+    prepared: Prepared,
+) -> Response {
     let id = Some(request.id.clone());
     let result = match request.method.as_str() {
         "hello" | "daemon.status" | "daemon.stop" if !empty_params(&request) => {
@@ -26,9 +46,15 @@ pub fn handle(request: Request, store: &Store, key: &str, poll_ms: u64) -> Respo
         }
         "daemon.stop" => Ok(json!({"stopping":true,"pid":std::process::id()})),
         "list" => list(&request, store),
+        "signal" => match prepared.expect("signal prepared before dispatch") {
+            Err(e) => Err((rpc::INVALID_PARAMS, e)),
+            Ok(signal) => store
+                .signal(&signal)
+                .map(|()| json!({}))
+                .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string())),
+        },
         method => {
             let milestone = match method {
-                "signal" => "M2",
                 "attention" | "group.add" | "group.rm" | "group.ls" | "subscribe" => "M3",
                 "history" | "wait" | "send" | "ack" | "name" => "M4",
                 _ => return failure(id, rpc::METHOD_NOT_FOUND, "unknown method"),

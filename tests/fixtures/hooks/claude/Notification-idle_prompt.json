@@ -1,0 +1,9 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "cwd": "/home/user/project",
+  "hook_event_name": "Notification",
+  "transcript_path": "/home/user/transcript.jsonl",
+  "notification_type": "idle_prompt",
+  "permission_mode": "default",
+  "message": "Fixture notification"
+}

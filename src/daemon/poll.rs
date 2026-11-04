@@ -23,7 +23,11 @@ enum Snapshot {
     Alive(crate::tmux::PaneScan, crate::seams::ProcessSnapshot),
     Gone,
 }
-pub async fn tick(socket: PathBuf, worker: &StoreWorker) -> Result<bool, Failure> {
+pub async fn tick(
+    socket: PathBuf,
+    worker: &StoreWorker,
+    runtime: PathBuf,
+) -> Result<bool, Failure> {
     worker
         .with(|store| store.verify_identity())
         .await?
@@ -31,13 +35,16 @@ pub async fn tick(socket: PathBuf, worker: &StoreWorker) -> Result<bool, Failure
     // External commands can be slow. Do not occupy the SQLite owner while collecting.
     let snapshot = tokio::task::spawn_blocking(move || -> io::Result<Snapshot> {
         let tmux = RealTmux {
-            socket: Socket::Path(socket),
+            socket: Socket::Path(socket.clone()),
         };
         let scan = match tmux.scan() {
             Ok(scan) => scan,
             Err(error) if tmux.confirmed_gone(&error) => return Ok(Snapshot::Gone),
             Err(error) => return Err(error),
         };
+        if let Some(pane) = scan.panes.first() {
+            crate::hook::context::write(&runtime, pane.server_start, &socket)?;
+        }
         Ok(Snapshot::Alive(scan, PsProcessTree.snapshot()?))
     })
     .await

@@ -1,0 +1,9 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "cwd": "/home/user/project",
+  "hook_event_name": "StopFailure",
+  "transcript_path": "/home/user/transcript.jsonl",
+  "error": "fixture error",
+  "error_type": "server_error",
+  "permission_mode": "default"
+}

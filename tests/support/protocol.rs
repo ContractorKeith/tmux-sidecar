@@ -65,6 +65,8 @@ e2e_test!(separate_servers_and_rpc_contract, {
         let response: Value = serde_json::from_str(&line).unwrap();
         if ["hello", "daemon.status"].contains(method) {
             assert!(response["result"].is_object());
+        } else if *method == "signal" {
+            assert_eq!(response["error"]["code"], -32602);
         } else {
             assert_eq!(response["error"]["code"], -32601);
             assert!(

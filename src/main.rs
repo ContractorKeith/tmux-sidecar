@@ -3,8 +3,14 @@ use clap::Parser;
 use std::process::ExitCode;
 use tmux_sidecar::cli::{self, Cli};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("create runtime")
+        .block_on(run())
+}
+async fn run() -> ExitCode {
     let cli = Cli::parse();
     let detached = std::env::var_os("TMUX_SIDECAR_DETACHED").is_some()
         && matches!(

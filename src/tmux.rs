@@ -111,6 +111,26 @@ fn gone_evidence(error: &io::Error, socket_exists: bool) -> bool {
         || error.to_string().contains("error connecting to")
 }
 mod parse;
+pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_millis(30),
+        tokio::process::Command::new("tmux")
+            .arg("-S")
+            .arg(socket)
+            .args(["display-message", "-p", "#{start_time}"])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(std::io::Error::other)??;
+    if !output.status.success() {
+        return Err(std::io::Error::other("tmux context unavailable"));
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .map_err(std::io::Error::other)
+}
 pub use parse::{PaneScan, parse, parse_scan};
 #[cfg(test)]
 #[path = "tmux/tests.rs"]

@@ -1,0 +1,13 @@
+{
+  "hookEventName": "user_prompt_submit",
+  "sessionId": "00000000-0000-4000-8000-000000000001",
+  "cwd": "/home/user/project",
+  "workspaceRoot": "/home/user/project",
+  "timestamp": "2026-11-04T20:29:22.566778941+00:00",
+  "promptId": "00000000-0000-4000-8000-000000000001",
+  "permissionMode": "default",
+  "prompt": "Run true with the shell tool, then reply ok.",
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "permission_mode": "default"
+}

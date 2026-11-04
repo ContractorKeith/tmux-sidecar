@@ -1,0 +1,16 @@
+{
+  "id": "evt_fake",
+  "created": 1793800000000,
+  "location": {
+    "directory": "/home/user/project"
+  },
+  "type": "permission.asked",
+  "data": {
+    "id": "per_fake",
+    "sessionID": "ses_fake",
+    "action": "bash",
+    "resources": [
+      "true"
+    ]
+  }
+}

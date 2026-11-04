@@ -56,6 +56,17 @@ pub async fn serve(stream: UnixStream, sender: mpsc::Sender<Call>) -> std::io::R
                     && value.get("method").is_some_and(Value::is_string)
                     && value.get("id").is_none()
                 {
+                    if value["method"] == "signal" {
+                        let mut request = value;
+                        request["id"] = Value::from(0);
+                        if let Ok(request) = serde_json::from_value::<Request>(request) {
+                            let (reply, receive) = oneshot::channel();
+                            if sender.send(Call { request, reply }).await.is_err() {
+                                return Ok(());
+                            }
+                            let _ = receive.await;
+                        }
+                    }
                     continue;
                 }
                 match serde_json::from_value::<Request>(value.clone()) {

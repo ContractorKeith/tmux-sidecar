@@ -88,8 +88,8 @@ pub enum Command {
     },
     /// Receive an agent hook payload.
     Hook {
-        #[arg(value_enum)]
-        agent: HookAgent,
+        #[arg(help = "Payload format: claude, codex, codex-notify, grok, opencode")]
+        agent: String,
         #[arg(allow_hyphen_values = true)]
         payload: Option<String>,
     },
@@ -116,14 +116,6 @@ pub enum WaitState {
     Waiting,
     Blocked,
     Done,
-}
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum HookAgent {
-    Claude,
-    Codex,
-    CodexNotify,
-    Grok,
-    Opencode,
 }
 #[derive(Debug, Subcommand)]
 pub enum Group {

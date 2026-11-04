@@ -10,8 +10,8 @@ terminals; tmux-sidecar owns the agent semantics. MIT. "Done" for v1 is every v1
 
 ## Status
 
-M1 implemented (2026-11-04): per-server daemon, secure socket, auto-spawn, process polling,
-WAL store, list/status/stop and RPC contract. M2 hooks and M3 state semantics are next.
+M2 implemented (2026-11-04): bounded hook delivery, raw signal storage, durable spool replay,
+marked hook installers and four-agent fixtures. M3 state semantics are next.
 Milestones M0–M7 are GitHub issues #1–#8.
 
 ## Commands
@@ -53,6 +53,11 @@ cargo build --release                              # target/release/tmux-sidecar
 - `daemon.log` is capped at 1 MiB and rotated once to `daemon.log.1`.
 - A detached daemon needs its own lifetime lock as well as `spawn.lock`: foreground starts
   must never unlink a live socket. Keep lock descriptors CLOEXEC.
+- Hook payload format is independent of ancestor identity: Grok uses Claude entries by default.
+- Spool before live delivery; receipts dedupe invocation nonces, not equal payloads. Reject bad lines without stopping the daemon.
+- Cache server_start in the runtime dir; keep hook ancestry/probes cheap and drain stdin before no-op paths.
+- OpenCode 2.2.5 uses a default id/setup plugin, V2 data fields, and the opencode.exe process name.
+- Codex inline hook edits use toml_edit; --chain preserves old notify argv after recording.
 - Commits: `<type>: <description>`, author @ContractorKeith only.
 
 ## Tracking

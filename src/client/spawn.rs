@@ -1,4 +1,6 @@
 use super::*;
+#[path = "trigger.rs"]
+mod trigger;
 use std::{
     fs::{self, File, OpenOptions},
     os::{fd::AsRawFd, unix::fs::OpenOptionsExt},
@@ -6,6 +8,7 @@ use std::{
     time::Instant,
 };
 use tokio::process::{Child, Command};
+pub use trigger::trigger_spawn;
 
 /// Locks live as long as their file; CLOEXEC prevents a spawned daemon inheriting them.
 pub struct FileLock(File);
@@ -129,6 +132,14 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
         if let Some(child) = &mut starting.child
             && let Some(status) = child.try_wait()?
         {
+            // A detached hook trigger can win the lifetime lock after our connect.
+            // Join that startup rather than reporting the losing child's lock error.
+            if FileLock::try_acquire(&paths.runtime.join("daemon.lock"))
+                .is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock)
+            {
+                starting.release();
+                continue;
+            }
             let log = paths.state.join("daemon.log");
             let detail = fs::read_to_string(&log)
                 .ok()

@@ -188,3 +188,12 @@ fn skipped_pane_keeps_its_active_run() {
     );
     assert_eq!(detect_scan(&[], &[], &processes, &[run], 3).end, ["r1"]);
 }
+
+#[test]
+fn deployed_opencode_2_binary_name_is_recognized() {
+    assert_eq!(super::kind("opencode.exe"), Some(AgentKind::Opencode));
+    assert_eq!(
+        crate::proc::agent_kind("opencode.exe"),
+        Some(AgentKind::Opencode)
+    );
+}
