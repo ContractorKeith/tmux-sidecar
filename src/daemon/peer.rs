@@ -27,4 +27,30 @@ mod tests {
         assert!(super::same_uid(42, 42));
         assert!(!super::same_uid(43, 42));
     }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn listener_and_peer_descriptors_close_on_exec() {
+        use std::os::fd::AsRawFd;
+        let root = tempfile::tempdir().unwrap();
+        let listener = tokio::net::UnixListener::bind(root.path().join("sock")).unwrap();
+        let (client, server) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            let client = tokio::net::UnixStream::connect(root.path().join("sock"))
+                .await
+                .unwrap();
+            let (server, _) = listener.accept().await.unwrap();
+            (client, server)
+        })
+        .await
+        .expect("connect and accept peer descriptors within 1 s");
+        assert!(super::authorize(&server).unwrap());
+        for fd in [listener.as_raw_fd(), client.as_raw_fd(), server.as_raw_fd()] {
+            // SAFETY: listener/client/server own every descriptor throughout this loop.
+            let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+            assert_ne!(
+                flags & libc::FD_CLOEXEC,
+                0,
+                "peer/listener fd must not survive exec"
+            );
+        }
+    }
 }
