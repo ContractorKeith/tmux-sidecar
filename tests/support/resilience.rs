@@ -21,10 +21,14 @@ e2e_test!(two_failed_ps_ticks_keep_serving_then_recover, {
             .spawn()
             .unwrap(),
     );
-    super::support::wait_for("daemon ready after ps failures", || {
-        g.scratch.path().join("run/sock").exists()
+    let original = i32::try_from(_daemon.0.id()).unwrap();
+    // Binding the socket precedes PID publication; wait for our complete PID value.
+    super::support::wait_for("daemon PID published after ps failures", || {
+        fs::read_to_string(g.scratch.path().join("run/daemon.pid"))
+            .ok()
+            .and_then(|pid| pid.parse::<i32>().ok())
+            == Some(original)
     });
-    let original = pid(&g);
     until!(|| list(&g).as_array().unwrap().len() == 1);
     assert_eq!(pid(&g), original);
     let log = fs::read_to_string(g.scratch.path().join("state/daemon.log")).unwrap();
