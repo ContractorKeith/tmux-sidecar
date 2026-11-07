@@ -1,16 +1,21 @@
-//! Read within the hook deadline and retain a bounded payload preview.
+//! Read to EOF while input progresses; bound silence and the retained payload.
 use serde_json::Value;
 use std::io::{self, Read};
 const INPUT_LIMIT: usize = 64 * 1024 * 1024;
-/// Poll a nonblocking stdin only within the hook's input budget.
-pub fn read_stdin(deadline: std::time::Instant) -> io::Result<(Vec<u8>, bool)> {
-    use std::{io::IsTerminal, os::fd::AsRawFd};
-    let stdin = io::stdin();
-    if stdin.is_terminal() {
-        return Ok((Vec::new(), false));
-    }
+const INPUT_IDLE: std::time::Duration = std::time::Duration::from_secs(1);
+/// Give up only after a second without input progress; EOF and the size cap end reading.
+pub fn read_stdin() -> io::Result<(Vec<u8>, bool)> {
+    use std::os::fd::AsRawFd;
+    let mut stdin = io::stdin();
     let fd = stdin.as_raw_fd();
-    // SAFETY: stdin is live; fcntl only queries/updates descriptor flags.
+    read_fd(&mut stdin, fd, std::time::Instant::now() + INPUT_IDLE)
+}
+fn read_fd(
+    reader: &mut impl Read,
+    fd: i32,
+    mut deadline: std::time::Instant,
+) -> io::Result<(Vec<u8>, bool)> {
+    // SAFETY: the caller keeps this descriptor live; fcntl only queries/updates descriptor flags.
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags < 0 {
         return Err(io::Error::last_os_error());
@@ -22,7 +27,7 @@ pub fn read_stdin(deadline: std::time::Instant) -> io::Result<(Vec<u8>, bool)> {
     struct Restore(i32, i32);
     impl Drop for Restore {
         fn drop(&mut self) {
-            // SAFETY: stdin remains live throughout this scope.
+            // SAFETY: the caller keeps the descriptor live throughout this scope.
             unsafe {
                 libc::fcntl(self.0, libc::F_SETFL, self.1);
             }
@@ -31,17 +36,21 @@ pub fn read_stdin(deadline: std::time::Instant) -> io::Result<(Vec<u8>, bool)> {
     let _restore = Restore(fd, flags);
     let mut bytes = Vec::new();
     let mut chunk = [0; 64 * 1024];
-    while std::time::Instant::now() < deadline {
-        match stdin.lock().read(&mut chunk) {
-            Ok(0) => break,
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => return Ok((bytes, false)),
             Ok(n) => {
                 if bytes.len() + n <= INPUT_LIMIT {
                     bytes.extend_from_slice(&chunk[..n]);
+                    deadline = std::time::Instant::now() + INPUT_IDLE;
                 } else {
                     return Err(io::Error::other("hook input exceeds 64 MiB"));
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() >= deadline {
+                    return Ok((bytes, true));
+                }
                 let mut poll = libc::pollfd {
                     fd,
                     events: libc::POLLIN,
@@ -50,7 +59,7 @@ pub fn read_stdin(deadline: std::time::Instant) -> io::Result<(Vec<u8>, bool)> {
                 let ms = deadline
                     .saturating_duration_since(std::time::Instant::now())
                     .as_millis()
-                    .clamp(1, 60) as i32;
+                    .clamp(1, 1000) as i32;
                 // SAFETY: poll points at one writable pollfd; timeout is bounded.
                 unsafe {
                     libc::poll(&mut poll, 1, ms);
@@ -60,8 +69,6 @@ pub fn read_stdin(deadline: std::time::Instant) -> io::Result<(Vec<u8>, bool)> {
             Err(e) => return Err(e),
         }
     }
-    let expired = std::time::Instant::now() >= deadline;
-    Ok((bytes, expired))
 }
 fn prefix(text: &str, limit: usize) -> &str {
     let mut end = text.len().min(limit);
@@ -130,3 +137,7 @@ pub fn compact(mut payload: Value) -> io::Result<Value> {
     }
     Ok(payload)
 }
+
+#[cfg(test)]
+#[path = "input_tests.rs"]
+mod tests;

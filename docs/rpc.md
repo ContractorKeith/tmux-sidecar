@@ -221,6 +221,10 @@ the final error from reaching the peer. Subscribers never block daemon mutation 
 
 ## signal
 
+Hooks check TMUX before stdin; Codex notify reads only the final argv payload. Other
+hooks read to EOF while input progresses, with a 64 MiB cap and a one-second inactivity
+timeout. Stalled partial input is logged as `partial payload N bytes`; complete JSON
+remains recordable even after an inactivity timeout. The delivery budget starts after input.
 Hooks append a durable frame first, call `hello` and verify `server_key`, then
 attempt live delivery of the same invocation:
 

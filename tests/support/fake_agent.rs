@@ -5,6 +5,8 @@ use std::{
     process::{Command, Stdio},
     time::Duration,
 };
+mod fake_burst;
+use fake_burst::burst;
 struct ChildGuard(std::process::Child);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
@@ -29,8 +31,11 @@ fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
 }
 fn main() {
     let args: Vec<_> = std::env::args().collect();
+    if args.get(1).is_some_and(|s| s == "--gated-hook") {
+        fake_burst::entry(&args);
+    }
     if args.get(1).is_some_and(|s| s == "--hook-burst") {
-        burst(&args[2], &args[3]);
+        burst(&args[2], &args[3], 200);
         return;
     }
     let root = PathBuf::from(std::env::var_os("TMUX_SIDECAR_STATE_DIR").unwrap());
@@ -90,8 +95,12 @@ fn main() {
             let format = lines.next().unwrap();
             let fixture = lines.next().unwrap();
             let pane_override = lines.next();
-            if format == "burst" {
-                burst(binary, fixture);
+            if format == "burst" || format == "burst400" {
+                burst(
+                    binary,
+                    fixture,
+                    if format == "burst400" { 400 } else { 200 },
+                );
                 fs::write(root.join(format!("fired-{pid}")), "true\n0\n0\n0").unwrap();
                 continue;
             }
@@ -147,34 +156,4 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(5));
     }
-}
-
-fn burst(binary: &str, fixture: &str) {
-    let barrier = std::sync::Arc::new(std::sync::Barrier::new(200));
-    std::thread::scope(|scope| {
-        for _ in 0..200 {
-            let barrier = barrier.clone();
-            scope.spawn(move || {
-                barrier.wait();
-                let mut child = ChildGuard(
-                    command(binary)
-                        .args(["hook", "claude"])
-                        .stdin(fs::File::open(fixture).unwrap())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                        .unwrap(),
-                );
-                let deadline = std::time::Instant::now() + Duration::from_secs(5);
-                loop {
-                    if let Some(status) = child.0.try_wait().unwrap() {
-                        assert!(status.success());
-                        break;
-                    }
-                    assert!(std::time::Instant::now() < deadline);
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-            });
-        }
-    });
 }

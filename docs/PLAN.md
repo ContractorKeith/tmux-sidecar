@@ -276,7 +276,9 @@ CODEX_HOME, GROK_HOME and OPENCODE_DB from that client; it excludes agent contex
 CLAUDECODE and TMUX_PANE. A successful tmux scan restores preference for the pinned binary.
 
 **Hook delivery.** `hook` checks `$TMUX` before reading stdin (no `$TMUX` → exit 0).
-Stdin reads have a 60 ms deadline within the 200 ms budget; Codex notify uses argv only.
+Stdin reads continue to EOF while the writer makes progress, capped at 64 MiB. One second
+without bytes or EOF ends the read; stalled partial input is logged with its byte count.
+Codex notify uses argv only. The processing/delivery budget starts after input capture.
 It reads `$TMUX_PANE` and walks its own
 ancestor chain to the outermost `claude`, `codex`, `grok`, `opencode` or `opencode.exe`
 within the pane's process tree (the argument selects the payload format). Pane-root lookup
@@ -285,7 +287,7 @@ session owner, parent client, or unidentified same-cwd run; other orphans are dr
 Only verified in-pane ancestry can set hook-derived done. Agent identity matches comm,
 argv[0] basename or executable basename exactly, including symlinked agent installs.
 It attempts one O_APPEND frame write before live delivery, without appender locks; append
-failure still allows live delivery. Connect/write budget is 100 ms, total budget 200 ms.
+failure still allows live delivery. Connect/write budget is 100 ms, post-input budget 200 ms.
 Frames carry the server key; replay rejects missing/mismatched keys to hook.log before
 resolving unknown server_start values. The daemon claims spool files for replay and deduplicates invocation nonces. Appenders check
 and retry inode changes across replay renames; replay recovers leftover claims before the live spool.

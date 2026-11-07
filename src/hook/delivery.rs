@@ -31,7 +31,6 @@ async fn deliver(
     .await
 }
 pub async fn run(args: Vec<String>) -> io::Result<()> {
-    let started = Instant::now();
     let format = args.first().map(String::as_str).unwrap_or("");
     if !matches!(
         format,
@@ -46,7 +45,7 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
     let raw = if format == "codex-notify" {
         Ok((notify_payload(&args), false))
     } else {
-        input::read_stdin(started + Duration::from_millis(60))
+        input::read_stdin()
     };
     let Some(pane) = std::env::var("TMUX_PANE").ok().filter(|p| !p.is_empty()) else {
         return Ok(());
@@ -55,15 +54,23 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
         return Ok(());
     };
     let paths = paths::current(&socket)?;
+    let started = Instant::now();
     let result = match raw {
         Ok((raw, expired)) => {
-            if expired && !raw.is_empty() {
+            if expired {
                 paths::prepare(&paths)?;
                 super::log(
                     &paths.state,
                     &format!("hook stdin read budget expired after {} bytes", raw.len()),
                 )?;
+                if raw.is_empty() {
+                    return Ok(());
+                }
                 if serde_json::from_slice::<serde_json::Value>(&raw).is_err() {
+                    super::log(
+                        &paths.state,
+                        &format!("partial payload {} bytes", raw.len()),
+                    )?;
                     return Ok(());
                 }
             }

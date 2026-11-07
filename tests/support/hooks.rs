@@ -30,7 +30,19 @@ pub(super) fn fire_on_pane(
         state.join(format!("fire-{pid}")),
     )
     .unwrap();
-    until!(|| done.exists());
+    if format == "burst400" {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !done.exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "400-hook burst exceeded 20 s; hook.log: {}",
+                fs::read_to_string(state.join("hook.log")).unwrap_or_default()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    } else {
+        until!(|| done.exists());
+    }
     let result = fs::read_to_string(done).unwrap();
     let fields: Vec<_> = result.lines().collect();
     assert_eq!(fields[0], "true");

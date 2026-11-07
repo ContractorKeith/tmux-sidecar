@@ -34,7 +34,12 @@ fn open_stdin_never_holds_hooks_past_the_budget() {
             .unwrap()
             .write_all(b"{\"hook_event_name\":\"Stop\"}")
             .unwrap();
-        let deadline = Instant::now() + Duration::from_millis(200);
+        let budget = if format == "claude" && tmux {
+            Duration::from_secs(2)
+        } else {
+            Duration::from_millis(200)
+        };
+        let deadline = Instant::now() + budget;
         loop {
             if let Some(status) = child.0.try_wait().unwrap() {
                 assert!(status.success());
@@ -42,7 +47,7 @@ fn open_stdin_never_holds_hooks_past_the_budget() {
             }
             assert!(
                 Instant::now() < deadline,
-                "{format}: open stdin exceeded 200 ms"
+                "{format}: open stdin exceeded {budget:?}"
             );
             std::thread::sleep(Duration::from_millis(2));
         }
@@ -100,7 +105,7 @@ fn partial_stdin_deadline_names_the_budget_and_byte_count() {
         .unwrap()
         .write_all(b"{\"partial\":")
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(1);
+    let deadline = Instant::now() + Duration::from_secs(2);
     while child.0.try_wait().unwrap().is_none() {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
@@ -110,5 +115,6 @@ fn partial_stdin_deadline_names_the_budget_and_byte_count() {
         log.contains("hook stdin read budget expired after 11 bytes"),
         "{log}"
     );
+    assert!(log.contains("partial payload 11 bytes"), "{log}");
     assert!(!log.contains("EOF while parsing"), "{log}");
 }
