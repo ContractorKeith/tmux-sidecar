@@ -133,3 +133,5 @@ mod mcp_rpc;
 
 #[path = "support/ui.rs"]
 mod ui;
+#[path = "support/ui_lifecycle.rs"]
+mod ui_lifecycle;

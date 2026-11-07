@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 #[derive(Debug, PartialEq)]
 pub enum Action {
     None,
+    Ignored,
     Quit,
     Open,
     Ack,
@@ -10,7 +11,7 @@ pub enum Action {
 // Decode only key presses; editing mode owns ordinary characters, including q/j/k.
 pub fn decode(app: &mut App, key: KeyEvent) -> Action {
     if key.kind == KeyEventKind::Release {
-        return Action::None;
+        return Action::Ignored;
     }
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Action::Quit;
@@ -30,7 +31,7 @@ pub fn decode(app: &mut App, key: KeyEvent) -> Action {
                 app.filter.push(c);
                 app.selected = 0;
             }
-            _ => (),
+            _ => return Action::Ignored,
         }
         return Action::None;
     }
@@ -48,7 +49,7 @@ pub fn decode(app: &mut App, key: KeyEvent) -> Action {
         KeyCode::Char('/') => app.filtering = true,
         KeyCode::Enter => return Action::Open,
         KeyCode::Char('a') => return Action::Ack,
-        _ => (),
+        _ => return Action::Ignored,
     }
     Action::None
 }

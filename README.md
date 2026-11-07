@@ -100,7 +100,8 @@ agent runs grouped by project. Use `j/k` or arrows to move, `Enter` to switch to
 selected pane and close the UI, `a` to acknowledge, `g` to toggle manual groups,
 `/` to filter (Enter/Esc finishes editing, Backspace clears characters), and `q` to
 quit. `NO_COLOR=1` keeps terminal-default colors. The UI reconnects automatically
-when the daemon restarts.
+when the daemon restarts, backing off from 0.5 to 5 seconds and showing the last connection error.
+Run the UI inside an attached tmux client to switch panes with Enter.
 
 `hooks install` prints a binding you can add to your tmux config:
 
@@ -111,11 +112,13 @@ bind-key a display-popup -E -w 80% -h 80% tmux-sidecar ui
 The daemon sends desktop notifications on transitions into blocked or error using
 `notify-send` on Linux or `osascript` on macOS. It limits delivery to once per run
 per 10 seconds and globally once every 2 seconds. Waiting transitions display a
-tmux message to attached clients in the run's tmux session. Configure desktop
+tmux message to attached clients in the run's tmux session. `notify.tmux = false`
+disables these messages; they share the global two-second debounce with desktop notifications. Configure desktop
 notifications in tmux-sidecar's `config.toml`:
 
 ```toml
 [notify]
 desktop = true
+tmux = true
 debounce_secs = 10
 ```

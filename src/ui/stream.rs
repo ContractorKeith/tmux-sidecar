@@ -33,6 +33,7 @@ async fn snapshot(socket: &Path, paths: &Paths) -> io::Result<Snapshot> {
         runs,
         groups,
         connected: true,
+        error: String::new(),
     })
 }
 async fn connected(socket: &Path, paths: &Paths, send: &watch::Sender<Snapshot>) -> io::Result<()> {
@@ -58,10 +59,47 @@ async fn connected(socket: &Path, paths: &Paths, send: &watch::Sender<Snapshot>)
         }
     }
 }
+struct Backoff(Duration);
+impl Default for Backoff {
+    fn default() -> Self {
+        Self(Duration::from_millis(500))
+    }
+}
+impl Backoff {
+    fn next(&mut self) -> Duration {
+        let delay = self.0;
+        self.0 = (delay * 2).min(Duration::from_secs(5));
+        delay
+    }
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
 pub async fn run(socket: PathBuf, paths: Paths, send: watch::Sender<Snapshot>) {
+    let mut backoff = Backoff::default();
     loop {
-        let _ = connected(&socket, &paths, &send).await;
-        send.send_modify(|data| data.connected = false);
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        let error = connected(&socket, &paths, &send)
+            .await
+            .expect_err("subscription ends only on error");
+        if send.borrow().connected {
+            backoff.reset();
+        }
+        send.send_modify(|data| {
+            data.connected = false;
+            data.error = error.to_string();
+        });
+        tokio::time::sleep(backoff.next()).await;
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn reconnect_delay_caps_and_resets_after_success() {
+        let mut retry = Backoff::default();
+        let delays: Vec<_> = (0..6).map(|_| retry.next().as_millis()).collect();
+        assert_eq!(delays, [500, 1000, 2000, 4000, 5000, 5000]);
+        retry.reset();
+        assert_eq!(retry.next(), Duration::from_millis(500));
     }
 }

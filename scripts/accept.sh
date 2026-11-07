@@ -30,7 +30,7 @@ chmod 700 "$TMUX_SIDECAR_RUNTIME_DIR" "$TMUX_SIDECAR_STATE_DIR"
 export CLAUDE_CONFIG_DIR="$HOME/.claude" CODEX_HOME="$HOME/.codex" GROK_HOME="$HOME/.grok"
 export XDG_DATA_HOME="$HOME/.local/share" OPENCODE_DB="$HOME/opencode.db"
 mkdir -p "$XDG_CONFIG_HOME/tmux-sidecar" "$HOME/Library/Application Support/tmux-sidecar"
-printf '[notify]\ndesktop=false\n' > "$XDG_CONFIG_HOME/tmux-sidecar/config.toml"
+printf '[notify]\ndesktop=false\ntmux=false\n' > "$XDG_CONFIG_HOME/tmux-sidecar/config.toml"
 cp "$XDG_CONFIG_HOME/tmux-sidecar/config.toml" "$HOME/Library/Application Support/tmux-sidecar/config.toml"
 unset TMUX TMUX_PANE
 
@@ -153,6 +153,6 @@ PYMCP
 
 # M5: terminal fixtures, decoder, notifier policy, and real-tmux Enter run in the gate above.
 echo "== ui live checks"
-"$bin" ui --help | grep -q "terminal interface\|Usage:"
+"$bin" ui --help | grep -q "Open the terminal interface"
 grep -q "display-popup.*ui" "$scratch/hooks.diff"
 echo "accept: ok"

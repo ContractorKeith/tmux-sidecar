@@ -17,6 +17,7 @@ pub struct Snapshot {
     pub runs: Vec<Run>,
     pub groups: Vec<Group>,
     pub connected: bool,
+    pub error: String,
 }
 #[derive(Default)]
 pub struct App {
@@ -118,17 +119,30 @@ impl App {
             })
             .nth(self.selected)
     }
+    fn run_keys(&self) -> Vec<(String, String)> {
+        let mut section = String::new();
+        let mut keys = Vec::new();
+        for (index, row) in self.rows().into_iter().enumerate() {
+            match row {
+                Row::Heading(name) => {
+                    section = if index == 0 {
+                        "attention".into()
+                    } else {
+                        format!("group:{name}")
+                    }
+                }
+                Row::Run(run) => keys.push((section.clone(), run.run.id.clone())),
+            }
+        }
+        keys
+    }
     pub(super) fn replace(&mut self, data: Snapshot) {
-        let id = self.selected_run().map(|r| r.run.id.clone());
+        let key = self.run_keys().get(self.selected).cloned();
         self.data = data;
         if let Some(index) = self
-            .rows()
+            .run_keys()
             .iter()
-            .filter_map(|r| match r {
-                Row::Run(r) => Some(&r.run.id),
-                _ => None,
-            })
-            .position(|r| Some(r) == id.as_ref())
+            .position(|candidate| Some(candidate) == key.as_ref())
         {
             self.selected = index;
         }

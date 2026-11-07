@@ -26,6 +26,13 @@ pub async fn focus(socket: &Path, pane: &str, server_start: u64) -> io::Result<(
     ) {
         return Err(io::Error::other("invalid pane id"));
     }
+    if output(socket, &["list-clients", "-F", "#{client_name}"])
+        .await?
+        .trim()
+        .is_empty()
+    {
+        return Err(io::Error::other("run the ui inside tmux to switch panes"));
+    }
     let context = output(
         socket,
         &[
@@ -46,7 +53,12 @@ pub async fn focus(socket: &Path, pane: &str, server_start: u64) -> io::Result<(
     output(socket, &["select-pane", "-t", pane]).await?;
     Ok(())
 }
-pub(crate) async fn waiting(socket: &Path, pane: &str, message: &str) -> io::Result<()> {
+pub(crate) async fn waiting(
+    socket: &Path,
+    pane: &str,
+    server_start: u64,
+    message: &str,
+) -> io::Result<()> {
     let clients = output(
         socket,
         &["list-clients", "-F", "#{client_name}\t#{session_id}"],
@@ -54,14 +66,29 @@ pub(crate) async fn waiting(socket: &Path, pane: &str, message: &str) -> io::Res
     .await?;
     let session = output(
         socket,
-        &["display-message", "-p", "-t", pane, "#{session_id}"],
+        &[
+            "display-message",
+            "-p",
+            "-t",
+            pane,
+            "#{start_time}\t#{session_id}",
+        ],
     )
     .await?;
+    let Some((start, session)) = session.trim().split_once('\t') else {
+        return Err(io::Error::other("pane no longer exists"));
+    };
+    if start.parse::<u64>().ok() != Some(server_start) {
+        return Err(io::Error::other("tmux server restarted"));
+    }
     for client in clients.lines() {
         if let Some((name, attached)) = client.split_once('\t')
             && attached == session.trim()
         {
-            output(socket, &["display-message", "-c", name, "--", message]).await?;
+            // display-message expands tmux formats even with argv. Escape # so the
+            // message is literal text, including any future user-provided names.
+            let literal = message.replace('#', "##");
+            output(socket, &["display-message", "-c", name, "--", &literal]).await?;
         }
     }
     Ok(())

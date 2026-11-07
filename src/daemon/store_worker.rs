@@ -40,12 +40,12 @@ impl StoreWorker {
                 .ok()
                 .and_then(|rows| rows.last().map(|r| r.0))
                 .unwrap_or(0);
-            let mut view = store.view().ok();
+            let mut view = store.view_digest().ok();
             while let Ok(job) = receiver.recv() {
                 let before = store.total_changes();
                 job(&store);
                 if store.total_changes() != before {
-                    let next = store.view().ok();
+                    let next = store.view_digest().ok();
                     if next != view {
                         view = next;
                         invalidate.send_modify(|revision| *revision = revision.wrapping_add(1));

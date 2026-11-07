@@ -81,6 +81,8 @@ fn attention_priority_age_read_changes_and_late_signal_history() {
     assert_eq!(history.as_array().unwrap().len(), 2);
     assert_eq!(history[0]["event"], "state_changed");
     assert!(history[0]["payload"]["cause"].is_number());
+    assert_eq!(history[0]["payload"]["pane_id"], "%4");
+    assert_eq!(history[0]["payload"]["server_start"], 1);
     store.end(id, 600).unwrap();
     store.signal(&signal(4, "PreToolUse", 700)).unwrap();
     assert_eq!(

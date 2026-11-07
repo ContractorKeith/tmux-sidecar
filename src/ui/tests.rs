@@ -17,6 +17,7 @@ fn fixture() -> App {
                 pane_id: Some("%0".into()),
             }],
             connected: true,
+            error: String::new(),
         },
         ..App::default()
     }
@@ -47,6 +48,28 @@ fn snapshot(name: &str, app: &App, width: u16) {
         "snapshot {name}"
     );
     // NO_COLOR leaves every cell at terminal-default foreground/background.
+    if app.color {
+        use ratatui::style::Color;
+        for (text, color) in [
+            ("blocked", Color::Yellow),
+            ("error", Color::Red),
+            ("working", Color::Green),
+        ] {
+            let y = (0..18)
+                .find(|&y| {
+                    (0..width)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                        .contains(text)
+                })
+                .unwrap();
+            let cell = (0..width)
+                .map(|x| &buffer[(x, y)])
+                .find(|c| c.symbol() == &text[..1])
+                .unwrap();
+            assert_eq!(cell.fg, color, "{text}");
+        }
+    }
     if !app.color {
         for cell in &buffer.content {
             assert_eq!(cell.fg, ratatui::style::Color::Reset);
@@ -104,7 +127,8 @@ fn decoder_navigation_actions_and_filter_editing() {
     assert_eq!(decode(&mut app, key(KeyCode::Char('q'))), Action::Quit);
     let mut release = key(KeyCode::Enter);
     release.kind = crossterm::event::KeyEventKind::Release;
-    assert_eq!(decode(&mut app, release), Action::None);
+    assert_eq!(decode(&mut app, release), Action::Ignored);
+    assert_eq!(decode(&mut app, key(KeyCode::Char('x'))), Action::Ignored);
 }
 #[test]
 fn selection_survives_reordering_and_clamps_after_removal() {
@@ -117,4 +141,35 @@ fn selection_survives_reordering_and_clamps_after_removal() {
     app.replace(Snapshot::default());
     assert_eq!(app.selected, 0);
     assert!(app.selected_run().is_none());
+}
+#[test]
+fn project_selection_stays_in_project_after_live_update() {
+    let mut app = fixture();
+    app.selected = 3; // r1 under /work/alpha, after its attention duplicate.
+    assert_eq!(app.selected_run().unwrap().run.id, "r1");
+    let mut data = app.data.clone();
+    data.runs[0].run.last_assistant_text = "New answer".into();
+    app.replace(data);
+    assert_eq!(app.selected, 3);
+}
+
+#[test]
+fn connection_error_is_visible_with_no_runs() {
+    let app = App {
+        data: Snapshot {
+            error: "wrong tmux server".into(),
+            ..Snapshot::default()
+        },
+        ..App::default()
+    };
+    let mut terminal = Terminal::new(TestBackend::new(80, 10)).unwrap();
+    terminal.draw(|f| render::draw(&app, f, 1)).unwrap();
+    let text = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|c| c.symbol())
+        .collect::<String>();
+    assert!(text.contains("wrong tmux server"));
 }
