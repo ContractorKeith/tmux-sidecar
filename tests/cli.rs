@@ -4,7 +4,6 @@ fn future_verbs_remain_explicit_stubs() {
     for (args, verb, milestone) in [
         (vec!["doctor", "--json"], "doctor", 7),
         (vec!["ui"], "ui", 5),
-        (vec!["mcp", "--allow-send"], "mcp", 6),
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
             .args(["--tmux-socket", "/tmp/unused", "-q"])

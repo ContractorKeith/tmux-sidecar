@@ -19,4 +19,48 @@ reads your screen.
 
 **Status:** planned, no code yet. See `docs/PLAN.md`. Linux and macOS, tmux ≥ 3.3.
 
+## MCP
+
+Build with `cargo build --release` and put `tmux-sidecar` on your PATH. Start the
+client inside the tmux server you want to observe, or add `--tmux-socket` and its
+absolute socket path before `mcp` in the arguments below.
+
+Claude Code: add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "tmux-sidecar": {
+      "type": "stdio",
+      "command": "tmux-sidecar",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Codex: add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.tmux-sidecar]
+command = "tmux-sidecar"
+args = ["mcp"]
+tool_timeout_sec = 610
+```
+
+The read tools are `list_runs` (optional `group`, `state`), `attention`,
+`run_history` (`selector`, optional `limit`) and `wait_for_state` (`selector`,
+`state`, optional `timeout` in seconds, default and maximum 600). Set the client's
+tool timeout above your requested wait duration. A selector is a run id such as
+`r42` or the current run in pane `%7`. Results contain the daemon's JSON unchanged;
+RPC failures become MCP tool errors including their numeric code.
+
+To enable `send_prompt` (`selector`, `text`), change the arguments to
+`["mcp", "--allow-send"]`. It only sends to waiting runs, with no force override.
+Without this flag the tool is absent from discovery. A waiting run finished its
+turn and wants the next prompt; a blocked run needs a permission or approval.
+
+Configuration references: [Claude Code MCP](https://code.claude.com/docs/en/mcp)
+and [Codex MCP](https://developers.openai.com/codex/mcp).
+
 MIT licensed.

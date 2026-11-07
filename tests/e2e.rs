@@ -114,3 +114,9 @@ mod transcript_poll;
 mod cli_deadlines;
 #[path = "support/cli_stream.rs"]
 mod cli_stream;
+#[path = "support/mcp.rs"]
+mod mcp;
+#[path = "support/mcp_client.rs"]
+mod mcp_client;
+#[path = "support/mcp_rpc.rs"]
+mod mcp_rpc;

@@ -52,10 +52,17 @@ pub async fn execute(mut cli: Cli) -> Result<(), Failure> {
         )
         .map_err(|e| (1, e.to_string()));
     }
+    if let Command::Mcp { allow_send } = cli.command {
+        let socket = client::select_socket(cli.tmux_socket.as_deref()).map_err(unreachable)?;
+        let paths = paths::current(&socket).map_err(unreachable)?;
+        return crate::mcp::run(socket, paths, allow_send)
+            .await
+            .map_err(|e| (1, e.to_string()));
+    }
     super::input::prepare(&mut cli)?;
     if matches!(
         cli.command,
-        Command::Doctor { .. } | Command::Ui | Command::Mcp { .. }
+        Command::Doctor { .. } | Command::Ui
     ) {
         let (verb, milestone) = cli.command.pending();
         return Err((2, format!("{verb} is not implemented yet (M{milestone})")));

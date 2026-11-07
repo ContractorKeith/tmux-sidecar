@@ -120,4 +120,30 @@ test "$status" -eq 4
 status=0
 "$bin" --tmux-socket "$socket" history r999999 >/dev/null 2>&1 || status=$?
 test "$status" -eq 5
+# M6: keep stdin open through initialize and tools/list; EOF cancels SDK requests.
+echo "== MCP live checks"
+python3 - "$bin" "$socket" <<'PYMCP'
+import json, selectors, subprocess, sys
+child = subprocess.Popen([sys.argv[1], '--tmux-socket', sys.argv[2], 'mcp'],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+try:
+    def request(frame):
+        child.stdin.write(json.dumps(frame) + '\n')
+        child.stdin.flush()
+        with selectors.DefaultSelector() as poll:
+            poll.register(child.stdout, selectors.EVENT_READ)
+            assert poll.select(5), 'MCP response deadline exceeded'
+        reply = json.loads(child.stdout.readline())
+        assert reply['id'] == frame['id'] and 'error' not in reply, reply
+        return reply['result']
+    request(dict(jsonrpc='2.0', id=1, method='initialize', params=dict(
+        protocolVersion='2024-11-05', capabilities={}, clientInfo=dict(name='accept', version='1'))))
+    child.stdin.write(json.dumps(dict(jsonrpc='2.0', method='notifications/initialized')) + '\n')
+    child.stdin.flush()
+    tools = request(dict(jsonrpc='2.0', id=2, method='tools/list', params={}))['tools']
+    assert {tool['name'] for tool in tools} == {'list_runs', 'attention', 'run_history', 'wait_for_state'}
+finally:
+    child.kill()
+    child.wait(timeout=5)
+PYMCP
 echo "accept: ok"
