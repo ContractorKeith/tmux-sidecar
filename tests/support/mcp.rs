@@ -82,85 +82,94 @@ e2e_test!(mcp_stdio_tools_read_fixtures_and_guard_registration, {
     stop(&guard);
 });
 
-#[test]
-#[ignore = "needs M4 (#5)"]
-fn mcp_wait_timeout_and_transition() {
-    crate::support::watchdog::run("mcp_wait_timeout_and_transition", || {
-        if !enabled() {
-            return;
-        }
-        let guard = TmuxGuard::start();
-        let run = list(&guard)[0].clone();
-        let mut mcp = Mcp::start(&guard, false);
+e2e_test!(mcp_wait_timeout_and_transition, {
+    if !enabled() {
+        return;
+    }
+    let guard = TmuxGuard::start();
+    let run = list(&guard)[0].clone();
+    let mut mcp = Mcp::start(&guard, false);
+    assert_eq!(
+        mcp.json(
+            "wait_for_state",
+            json!({"selector":run["id"],"state":"waiting","timeout":1})
+        )["run_id"],
+        run["id"]
+    );
+    fire(&guard, &run, "UserPromptSubmit");
+    until!(|| list(&guard)[0]["state"] == "working");
+    let zero = mcp.call(
+        "wait_for_state",
+        json!({"selector":run["id"],"state":"waiting","timeout":0}),
+    );
+    assert_eq!(zero["isError"], true);
+    assert!(zero.to_string().contains("-32004"), "{zero}");
+    let start = Instant::now();
+    let result = mcp.call(
+        "wait_for_state",
+        json!({"selector":run["id"],"state":"waiting","timeout":1}),
+    );
+    assert_eq!(result["isError"], true, "{result}");
+    assert!(result.to_string().contains("-32004"), "{result}");
+    assert!(start.elapsed() >= Duration::from_secs(1));
+    assert!(start.elapsed() < Duration::from_secs(4));
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(250));
+            fire(&guard, &run, "Stop");
+        });
         assert_eq!(
             mcp.json(
                 "wait_for_state",
-                json!({"selector":run["id"],"state":"waiting","timeout":0})
-            )["id"],
-            run["id"]
+                json!({"selector":run["id"],"state":"waiting","timeout":3})
+            )["state"],
+            "waiting"
         );
-        fire(&guard, &run, "UserPromptSubmit");
-        until!(|| list(&guard)[0]["state"] == "working");
-        let start = Instant::now();
-        let result = mcp.call(
-            "wait_for_state",
-            json!({"selector":run["id"],"state":"waiting","timeout":1}),
-        );
-        assert_eq!(result["isError"], true, "{result}");
-        assert!(result.to_string().contains("-32004"), "{result}");
-        assert!(start.elapsed() >= Duration::from_secs(1));
-        assert!(start.elapsed() < Duration::from_secs(4));
-        std::thread::scope(|scope| {
-            scope.spawn(|| {
-                std::thread::sleep(Duration::from_millis(250));
-                fire(&guard, &run, "Stop");
-            });
-            assert_eq!(
-                mcp.json(
-                    "wait_for_state",
-                    json!({"selector":run["id"],"state":"waiting","timeout":3})
-                )["state"],
-                "waiting"
-            );
+    });
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(250));
+            fire(&guard, &run, "SessionEnd");
         });
-        drop(mcp);
-        stop(&guard);
+        let ended = mcp.call(
+            "wait_for_state",
+            json!({"selector":run["id"],"state":"blocked","timeout":3}),
+        );
+        assert_eq!(ended["isError"], true);
+        assert!(ended.to_string().contains("ended in done"), "{ended}");
+        assert!(ended.to_string().contains("-32001"), "{ended}");
     });
-}
+    drop(mcp);
+    stop(&guard);
+});
 
-#[test]
-#[ignore = "needs M4 (#5)"]
-fn mcp_send_delivers_only_to_waiting_run() {
-    crate::support::watchdog::run("mcp_send_delivers_only_to_waiting_run", || {
-        if !enabled() {
-            return;
-        }
-        let guard = TmuxGuard::start();
-        let run = list(&guard)[0].clone();
-        let mut mcp = Mcp::start(&guard, true);
-        mcp.json(
-            "send_prompt",
-            json!({"selector":run["id"],"text":"mcp-delivered"}),
-        );
-        let capture = || {
-            String::from_utf8(
-                crate::support::output(guard.command().args(["capture-pane", "-p", "-t", "%0"]))
-                    .stdout,
-            )
-            .unwrap()
-        };
-        until!(|| capture().contains("mcp-delivered"));
-        fire(&guard, &run, "UserPromptSubmit");
-        until!(|| list(&guard)[0]["state"] == "working");
-        let result = mcp.call(
-            "send_prompt",
-            json!({"selector":run["id"],"text":"mcp-refused"}),
-        );
-        assert_eq!(result["isError"], true);
-        assert!(result.to_string().contains("working"), "{result}");
-        assert!(result.to_string().contains("-32003"), "{result}");
-        assert!(!capture().contains("mcp-refused"));
-        drop(mcp);
-        stop(&guard);
-    });
-}
+e2e_test!(mcp_send_delivers_only_to_waiting_run, {
+    if !enabled() {
+        return;
+    }
+    let guard = TmuxGuard::start_capture();
+    let run = list(&guard)[0].clone();
+    let mut mcp = Mcp::start(&guard, true);
+    mcp.json(
+        "send_prompt",
+        json!({"selector":run["id"],"text":"mcp-delivered"}),
+    );
+    let input = guard
+        .scratch
+        .path()
+        .join(format!("state/input-{}", run["agent_pid"]));
+    let delivered = b"\x1b[200~mcp-delivered\x1b[201~\r";
+    until!(|| std::fs::read(&input).unwrap() == delivered);
+    fire(&guard, &run, "UserPromptSubmit");
+    until!(|| list(&guard)[0]["state"] == "working");
+    let result = mcp.call(
+        "send_prompt",
+        json!({"selector":run["id"],"text":"mcp-refused"}),
+    );
+    assert_eq!(result["isError"], true);
+    assert!(result.to_string().contains("working"), "{result}");
+    assert!(result.to_string().contains("-32003"), "{result}");
+    assert_eq!(std::fs::read(&input).unwrap(), delivered);
+    drop(mcp);
+    stop(&guard);
+});

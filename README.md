@@ -17,7 +17,7 @@ State comes from the agents' own hooks (`tmux-sidecar hooks install`), with tran
 from [session-board](https://github.com/ContractorKeith/session-board) as a fallback. Nothing
 reads your screen.
 
-**Status:** M0–M3 and the MCP server implemented; CLI, UI and release work continues. See `docs/PLAN.md`. Linux and macOS, tmux ≥ 3.3.
+**Status:** M0–M4 and the MCP server implemented; UI and release work continues. See `docs/PLAN.md`. Linux and macOS, tmux ≥ 3.3.
 
 ## MCP
 
@@ -72,10 +72,14 @@ The read tools are `list_runs` (optional `group`, `state`), `attention`,
 `state`, optional `timeout` in seconds, default and maximum 600). Set the client's
 tool timeout above your requested wait duration. A selector is a run id such as
 `r42` or the current run in pane `%7`. Results contain the daemon's JSON unchanged;
-RPC failures become MCP tool errors including their numeric code.
+RPC failures become MCP tool errors including their numeric code. A zero wait
+timeout can expire before the daemon reads the run; ending before the requested
+state is also a tool error.
 
 To enable `send_prompt` (`selector`, `text`), change the arguments to
-`["mcp", "--allow-send"]`. It only sends to waiting runs, with no force override.
+`["mcp", "--allow-send"]`. It only sends to waiting runs, with no force override. If the connection is lost
+after sending, the tool reports "send outcome unknown"; check the pane before
+retrying.
 Without this flag the tool is absent from discovery. A waiting run finished its
 turn and wants the next prompt; a blocked run needs a permission or approval.
 

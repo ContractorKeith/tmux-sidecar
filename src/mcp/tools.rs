@@ -32,7 +32,7 @@ pub fn definitions(allow_send: bool) -> Vec<Tool> {
         ),
         definition(
             "wait_for_state",
-            "Wait for an agent run to reach waiting, blocked or done. Timeout defaults to 600 seconds and cannot exceed 600; timeout is a tool error.",
+            "Wait for an agent run to reach waiting, blocked or done. Timeout defaults to 600 seconds and cannot exceed 600. Zero gives the daemon no time budget and can time out before its initial read. Timeout and a run ending before the target state are tool errors.",
             json!({
                 "selector":selector,"state":{"type":"string","enum":["waiting","blocked","done"],"description":"Target: wants next prompt, needs approval, or ended run."},
                 "timeout":{"type":"integer","minimum":0,"maximum":600,"default":600,"description":"Maximum seconds to wait (0 through 600)."}
@@ -61,7 +61,7 @@ pub fn prepare(
     name: &str,
     mut args: Map<String, Value>,
     allow_send: bool,
-) -> Result<(&'static str, Value, u64), String> {
+) -> Result<(&'static str, Value, Option<u64>), String> {
     let definition = definitions(allow_send)
         .into_iter()
         .find(|t| t.name == name)
@@ -100,7 +100,7 @@ pub fn prepare(
             .map_err(str::to_string)?;
         args.insert("sel".into(), selector);
     }
-    let mut timeout = 2;
+    let mut timeout = None;
     let method = match name {
         "list_runs" => "list",
         "attention" => "attention",
@@ -113,7 +113,7 @@ pub fn prepare(
                 .or_insert(json!(600))
                 .as_u64()
                 .expect("validated timeout");
-            timeout = seconds + 2;
+            timeout = Some(seconds);
             "wait"
         }
         "send_prompt" => "send",

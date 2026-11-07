@@ -12,7 +12,6 @@ impl Command {
         match self {
             Self::Doctor { .. } => ("doctor", 7),
             Self::Ui => ("ui", 5),
-            Self::Mcp { .. } => ("mcp", 6),
             _ => unreachable!("implemented commands do not call pending"),
         }
     }

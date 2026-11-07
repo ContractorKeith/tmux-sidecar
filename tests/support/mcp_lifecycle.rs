@@ -139,7 +139,7 @@ e2e_test!(mcp_daemon_disconnect_has_actionable_message, {
     let mut mcp = Mcp::start(&guard, false);
     assert_eq!(
         mcp.call("list_runs", json!({}))["content"][0]["text"],
-        "daemon connection closed"
+        "RPC list connection failed: daemon connection closed (-32001)"
     );
     worker.join().unwrap();
 });

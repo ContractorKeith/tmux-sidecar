@@ -1,6 +1,6 @@
 //! A fake socket pins the MCP adapter's wait/send contract before M4 is available.
-use super::mcp_client::Mcp;
 use super::{TmuxGuard, enabled};
+use super::{mcp_client::Mcp, mcp_replies};
 use serde_json::{Value, json};
 use std::{
     io::{BufRead, BufReader, Write},
@@ -21,22 +21,22 @@ e2e_test!(mcp_wait_and_send_each_use_one_rpc_and_preserve_errors, {
             (
                 "wait",
                 json!({"sel":"r42","until":"waiting","timeout":3}),
-                json!({"result":{"id":"r42","state":"waiting"}}),
+                json!({"result":mcp_replies::waiting(json!("r42"), json!("waiting"), json!(123))}),
             ),
             (
                 "wait",
                 json!({"sel":"%7","until":"done","timeout":600}),
-                json!({"error":{"code":-32004,"message":"timeout: run r42 is working"}}),
+                json!({"error":{"code":-32004,"message":"wait for %7 timed out"}}),
             ),
             (
                 "send",
                 json!({"sel":"r42","text":"hello"}),
-                json!({"result":{}}),
+                json!({"result":mcp_replies::sent()}),
             ),
             (
                 "send",
                 json!({"sel":"r42","text":"no"}),
-                json!({"error":{"code":-32003,"message":"refused: run r42 is working"}}),
+                json!({"error":{"code":-32003,"message":"run r42 is working (requires waiting)"}}),
             ),
         ] {
             let deadline = Instant::now() + Duration::from_secs(8);
@@ -102,7 +102,11 @@ e2e_test!(mcp_wait_and_send_each_use_one_rpc_and_preserve_errors, {
     );
     let result = mcp.call("send_prompt", json!({"selector":"r42","text":"no"}));
     assert_eq!(result["isError"], true);
-    assert!(result.to_string().contains("refused: run r42 is working"));
+    assert!(
+        result
+            .to_string()
+            .contains("run r42 is working (requires waiting)")
+    );
     assert!(result.to_string().contains("-32003"));
     worker.join().unwrap();
 });

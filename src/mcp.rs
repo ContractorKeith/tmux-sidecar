@@ -62,14 +62,27 @@ impl ServerHandler for Sidecar {
             Err(message) => return Ok(tool_error(message).into()),
         };
         let mut closed = self.closed.clone();
-        let call = client::request_with_timeout(
-            &self.socket,
-            &self.paths,
-            method,
-            params,
-            true,
-            Duration::from_secs(timeout),
-        );
+        let call = async {
+            if let Some(seconds) = timeout {
+                let mut stream = client::open(&self.socket, &self.paths, true).await?;
+                tokio::time::timeout(
+                    Duration::from_secs(seconds + 2),
+                    client::exchange(&mut stream, method, params),
+                )
+                .await
+                .unwrap_or_else(|_| {
+                    Err(io::Error::other(crate::rpc::RpcError {
+                        code: crate::rpc::TIMEOUT,
+                        message: format!("MCP wait exceeded {} s", seconds + 2),
+                        data: None,
+                    }))
+                })
+                .map_err(|error| client::connected_error(method, error))
+            } else {
+                // Share the CLI's ordinary and send budgets and outcome-unknown errors.
+                client::request(&self.socket, &self.paths, method, params, true).await
+            }
+        };
         let result = tokio::select! {
             biased;
             _ = context.ct.cancelled() => return Ok(tool_error("cancelled: MCP request cancelled".into()).into()),
