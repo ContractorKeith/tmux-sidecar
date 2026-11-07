@@ -22,6 +22,26 @@ pub struct RealTmux {
     pub socket: Socket,
 }
 impl RealTmux {
+    pub(crate) async fn scan_before(&self, deadline: tokio::time::Instant) -> io::Result<PaneScan> {
+        let mut command = self.command();
+        command.args(["list-panes", "-a", "-F", FORMAT]);
+        parse_scan(
+            &crate::proc::bounded::output(command, deadline)
+                .await?
+                .stdout,
+        )
+    }
+    pub(crate) fn paste_before(
+        &self,
+        pane: &str,
+        text: &str,
+        deadline: std::time::Instant,
+    ) -> io::Result<()> {
+        paste::paste_before(self, pane, text, deadline)
+    }
+    pub(crate) fn enter_before(&self, pane: &str, deadline: std::time::Instant) -> io::Result<()> {
+        paste::enter_before(self, pane, deadline)
+    }
     pub fn confirmed_gone(&self, first: &io::Error) -> bool {
         let Socket::Path(path) = &self.socket else {
             return false;

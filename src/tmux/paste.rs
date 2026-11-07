@@ -12,7 +12,14 @@ impl Drop for ChildGuard {
         let _ = self.0.wait();
     }
 }
-fn run(command: &mut Command, input: Option<&str>) -> io::Result<()> {
+fn run(command: &mut Command, input: Option<&str>, whole: Instant) -> io::Result<()> {
+    let deadline = whole.min(Instant::now() + Duration::from_secs(1));
+    if Instant::now() >= deadline {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "send deadline exceeded before tmux command",
+        ));
+    }
     let mut child = ChildGuard(
         command
             .stdin(if input.is_some() {
@@ -24,7 +31,6 @@ fn run(command: &mut Command, input: Option<&str>) -> io::Result<()> {
             .stderr(Stdio::null())
             .spawn()?,
     );
-    let deadline = Instant::now() + Duration::from_secs(1);
     if let Some(input) = input {
         use std::os::fd::AsRawFd;
         let mut pipe = child.0.stdin.take().expect("piped load-buffer stdin");
@@ -79,6 +85,9 @@ fn run(command: &mut Command, input: Option<&str>) -> io::Result<()> {
     }
 }
 pub fn paste(tmux: &RealTmux, pane: &str, text: &str) -> io::Result<()> {
+    paste_before(tmux, pane, text, Instant::now() + Duration::from_secs(3))
+}
+pub fn paste_before(tmux: &RealTmux, pane: &str, text: &str, deadline: Instant) -> io::Result<()> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let buffer = format!(
@@ -89,22 +98,48 @@ pub fn paste(tmux: &RealTmux, pane: &str, text: &str) -> io::Result<()> {
     let result = run(
         tmux.command().args(["load-buffer", "-b", &buffer, "-"]),
         Some(text),
+        deadline,
     )
     .and_then(|()| {
         run(
             tmux.command()
                 .args(["paste-buffer", "-p", "-d", "-r", "-b", &buffer, "-t", pane]),
             None,
+            deadline,
         )
     });
     if result.is_err() {
-        let _ = run(tmux.command().args(["delete-buffer", "-b", &buffer]), None);
+        let _ = run(
+            tmux.command().args(["delete-buffer", "-b", &buffer]),
+            None,
+            deadline,
+        );
     }
     result
 }
 pub fn enter(tmux: &RealTmux, pane: &str) -> io::Result<()> {
+    enter_before(tmux, pane, Instant::now() + Duration::from_secs(1))
+}
+pub fn enter_before(tmux: &RealTmux, pane: &str, deadline: Instant) -> io::Result<()> {
     run(
         tmux.command().args(["send-keys", "-t", pane, "Enter"]),
         None,
+        deadline,
     )
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn expired_send_never_starts_a_terminal_command() {
+        let root = tempfile::tempdir().unwrap();
+        let marker = root.path().join("late");
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", "printf late > \"$TSX_MARKER\""])
+            .env("TSX_MARKER", &marker);
+        let error = run(&mut command, None, Instant::now() - Duration::from_secs(1)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(!marker.exists());
+    }
 }

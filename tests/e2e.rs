@@ -110,5 +110,7 @@ mod transcript;
 #[path = "support/transcript_poll.rs"]
 mod transcript_poll;
 
+#[path = "support/cli_deadlines.rs"]
+mod cli_deadlines;
 #[path = "support/cli_stream.rs"]
 mod cli_stream;

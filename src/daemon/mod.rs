@@ -179,6 +179,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 } else {
                     let worker = store.clone();
                     connections.spawn(async move {
+                        // Every method committing state changes must go through with(), never read().
                         let mutation = call.request.method == "signal";
                         let job = move |store: &crate::store::Store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared,server_start);
                         let response = if mutation { worker.with(job).await } else { worker.read(job).await }?;

@@ -6,7 +6,6 @@ use super::{
 use crate::{
     model::{AgentRun, AgentState, RunSelector},
     rpc,
-    seams::Tmux,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -21,14 +20,6 @@ struct Wait {
     sel: String,
     until: AgentState,
     timeout: Option<u64>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Send {
-    sel: String,
-    text: String,
-    #[serde(default)]
-    force: bool,
 }
 fn parse<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result<T> {
     serde_json::from_value(params.unwrap_or(json!({})))
@@ -57,7 +48,7 @@ pub async fn serve(mut call: Call, worker: StoreWorker, socket: PathBuf, start: 
         }
     } else {
         match parse(call.request.params) {
-            Ok(params) => send(&worker, socket, params, start).await,
+            Ok(params) => sending::send(&worker, socket, params, start).await,
             Err(e) => Err(e),
         }
     };
@@ -91,15 +82,20 @@ async fn wait(worker: &StoreWorker, params: Wait, start: u64) -> Result<Value> {
         .transpose()?;
     // Subscribe before reading, so a change between the snapshot and recv cannot be lost.
     let mut events = worker.events.subscribe();
-    let run = select(worker, &params.sel, start).await?;
-    let id = run.id.clone();
     let waiting = async {
-        let run = run;
+        let run = select(worker, &params.sel, start).await?;
+        let id = run.id.clone();
         if run.state == params.until {
             return Ok(json!({"run_id":id,"state":run.state,"at":run.state_since}));
         }
         if run.ended_at.is_some() || run.state == AgentState::Done {
-            return Err((rpc::ERROR, format!("run {id} ended in done")));
+            return Err((
+                rpc::ERROR,
+                format!(
+                    "run {id} ended in {}",
+                    format!("{:?}", run.state).to_ascii_lowercase()
+                ),
+            ));
         }
         loop {
             match events.recv().await {
@@ -111,7 +107,13 @@ async fn wait(worker: &StoreWorker, params: Wait, start: u64) -> Result<Value> {
                         return Ok(json!({"run_id":id,"state":state,"at":event["at"]}));
                     }
                     if state == AgentState::Done {
-                        return Err((rpc::ERROR, format!("run {id} ended in done")));
+                        return Err((
+                            rpc::ERROR,
+                            format!(
+                                "run {id} ended in {}",
+                                format!("{state:?}").to_ascii_lowercase()
+                            ),
+                        ));
                     }
                 }
                 Ok(_) => (),
@@ -129,62 +131,8 @@ async fn wait(worker: &StoreWorker, params: Wait, start: u64) -> Result<Value> {
         None => waiting.await,
     }
 }
-async fn send(worker: &StoreWorker, socket: PathBuf, params: Send, start: u64) -> Result<Value> {
-    let selected = select(worker, &params.sel, start).await?;
-    let guard = worker.lock_run(&selected.id).await;
-    // Recheck the same run under its lock, never retarget a replacement in the pane.
-    let run = select(worker, &selected.id, start).await?;
-    if run.ended_at.is_some() {
-        return Err((rpc::NOT_FOUND, format!("run {} has ended", run.id)));
-    }
-    if !params.force && run.state != AgentState::Waiting {
-        return Err((
-            rpc::REFUSED,
-            format!(
-                "run {} is {} (requires waiting)",
-                run.id,
-                format!("{:?}", run.state).to_ascii_lowercase()
-            ),
-        ));
-    }
-    if params.text.contains('\0') {
-        return Err((rpc::INVALID_PARAMS, "text contains NUL".into()));
-    }
-    let pane = run.pane_id.clone();
-    let live_run = run.clone();
-    let _guard = tokio::task::spawn_blocking(move || {
-        let tmux = crate::tmux::RealTmux {
-            socket: crate::tmux::Socket::Path(socket),
-        };
-        use crate::seams::ProcessTree;
-        let scan = tmux.scan().map_err(internal)?;
-        let processes = crate::proc::PsProcessTree.snapshot().map_err(internal)?;
-        let changes = crate::engine::detect_scan(
-            &scan.panes,
-            &scan.skipped,
-            &processes,
-            std::slice::from_ref(&live_run),
-            super::now(),
-        );
-        if live_run.server_start != start
-            || changes.end.contains(&live_run.id)
-            || scan.skipped.contains(&pane)
-        {
-            return Err((rpc::NOT_FOUND, "agent run is no longer live".into()));
-        }
-        tmux.paste_text(&pane, &params.text).map_err(internal)?;
-        tmux.send_enter(&pane).map_err(internal)?;
-        Ok(guard)
-    })
-    .await
-    .map_err(internal)??;
-    worker
-        .read(move |s| s.sent(&run, super::now()))
-        .await
-        .map_err(internal)?
-        .map_err(internal)?;
-    Ok(json!({}))
-}
+#[path = "send.rs"]
+mod sending;
 
 #[cfg(test)]
 #[path = "action_tests.rs"]

@@ -116,9 +116,10 @@ pub async fn serve(
                         }
                         let mut receive = receive;
                         let response = tokio::select! {
+                            biased;
                             response = &mut receive => response,
                             buffered = reader.fill_buf() => {
-                                if buffered?.is_empty() { return Ok(()); }
+                                if buffered?.is_empty() && super::peer::disconnected(writer.as_ref()) { return Ok(()); }
                                 // Preserve pipelined requests; process them after this reply.
                                 receive.await
                             }

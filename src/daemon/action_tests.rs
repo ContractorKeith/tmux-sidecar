@@ -79,3 +79,64 @@ async fn wait_observes_a_transient_target_before_done() {
     }
     worker.close().await.unwrap();
 }
+#[tokio::test(flavor = "current_thread")]
+async fn wait_deadline_includes_selector_read() {
+    let (_root, worker) = worker().await;
+    let (release, block) = std::sync::mpsc::channel();
+    let (began, started) = tokio::sync::oneshot::channel();
+    let owner = worker.clone();
+    let blocked = tokio::spawn(async move {
+        owner
+            .read(move |_| {
+                let _ = began.send(());
+                let _ = block.recv_timeout(Duration::from_secs(1));
+            })
+            .await
+            .unwrap()
+    });
+    started.await.unwrap();
+    let began = std::time::Instant::now();
+    let result = wait(
+        &worker,
+        Wait {
+            sel: "r1".into(),
+            until: AgentState::Blocked,
+            timeout: Some(0),
+        },
+        1,
+    )
+    .await;
+    assert_eq!(result.unwrap_err().0, rpc::TIMEOUT);
+    assert!(began.elapsed() < Duration::from_millis(200));
+    release.send(()).unwrap();
+    blocked.await.unwrap();
+    worker.close().await.unwrap();
+}
+#[tokio::test(flavor = "current_thread")]
+async fn ended_wait_reports_the_stored_state() {
+    let (_root, worker) = worker().await;
+    let id = worker
+        .with(|s| {
+            let mut ended = s.active().unwrap().remove(0);
+            ended.agent_pid = 2;
+            ended.ended_at = Some(2);
+            ended.state = AgentState::Error;
+            s.insert(&ended).unwrap()
+        })
+        .await
+        .unwrap();
+    let error = wait(
+        &worker,
+        Wait {
+            sel: id,
+            until: AgentState::Waiting,
+            timeout: Some(1),
+        },
+        1,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.0, rpc::ERROR);
+    assert!(error.1.contains("ended in error"));
+    worker.close().await.unwrap();
+}

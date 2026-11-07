@@ -24,7 +24,7 @@ fn unreachable(error: io::Error) -> Failure {
     (6, format!("daemon unreachable: {error}"))
 }
 
-pub async fn execute(cli: Cli) -> Result<(), Failure> {
+pub async fn execute(mut cli: Cli) -> Result<(), Failure> {
     if let Command::Hook { agent, payload } = &cli.command {
         let mut args = vec![agent.to_owned()];
         args.extend(payload.iter().cloned());
@@ -52,6 +52,7 @@ pub async fn execute(cli: Cli) -> Result<(), Failure> {
         )
         .map_err(|e| (1, e.to_string()));
     }
+    super::input::prepare(&mut cli)?;
     if matches!(
         cli.command,
         Command::Doctor { .. } | Command::Ui | Command::Mcp { .. }
@@ -104,29 +105,12 @@ pub async fn execute(cli: Cli) -> Result<(), Failure> {
                 json,
             )
         }
-        Command::Send {
-            sel,
-            mut text,
-            force,
-        } => {
-            if text == "-" {
-                use std::io::Read;
-                text.clear();
-                std::io::stdin()
-                    .take(1024 * 1024 + 1)
-                    .read_to_string(&mut text)
-                    .map_err(|e| (1, e.to_string()))?;
-            }
-            if text.len() > 1024 * 1024 {
-                return Err((2, "prompt exceeds 1 MiB".into()));
-            }
-            (
-                "send",
-                json!({"sel":sel.to_string(),"text":text,"force":force}),
-                true,
-                false,
-            )
-        }
+        Command::Send { sel, text, force } => (
+            "send",
+            json!({"sel":sel.to_string(),"text":text,"force":force}),
+            true,
+            false,
+        ),
         Command::Ack { sel } => (
             "ack",
             json!({"selectors":sel.iter().map(ToString::to_string).collect::<Vec<_>>()}),
@@ -193,3 +177,7 @@ pub async fn execute(cli: Cli) -> Result<(), Failure> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "failure_tests.rs"]
+mod tests;

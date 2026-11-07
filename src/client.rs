@@ -34,21 +34,48 @@ pub async fn request(
     spawn: bool,
 ) -> io::Result<Value> {
     let mut stream = open(socket, paths, spawn).await?;
-    if method == "wait" {
-        return exchange(&mut stream, method, params).await;
-    }
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        exchange(&mut stream, method, params),
-    )
-    .await
-    .map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!("RPC {method} exceeded 5 s"),
+    let result = if method == "wait" {
+        exchange(&mut stream, method, params).await
+    } else {
+        let seconds = if method == "send" {
+            rpc::SEND_TIMEOUT_SECS + 2
+        } else {
+            5
+        };
+        tokio::time::timeout(
+            Duration::from_secs(seconds),
+            exchange(&mut stream, method, params),
         )
-    })?
+        .await
+        .unwrap_or_else(|_| {
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("RPC {method} exceeded {seconds} s"),
+            ))
+        })
+    };
+    result.map_err(|e| connected_error(method, e))
 }
+pub(crate) fn connected_error(method: &str, error: io::Error) -> io::Error {
+    if error
+        .get_ref()
+        .and_then(|e| e.downcast_ref::<rpc::RpcError>())
+        .is_some_and(|e| e.code != rpc::DAEMON_UNREACHABLE)
+    {
+        return error;
+    }
+    let message = match method {
+        "send" => "send outcome unknown — check the pane before retrying".to_owned(),
+        "wait" => "daemon stopped while waiting".to_owned(),
+        _ => format!("RPC {method} connection failed: {error}"),
+    };
+    io::Error::other(rpc::RpcError {
+        code: rpc::ERROR,
+        message,
+        data: None,
+    })
+}
+
 pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufReader<UnixStream>> {
     let stream = match connect(paths).await {
         Ok(stream) => stream,
@@ -115,21 +142,7 @@ pub(crate) async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + U
     method: &str,
     params: Value,
 ) -> io::Result<Value> {
-    let request = rpc::Request {
-        jsonrpc: rpc::Version::V2,
-        id: rpc::Id::Number(1),
-        method: method.into(),
-        params: Some(params),
-    };
-    let mut bytes = serde_json::to_vec(&request)?;
-    bytes.push(b'\n');
-    if bytes.len() > 1024 * 1024 {
-        return Err(io::Error::other(rpc::RpcError {
-            code: rpc::INVALID_PARAMS,
-            message: "request exceeds 1 MiB".into(),
-            data: None,
-        }));
-    }
+    let bytes = rpc::request_frame(method, params)?;
     stream.get_mut().write_all(&bytes).await?;
     let mut line = String::new();
     stream.read_line(&mut line).await?;

@@ -73,7 +73,7 @@ e2e_test!(cli_verbs_and_every_exit_code, {
     fire(&guard, &run, "Stop");
     cli(
         &guard,
-        &["wait", sel, "--until", "waiting", "--timeout", "0"],
+        &["wait", sel, "--until", "waiting", "--timeout", "1"],
         0,
     );
     assert!(!cli(&guard, &["wait", sel, "--until", "waiting", "--json"], 0).is_empty());

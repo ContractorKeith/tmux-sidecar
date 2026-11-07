@@ -8,7 +8,7 @@ pub async fn run(socket: &Path, paths: &Paths, json: bool, quiet: bool) -> Resul
         .map_err(response_error)?;
     client::exchange(&mut stream, "subscribe", serde_json::json!({}))
         .await
-        .map_err(response_error)?;
+        .map_err(|e| response_error(client::connected_error("watch", e)))?;
     loop {
         let mut bytes = Vec::new();
         let mut limited = (&mut stream).take(1024 * 1024 + 1);

@@ -124,3 +124,36 @@ fn m4_argument_contract() {
         assert!(Cli::try_parse_from(std::iter::once("tmux-sidecar").chain(args)).is_err());
     }
 }
+#[test]
+fn empty_prompts_fail_before_connecting() {
+    for text in ["", "-"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+            .args(["--tmux-socket", "/no/tsx-server", "send", "%0", text])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("empty prompt"));
+    }
+}
+#[test]
+fn escaped_prompt_size_is_checked_before_connecting() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("prompt");
+    std::fs::write(&path, "\"".repeat(600_000)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+        .args(["--tmux-socket", "/no/tsx-server", "send", "%0", "-"])
+        .stdin(std::fs::File::open(path).unwrap())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("prompt exceeds maximum 1 MiB encoded request frame")
+    );
+    let help = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+        .args(["send", "--help"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&help.stdout).contains("send %0 -- -text"));
+}

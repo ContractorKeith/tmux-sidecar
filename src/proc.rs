@@ -1,5 +1,6 @@
 //! M0: process snapshot adapter for Linux and macOS.
 mod ancestors;
+pub(crate) mod bounded;
 mod liveness;
 use crate::seams::{Process, ProcessSnapshot, ProcessTree};
 pub use ancestors::hook_ancestors;
@@ -26,6 +27,19 @@ impl ProcessTree for PsProcessTree {
                 String::from_utf8_lossy(&output.stderr).into_owned(),
             ));
         }
+        Ok(parse(
+            &String::from_utf8(output.stdout).map_err(io::Error::other)?,
+        ))
+    }
+}
+
+impl PsProcessTree {
+    pub(crate) async fn snapshot_before(
+        deadline: tokio::time::Instant,
+    ) -> io::Result<ProcessSnapshot> {
+        let mut command = Command::new("ps");
+        command.args(["-A", "-o", "pid=,ppid=,comm="]);
+        let output = bounded::output(command, deadline).await?;
         Ok(parse(
             &String::from_utf8(output.stdout).map_err(io::Error::other)?,
         ))
