@@ -31,9 +31,6 @@ fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
 }
 fn main() {
     let args: Vec<_> = std::env::args().collect();
-    if args.get(1).is_some_and(|s| s == "--gated-hook") {
-        fake_burst::entry(&args);
-    }
     if args.get(1).is_some_and(|s| s == "--hook-burst") {
         burst(&args[2], &args[3], 200);
         return;
