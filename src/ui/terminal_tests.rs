@@ -24,6 +24,21 @@ fn panic_fixture() {
     if std::env::var_os("TMUX_SIDECAR_PANIC_FIXTURE").is_none() {
         return;
     }
+    let marker = std::env::var_os("TMUX_SIDECAR_PANIC_MODES").unwrap();
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let mut modes = std::mem::MaybeUninit::<libc::termios>::uninit();
+        // SAFETY: stdin is this fixture's live PTY slave and modes is writable.
+        let result = unsafe { libc::tcgetattr(0, modes.as_mut_ptr()) };
+        let text = if result == 0 {
+            // SAFETY: successful tcgetattr initialized every field.
+            unsafe { modes.assume_init() }.c_lflag.to_string()
+        } else {
+            format!("tcgetattr failed: {}", io::Error::last_os_error())
+        };
+        std::fs::write(&marker, text).unwrap();
+        previous(info);
+    }));
     let _restore = Restore::enter().unwrap();
     let detail = "context ".repeat(8192);
     panic!("visible panic fixture: {detail}");
@@ -51,6 +66,7 @@ fn panic_restores_terminal_before_printing_diagnostic() {
         let flags = unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
         assert_eq!(flags, 0);
     }
+    let marker = root.path().join("panic-modes");
     let mut command = Command::new(std::env::current_exe().unwrap());
     command
         .args([
@@ -59,6 +75,7 @@ fn panic_restores_terminal_before_printing_diagnostic() {
             "--nocapture",
         ])
         .env("TMUX_SIDECAR_PANIC_FIXTURE", "1")
+        .env("TMUX_SIDECAR_PANIC_MODES", &marker)
         .env("HOME", root.path())
         .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
         .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"))
@@ -105,14 +122,11 @@ fn panic_restores_terminal_before_printing_diagnostic() {
         .find("visible panic fixture")
         .expect("panic diagnostic missing");
     assert!(restored < panic, "{output}");
-    let mut modes = std::mem::MaybeUninit::<libc::termios>::uninit();
-    // SAFETY: the slave remains open and modes points to writable termios storage.
-    let read_modes = unsafe { libc::tcgetattr(slave.as_raw_fd(), modes.as_mut_ptr()) };
-    assert_eq!(read_modes, 0);
-    // SAFETY: successful tcgetattr initialized every field.
-    let modes = unsafe { modes.assume_init() };
-    assert_ne!(modes.c_lflag & libc::ICANON, 0);
-    assert_ne!(modes.c_lflag & libc::ECHO, 0);
+    // macOS revokes the slave when its controlling session exits. The chained
+    // hook recorded actual modes before exit, after production restoration.
+    let modes: libc::tcflag_t = std::fs::read_to_string(marker).unwrap().parse().unwrap();
+    assert_ne!(modes & libc::ICANON, 0);
+    assert_ne!(modes & libc::ECHO, 0);
 }
 
 fn drain(master: &mut File, bytes: &mut Vec<u8>, deadline: Instant) {
