@@ -34,7 +34,10 @@ impl Store {
             "UPDATE runs SET state=?1,state_since=?2,state_source=?3,read_at=NULL WHERE id=?4",
             params![enum_name(&state), number(at)?, source, run_id(&run.id)?],
         )?;
-        let payload = json!({"run_id":run.id,"pane_id":run.pane_id,"server_start":run.server_start,"from":run.state,"to":state,"at":at,"cause":cause});
+        let mut payload = json!({"run_id":run.id,"pane_id":run.pane_id,"server_start":run.server_start,"from":run.state,"to":state,"at":at,"cause":cause});
+        if source == "send_timeout" {
+            payload["notify"] = false.into();
+        }
         self.connection.execute("INSERT INTO signals(run_id,at,source,event,payload_json) VALUES (?1,?2,'engine','state_changed',?3)",
             params![run_id(&run.id)?,number(at)?,payload.to_string()])?;
         Ok(())

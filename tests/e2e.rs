@@ -136,5 +136,7 @@ mod ui;
 #[path = "support/ui_lifecycle.rs"]
 mod ui_lifecycle;
 
+#[path = "support/round2_hooks.rs"]
+mod round2_hooks;
 #[path = "support/skeptic_state.rs"]
 mod skeptic_state;

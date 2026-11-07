@@ -89,6 +89,7 @@ fn every_plan_hook_row_from_real_and_synthesized_fixtures() {
             let result = transition(
                 &current,
                 Evidence::Hook {
+                    session_id: None,
                     event: &parsed.event,
                     detail: parsed.detail.as_deref(),
                     at: 101,

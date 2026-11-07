@@ -33,6 +33,7 @@ pub const REFUSED: i32 = -32003;
 pub const TIMEOUT: i32 = -32004;
 pub const NOT_FOUND: i32 = -32005;
 pub const DAEMON_UNREACHABLE: i32 = -32006;
+pub const OUTCOME_UNKNOWN: i32 = -32007;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Version {

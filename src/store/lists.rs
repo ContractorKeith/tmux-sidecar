@@ -26,6 +26,36 @@ impl Store {
         .map_err(|e| db_error(&self.path,e))
     }
 }
+
+impl Store {
+    pub fn attention(&self) -> io::Result<Vec<AgentRun>> {
+        let mut runs: Vec<_> = self
+            .active()?
+            .into_iter()
+            .filter(|r| {
+                matches!(
+                    r.state,
+                    crate::model::AgentState::Blocked
+                        | crate::model::AgentState::Error
+                        | crate::model::AgentState::Waiting
+                ) && r.read_at.is_none_or(|at| at < r.state_since)
+            })
+            .collect();
+        runs.sort_by_key(|r| {
+            (
+                match r.state {
+                    crate::model::AgentState::Blocked => 0,
+                    crate::model::AgentState::Error => 1,
+                    _ => 2,
+                },
+                r.state_since,
+                r.id[1..].parse::<u64>().expect("stored numeric run id"),
+            )
+        });
+        Ok(runs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

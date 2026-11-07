@@ -47,13 +47,14 @@ pub fn handle_prepared(
         }
         "daemon.stop" => Ok(json!({"stopping":true,"pid":std::process::id()})),
         "list" => list(&request, store),
-        "attention" | "history" | "ack" | "name" | "group.add" | "group.rm" | "group.ls"
-        | "subscribe" => super::state_methods::handle(
-            &request.method,
-            request.params.clone(),
-            store,
-            server_start,
-        ),
+        "history" | "ack" | "name" | "group.add" | "group.rm" | "group.ls" | "subscribe" => {
+            super::state_methods::handle(
+                &request.method,
+                request.params.clone(),
+                store,
+                server_start,
+            )
+        }
         "signal" => match prepared.expect("signal prepared before dispatch") {
             Err(e) => Err((rpc::INVALID_PARAMS, e)),
             Ok(signal) => store
@@ -61,7 +62,7 @@ pub fn handle_prepared(
                 .map(|()| json!({}))
                 .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string())),
         },
-        "wait" | "send" => {
+        "attention" | "wait" | "send" => {
             return failure(
                 id,
                 rpc::INVALID_PARAMS,

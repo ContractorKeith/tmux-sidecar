@@ -16,6 +16,8 @@ fn unknown_run_metadata_dedupe_and_late_replay_preserve_state() {
         agent_session_id: Some("fake".into()),
         cwd: "/work".into(),
         transcript_path: Some("/transcript".into()),
+        orphaned: false,
+        parent_agent_pid: None,
         payload: serde_json::json!({"hook_event_name":"Stop"}),
     };
     store.signal(&signal).unwrap();
@@ -64,6 +66,8 @@ mod migration_tests {
             agent_session_id: None,
             cwd: "/work".into(),
             transcript_path: None,
+            orphaned: false,
+            parent_agent_pid: None,
             payload: serde_json::json!({"hook_event_name":"Stop"}),
         };
         store.signal(&signal).unwrap();

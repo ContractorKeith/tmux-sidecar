@@ -1,6 +1,5 @@
 //! Finish signals already accepted before closing SQLite; idle clients have a deadline.
 use super::{
-    methods,
     store_worker::StoreWorker,
     transport::{self, Call},
 };
@@ -10,19 +9,14 @@ pub async fn drain(
     connections: &mut JoinSet<io::Result<()>>,
     receiver: &mut mpsc::Receiver<Call>,
     worker: &StoreWorker,
-    key: &str,
-    poll_ms: u64,
+    state: std::path::PathBuf,
 ) -> io::Result<()> {
     let result = tokio::time::timeout(Duration::from_secs(1), async {
         while !connections.is_empty() {
             tokio::select! {
                 Some(call)=receiver.recv()=> {
                     let response=if call.request.method=="signal" {
-                        let prepared=methods::prepare(&call.request);
-                        let key=key.to_owned();
-                        worker.with(move |store| {
-                            methods::handle_prepared(call.request, store, &key, poll_ms, prepared,0)
-                        }).await?
+                        super::signal_delivery::respond(call.request,worker,state.clone()).await
                     } else {
                         transport::failure(
                             Some(call.request.id),

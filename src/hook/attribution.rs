@@ -40,6 +40,48 @@ pub fn cache(runtime: &Path, panes: &[crate::seams::PaneSnapshot]) -> io::Result
     )?)?;
     std::fs::rename(next, runtime.join("pane_pids"))
 }
+
+pub async fn resolve(
+    signal: &mut super::signal::Signal,
+    chain: &[(u32, Process)],
+    runtime: &Path,
+    socket: &Path,
+) {
+    let mut pane_pid = pane_pid(runtime, socket, &signal.pane_id, signal.server_start)
+        .await
+        .ok();
+    if pane_pid.is_some_and(|root| !chain.iter().any(|(pid, _)| *pid == root)) {
+        pane_pid = crate::tmux::hook_pane_pid(socket, &signal.pane_id)
+            .await
+            .ok();
+    }
+    apply(signal, chain, pane_pid);
+    if signal.orphaned
+        && let Ok(cwd) = Path::new(&signal.cwd).canonicalize()
+    {
+        signal.cwd = cwd.to_string_lossy().into_owned();
+    }
+}
+fn apply(signal: &mut super::signal::Signal, chain: &[(u32, Process)], pane_pid: Option<u32>) {
+    if let Some(identity) = pane_pid.and_then(|root| ancestor(chain, root)) {
+        (signal.agent_pid, signal.agent) = identity;
+    } else {
+        let nearest = chain
+            .iter()
+            .position(|(_, p)| proc::agent_kind(&p.comm).is_some());
+        // Failed lookups do not prove orphaning. A direct child of init does.
+        signal.orphaned = pane_pid.is_some() || nearest.is_some_and(|i| chain[i].1.ppid == 1);
+        if signal.orphaned
+            && let Some(i) = nearest
+        {
+            signal.parent_agent_pid = chain[i + 1..]
+                .iter()
+                .find(|(_, p)| proc::agent_kind(&p.comm) == Some(signal.agent))
+                .map(|(pid, _)| *pid);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,5 +100,39 @@ mod tests {
         assert_eq!(ancestor(&chain, 10), Some((20, AgentKind::Opencode)));
         assert_eq!(ancestor(&chain, 20), Some((20, AgentKind::Opencode)));
         assert_eq!(ancestor(&chain, 99), None);
+    }
+    #[test]
+    fn init_parent_proves_orphaning_but_failed_lookup_alone_does_not() {
+        let mut signal: super::super::signal::Signal=serde_json::from_value(serde_json::json!({"server_start":1,"pane_id":"%0","agent":"opencode","agent_pid":30,"at":100,"nonce":format!("{:032x}",100),"source":"hook:opencode","event":"permission.asked","cwd":"/work","payload":{}})).unwrap();
+        let mut chain = vec![
+            (
+                30,
+                Process {
+                    ppid: 20,
+                    comm: "opencode.exe".into(),
+                },
+            ),
+            (
+                20,
+                Process {
+                    ppid: 1,
+                    comm: "bash".into(),
+                },
+            ),
+            (
+                1,
+                Process {
+                    ppid: 0,
+                    comm: "init".into(),
+                },
+            ),
+        ];
+        apply(&mut signal, &chain, None);
+        assert!(!signal.orphaned);
+        chain[0].1.ppid = 1;
+        chain.remove(1);
+        apply(&mut signal, &chain, None);
+        assert!(signal.orphaned);
+        assert_eq!(signal.payload, serde_json::json!({}));
     }
 }

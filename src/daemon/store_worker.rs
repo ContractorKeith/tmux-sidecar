@@ -12,6 +12,7 @@ pub struct StoreWorker {
         >,
     >,
     pub events: broadcast::Sender<serde_json::Value>,
+    pub notifications: broadcast::Sender<serde_json::Value>,
     pub views: tokio::sync::watch::Sender<u64>,
     done: Option<oneshot::Receiver<()>>,
 }
@@ -22,6 +23,8 @@ impl StoreWorker {
         let (closed, done) = oneshot::channel();
         let (events, _) = broadcast::channel(256);
         let publish = events.clone();
+        let (notifications, _) = broadcast::channel(256);
+        let notify = notifications.clone();
         let (views, _) = tokio::sync::watch::channel(0u64);
         let invalidate = views.clone();
         tokio::task::spawn_blocking(move || {
@@ -54,6 +57,9 @@ impl StoreWorker {
                 if let Ok(changes) = store.changes_since(cursor) {
                     for (id, payload) in changes {
                         cursor = id;
+                        if payload["notify"] != false {
+                            let _ = notify.send(payload.clone());
+                        }
                         let _ = publish.send(payload);
                     }
                 }
@@ -68,6 +74,7 @@ impl StoreWorker {
             locks: Default::default(),
             done: Some(done),
             events,
+            notifications,
             views,
         })
     }
@@ -134,6 +141,7 @@ impl Clone for StoreWorker {
             mutation: self.mutation.clone(),
             locks: self.locks.clone(),
             events: self.events.clone(),
+            notifications: self.notifications.clone(),
             views: self.views.clone(),
             done: None,
         }
@@ -141,62 +149,5 @@ impl Clone for StoreWorker {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[tokio::test(flavor = "current_thread")]
-    async fn run_locks_are_shared_and_do_not_block_sqlite_reads() {
-        let root = tempfile::tempdir().unwrap();
-        let worker = StoreWorker::open(root.path().join("locks.db"))
-            .await
-            .unwrap();
-        let guard = worker.lock_run("r1").await;
-        let other = worker.clone();
-        assert!(
-            tokio::time::timeout(
-                std::time::Duration::from_millis(10),
-                other.run_lock("r1").lock_owned()
-            )
-            .await
-            .is_err()
-        );
-        let second = worker.lock_run("r2").await;
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_millis(10), worker.with(|_| ()))
-                .await
-                .is_err()
-        );
-        tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            worker.read(|s| s.active()),
-        )
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
-        drop(guard);
-        drop(second);
-        let reacquired = other.run_lock("r1").lock_owned().await;
-        drop(reacquired);
-        drop(other);
-        worker.close().await.unwrap();
-    }
-    #[tokio::test(flavor = "current_thread")]
-    async fn sqlite_jobs_run_on_the_blocking_owner_and_close_cleanly() {
-        let root = tempfile::tempdir().unwrap();
-        let runtime_thread = std::thread::current().id();
-        let worker = StoreWorker::open(root.path().join("worker.db"))
-            .await
-            .unwrap();
-        let owner = worker
-            .with(|store| {
-                store.active().unwrap();
-                std::thread::current().id()
-            })
-            .await
-            .unwrap();
-        assert_ne!(owner, runtime_thread);
-        let second = worker.with(|_| std::thread::current().id()).await.unwrap();
-        assert_eq!(owner, second);
-        worker.close().await.unwrap();
-    }
-}
+#[path = "store_worker_tests.rs"]
+mod tests;

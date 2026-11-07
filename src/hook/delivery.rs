@@ -70,7 +70,7 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
         let _ = paths::prepare(&paths);
         let _ = super::log(&paths.state, error);
     }
-    if started.elapsed() >= HOOK_BUDGET {
+    if result.is_ok() && started.elapsed() >= HOOK_BUDGET {
         let _ = super::log(&paths.state, &"budget exceeded");
     }
     result
@@ -84,7 +84,7 @@ async fn record(
     started: Instant,
 ) -> io::Result<()> {
     let chain = proc::hook_ancestors()?;
-    let Some((mut pid, mut agent)) = chain
+    let Some((pid, agent)) = chain
         .iter()
         .find_map(|(pid, p)| proc::agent_kind(&p.comm).map(|a| (*pid, a)))
     else {
@@ -106,26 +106,15 @@ async fn record(
         agent_session_id: parsed.session_id,
         cwd: parsed.cwd,
         transcript_path: parsed.transcript_path,
+        orphaned: false,
+        parent_agent_pid: None,
         payload: input::compact(payload)?,
     };
-    let mut pane_pid =
-        super::attribution::pane_pid(&paths.runtime, socket, &signal.pane_id, signal.server_start)
-            .await
-            .ok();
-    if pane_pid.is_some_and(|root| !chain.iter().any(|(pid, _)| *pid == root))
-        && let Ok(current) = crate::tmux::hook_pane_pid(socket, &signal.pane_id).await
-    {
-        pane_pid = Some(current);
-    }
-    if let Some(identity) = pane_pid.and_then(|root| super::attribution::ancestor(&chain, root)) {
-        (pid, agent) = identity;
-        signal.agent_pid = pid;
-        signal.agent = agent;
-    } else {
-        signal.payload["_tmux_sidecar_orphaned"] = true.into();
+    super::attribution::resolve(&mut signal, &chain, &paths.runtime, socket).await;
+    if signal.orphaned {
         let _ = super::log(
             &paths.state,
-            &"hook ancestry does not reach pane; use session owner if known, otherwise drop signal",
+            &"hook ancestry does not reach pane; route to an unambiguous owner or drop",
         );
     }
     signal.validate_frame()?;

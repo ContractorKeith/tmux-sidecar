@@ -193,7 +193,7 @@ meta(schema_version)
 | Claude/Grok `Stop`, `Notification` `idle_prompt` | waiting |
 | Grok `StopCancelled` | waiting |
 | Claude/Grok `StopFailure` | error |
-| Claude/Grok/Codex `SessionEnd` | done |
+| Claude/Grok/Codex `SessionEnd` | done; Claude clear/logout → waiting |
 | Codex `notify` `agent-turn-complete`; Codex `Interrupt` | waiting |
 | Codex `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
 | Codex `PermissionRequest` | blocked |
@@ -225,7 +225,7 @@ tmux-sidecar list [--group G] [--state S] [--all] [--limit N] [--json]  active r
 tmux-sidecar attention [--json]                            the attention queue
 tmux-sidecar watch [--json]                                stream state changes until Ctrl-C
 tmux-sidecar wait <sel> --until waiting|blocked|done [--timeout SECS] [--json]
-tmux-sidecar send <sel> <text>|-  [--force]                paste + Enter; refuses unless waiting
+tmux-sidecar send <sel> <text>|-  [--force]                paste + Enter; refuses unless waiting or idle
 tmux-sidecar ack <sel>...                                  mark read
 tmux-sidecar history <sel> [--limit N] [--json]            signals and state changes
 tmux-sidecar name <sel> <name>|--clear                     name the pane
@@ -240,7 +240,7 @@ tmux-sidecar mcp [--allow-send]
 
 Global flags: `--tmux-socket PATH` (else `$TMUX`, else tmux's default socket), `-q`.
 Config precedence: flag > env > config file > default. Config keys: `poll_ms` (1000),
-`idle_after_secs` (1800), `notify.desktop` (true), `notify.debounce_secs` (10).
+`idle_after_secs` (1800), `send_confirm_secs` (30), `notify.desktop` (true), `notify.debounce_secs` (10).
 
 Exit codes: 0 ok · 1 error · 2 usage · 3 refused (send guard) · 4 timeout (wait) ·
 5 not found (selector) · 6 daemon unreachable after auto-spawn.
@@ -263,11 +263,13 @@ spools, triggers a detached spawn, and exits.
 
 **Hook delivery.** `hook` reads the payload (stdin; Codex `notify` passes JSON as the last
 argv), reads `$TMUX` and `$TMUX_PANE` (no `$TMUX` → exit 0, nothing recorded), walks its own
-ancestor chain to the first process named `claude`, `codex`, `grok` or `opencode` (that is the
-agent and its pid; the argument only says which payload format to parse), then sends one
-`signal` notification with a 100 ms connect/write timeout. On failure it appends the same line
-to `spool.ndjson` under `flock`. Total budget 200 ms. The daemon replays and truncates the spool
-at start and whenever it sees the file grow.
+ancestor chain to the outermost `claude`, `codex`, `grok`, `opencode` or `opencode.exe`
+within the pane's process tree (the argument selects the payload format). Pane-root lookup
+failure is unknown rather than orphaned. Proven orphan hooks route only to an unambiguous
+session owner, parent client, or unidentified same-cwd run; other orphans are dropped and logged.
+It attempts one O_APPEND frame write before live delivery, without appender locks; append
+failure still allows live delivery. Connect/write budget is 100 ms, total budget 200 ms.
+The daemon claims spool files for replay and deduplicates invocation nonces.
 
 **Hooks install.** Claude Code: entries in `~/.claude/settings.json` for Notification,
 PermissionRequest, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure, SessionEnd,

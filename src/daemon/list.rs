@@ -62,8 +62,8 @@ pub async fn serve(call: Call, worker: StoreWorker) {
             let runs = worker
                 .read(move |store| {
                     if attention {
-                        let value = super::state_methods::handle("attention", None, store, 0)?;
-                        serde_json::from_value(value)
+                        store
+                            .attention()
                             .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))
                     } else {
                         stored(store, &copied, selected.as_ref(), before, page_limit)

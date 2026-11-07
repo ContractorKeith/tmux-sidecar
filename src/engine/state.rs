@@ -5,6 +5,7 @@ use AgentState::*;
 
 pub enum Evidence<'a> {
     Hook {
+        session_id: Option<&'a str>,
         event: &'a str,
         detail: Option<&'a str>,
         at: u64,
@@ -21,18 +22,25 @@ pub enum Evidence<'a> {
     Exit,
 }
 pub fn transition(run: &AgentRun, evidence: Evidence<'_>, now: u64) -> (AgentState, bool) {
-    let next = if matches!(evidence, Evidence::Exit) || run.ended_at.is_some() || run.state == Done
-    {
+    let next = if matches!(evidence, Evidence::Exit) || run.ended_at.is_some() {
         Done
     } else {
         match evidence {
             Evidence::Hook {
+                session_id,
                 event,
                 detail,
                 at,
                 last_signal_at,
             } if last_signal_at.is_none_or(|latest| at >= latest) => {
-                hook(run.agent, event, detail).unwrap_or(run.state)
+                if run.state == Done
+                    && event != "UserPromptSubmit"
+                    && session_id.is_none_or(|id| run.agent_session_id.as_deref() == Some(id))
+                {
+                    Done
+                } else {
+                    hook(run.agent, event, detail).unwrap_or(run.state)
+                }
             }
             Evidence::Transcript {
                 state,
@@ -40,7 +48,9 @@ pub fn transition(run: &AgentRun, evidence: Evidence<'_>, now: u64) -> (AgentSta
                 at,
             } => {
                 // Re-reading the same completed turn must not undo clock-derived idle.
-                if run.state == Idle
+                if run.state == Done {
+                    Done
+                } else if run.state == Idle
                     && run.state_source == "clock"
                     && state == Waiting
                     && at <= run.state_since
@@ -75,6 +85,7 @@ fn hook(agent: AgentKind, event: &str, detail: Option<&str>) -> Option<AgentStat
         | (Codex, "agent-turn-complete", _)
         | (Codex, "Interrupt", _) => Some(Waiting),
         (Claude | Grok, "StopFailure", _) => Some(Error),
+        (Claude, "SessionEnd", Some("clear" | "logout")) => Some(Waiting),
         (Claude | Grok | Codex, "SessionEnd", _) => Some(Done),
         (Opencode, "session.status", Some("busy")) | (Opencode, "permission.replied", _) => {
             Some(Working)

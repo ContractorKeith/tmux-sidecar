@@ -167,25 +167,15 @@ e2e_test!(outside_tmux_or_without_an_agent_records_nothing, {
         return;
     }
     let guard = TmuxGuard::start();
-    for inside in [false, true] {
-        let mut cmd = guard.sidecar();
-        if inside {
-            cmd.env("TMUX", format!("{},0,0", guard.socket().display()))
-                .env("TMUX_PANE", "%0");
-        }
-        let result = cmd.args(["hook", "claude"]).bounded_output().unwrap();
-        assert!(result.status.success());
-        assert!(result.stdout.is_empty());
-        assert!(result.stderr.is_empty());
-    }
+    let result = guard
+        .sidecar()
+        .args(["hook", "claude"])
+        .bounded_output()
+        .unwrap();
+    assert!(result.status.success());
+    assert!(result.stdout.is_empty());
+    assert!(result.stderr.is_empty());
+    super::support::no_ancestor::check(&guard);
     assert!(!guard.scratch.path().join("state/spool.ndjson").exists());
     assert!(!guard.scratch.path().join("state/tmux-sidecar.db").exists());
-    let log = fs::read_to_string(guard.scratch.path().join("state/hook.log")).unwrap();
-    assert_eq!(log.lines().count(), 1);
-    // The test runner itself can have a real coding-agent ancestor. In that case
-    // the empty payload is rejected; a truly agent-free walk logs its missing ancestor.
-    assert!(
-        log.contains("no agent ancestor") || log.contains("EOF while parsing"),
-        "{log}"
-    );
 });

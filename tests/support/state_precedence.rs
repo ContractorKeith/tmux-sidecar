@@ -12,6 +12,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
             transition(
                 &current,
                 Evidence::Hook {
+                    session_id: None,
                     event,
                     detail,
                     at: 101,
@@ -26,6 +27,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
         transition(
             &current,
             Evidence::Hook {
+                session_id: None,
                 event: "PreToolUse",
                 detail: None,
                 at: 99,
@@ -39,6 +41,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
         transition(
             &current,
             Evidence::Hook {
+                session_id: None,
                 event: "PreToolUse",
                 detail: None,
                 at: 99,
@@ -52,6 +55,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
         transition(
             &current,
             Evidence::Hook {
+                session_id: None,
                 event: "Stop",
                 detail: None,
                 at: 101,
@@ -104,6 +108,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
         transition(
             &current,
             Evidence::Hook {
+                session_id: None,
                 event: "PreToolUse",
                 detail: None,
                 at: 201,

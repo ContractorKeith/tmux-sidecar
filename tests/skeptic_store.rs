@@ -14,6 +14,8 @@ fn signal(pid: u32, event: &str, at: u64) -> Signal {
         agent_session_id: None,
         cwd: "/work".into(),
         transcript_path: None,
+        orphaned: false,
+        parent_agent_pid: None,
         payload: json!({}),
     }
 }
@@ -36,6 +38,7 @@ fn codex_auxiliary_notify_cannot_finish_the_main_turn() {
     let store = Store::open(&root.path().join("db")).unwrap();
     let mut hook = signal(1, "UserPromptSubmit", 100);
     hook.agent = AgentKind::Codex;
+    hook.source = "hook:codex".into();
     hook.agent_session_id = Some("main-thread".into());
     store.signal(&hook).unwrap();
     let mut notify = hook.clone();
@@ -89,7 +92,7 @@ fn orphaned_hook_uses_session_owner_and_never_creates_a_stale_pane_run() {
     orphan.event = "permission.asked".into();
     orphan.at = 101;
     orphan.nonce = format!("{:032x}", 999);
-    orphan.payload = json!({"_tmux_sidecar_orphaned":true});
+    orphan.orphaned = true;
     store.signal(&orphan).unwrap();
     assert_eq!(store.list().unwrap().len(), 1);
     assert_eq!(
@@ -141,4 +144,13 @@ fn hook_captured_before_first_poll_keeps_run_timestamps_ordered() {
     let run = store.get(id.parse().unwrap(), 1).unwrap().unwrap();
     assert_eq!(run.state_since, 100);
     assert!(run.started_at <= run.state_since);
+    store.signal(&signal(2, "PostToolUse", 50)).unwrap();
+    assert_eq!(
+        store
+            .get(id.parse().unwrap(), 1)
+            .unwrap()
+            .unwrap()
+            .started_at,
+        100
+    );
 }

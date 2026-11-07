@@ -113,9 +113,12 @@ while waiting for another state returns -32001. Subscription overflow fails with
 
 Params: `{"sel":"%2","text":"next prompt","force":false}`. `force` defaults
 to false. Returns `{}` after paste and Enter, and commits an optimistic working
-state with source `send` plus its state_changed history. A subsequent hook confirms
-it; without confirmation within `send_confirm_secs`
-(default 30), the next poll restores the prior state.
+state with source `send` plus its state_changed history. A new accepted hook receipt
+after the send history row confirms it, independent of its capture timestamp.
+Without confirmation within `send_confirm_secs`
+(default 30), the next poll restores the prior state, state age and read mark.
+Rollback is visible in history and state subscriptions with `notify: false`; it
+never generates desktop or tmux notifications.
 The daemon requires a live run in waiting or idle at paste time, else -32003 with the
 current state. `force` skips only the state guard; ended or missing runs return
 -32005. Empty or NUL text returns -32602; terminal failures before paste return -32603.
@@ -197,13 +200,21 @@ process tree, independent of the payload parser named by `source` (`hook:claude`
 directly; macOS reads ppid and comm per pid with `proc_pidinfo`. Neither hook ancestor
 walk spawns a process. Pane-root pids are cached by polling; a missing or stale
 cache uses a bounded tmux query. If ancestry does not reach that pane (including
-a deleted pane), hooks mark `payload._tmux_sidecar_orphaned` and log the reason.
-The daemon routes those signals only to an active run with the same agent session
-id; without an owner it drops them, without creating a run on the stale pane.
+a deleted pane), hooks set the out-of-band `orphaned` field and log the reason.
+The daemon first matches the agent session id, then an identified `parent_agent_pid`,
+then the single same-agent, same-cwd active run without a session id. Ambiguous or
+missing owners are dropped and logged; no run is created on the stale pane.
+A failed pane-pid lookup is unknown and preserves normal pane/pid delivery; a direct
+agent child of init still proves orphaning. Routing fields are not stored in payload.
 `server_start` is tmux's start
 time in seconds; `at` is capture time in Unix milliseconds. `event` is the hook
 event name; optional `detail` holds notification type, tool matcher, reason or
-status type. Both are stored separately. OpenCode V2 execution.started maps to
+status type. Both are stored separately. Hook-derived done rejects later hooks
+from the same agent session; a different
+session id or UserPromptSubmit can reopen it. Claude SessionEnd clear/logout is
+waiting; other SessionEnd reasons are done. Process exit sets ended_at and is final.
+For Codex, only inline hooks establish native session identity; notify never does.
+OpenCode V2 execution.started maps to
 session.status/busy, execution.succeeded/interrupted to session.idle, and
 execution.failed to session.error; the original V2 event remains in `payload`.
 
@@ -289,6 +300,7 @@ Error response example:
 | -32004 | Wait timeout |
 | -32005 | Selector not found |
 | -32006 | Daemon unreachable (reserved) |
+| -32007 | Send outcome unknown after paste may have started (CLI exit 1) |
 
 ### CLI output
 

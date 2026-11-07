@@ -14,10 +14,15 @@ fn signal(pid: u32, event: &str, at: u64) -> Signal {
         agent_session_id: None,
         cwd: "/work".into(),
         transcript_path: None,
+        orphaned: false,
+        parent_agent_pid: None,
         payload: json!({}),
     }
 }
 fn call(store: &Store, method: &str, params: Value) -> Value {
+    if method == "attention" {
+        return serde_json::to_value(store.attention().unwrap()).unwrap();
+    }
     let response = daemon::dispatch(
         rpc::Request {
             jsonrpc: rpc::Version::V2,

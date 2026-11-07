@@ -17,10 +17,9 @@ pub(super) struct Send {
     #[serde(default)]
     force: bool,
 }
-const OUTCOME_UNKNOWN: i32 = -32007;
 fn failure(error: std::io::Error) -> (i32, String) {
     if crate::tmux::paste_outcome_unknown(&error) {
-        (OUTCOME_UNKNOWN, error.to_string())
+        (rpc::OUTCOME_UNKNOWN, error.to_string())
     } else if error.kind() == std::io::ErrorKind::TimedOut {
         (rpc::TIMEOUT, error.to_string())
     } else {
@@ -96,7 +95,12 @@ pub(super) async fn send(
         tmux.paste_before(&live.pane_id, &params.text, deadline.into_std())
             .map_err(failure)?;
         tmux.enter_before(&live.pane_id, deadline.into_std())
-            .map_err(|e| (OUTCOME_UNKNOWN, format!("outcome unknown after paste: {e}")))?;
+            .map_err(|e| {
+                (
+                    rpc::OUTCOME_UNKNOWN,
+                    format!("outcome unknown after paste: {e}"),
+                )
+            })?;
         Ok(guard)
     })
     .await
@@ -108,11 +112,21 @@ pub(super) async fn send(
     .await
     .map_err(|_| {
         (
-            OUTCOME_UNKNOWN,
+            rpc::OUTCOME_UNKNOWN,
             "outcome unknown after paste: send deadline exceeded".into(),
         )
     })?
-    .map_err(|e| (OUTCOME_UNKNOWN, format!("outcome unknown after paste: {e}")))?
-    .map_err(|e| (OUTCOME_UNKNOWN, format!("outcome unknown after paste: {e}")))?;
+    .map_err(|e| {
+        (
+            rpc::OUTCOME_UNKNOWN,
+            format!("outcome unknown after paste: {e}"),
+        )
+    })?
+    .map_err(|e| {
+        (
+            rpc::OUTCOME_UNKNOWN,
+            format!("outcome unknown after paste: {e}"),
+        )
+    })?;
     Ok(json!({}))
 }

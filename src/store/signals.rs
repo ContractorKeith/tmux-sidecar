@@ -11,6 +11,10 @@ impl Store {
 
     /// Receipt and signal commit together; replay can safely repeat after a crash.
     pub fn signal(&self, signal: &Signal) -> io::Result<()> {
+        self.record_signal(signal).map(|_| ())
+    }
+    pub(crate) fn record_signal(&self, signal: &Signal) -> io::Result<bool> {
+        let mut dropped = false;
         signal.validate()?;
         let payload = serde_json::to_string(&signal.payload)?;
         let tx = self
@@ -25,13 +29,15 @@ impl Store {
             {
                 return Ok(());
             }
-            let existing: Option<i64> = if signal.payload["_tmux_sidecar_orphaned"] == true {
-                let owner = tx.query_row("SELECT id FROM runs WHERE server_start=?1 AND agent=?2 AND agent_session_id=?3 AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
-                    params![number(signal.server_start)?,enum_name(&signal.agent),signal.agent_session_id], |r| r.get(0)).optional()?;
-                if owner.is_none() {
+            let existing: Option<i64> = if signal.orphaned {
+                let Some(owner) = self
+                    .orphan_owner(signal)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?
+                else {
+                    dropped = true;
                     return Ok(());
-                }
-                owner
+                };
+                Some(run_id(&owner.id)?)
             } else {
                 tx.query_row("SELECT id FROM runs WHERE server_start=?1 AND pane_id=?2 AND agent_pid=?3 ORDER BY id DESC LIMIT 1",
                 params![number(signal.server_start)?,signal.pane_id,signal.agent_pid], |r| r.get(0)).optional()?
@@ -68,16 +74,19 @@ impl Store {
                 return Ok(());
             }
             tx.execute(
-                "UPDATE runs SET started_at=MIN(started_at,?1) WHERE id=?2",
+                "UPDATE runs SET started_at=MIN(started_at,?1) WHERE id=?2 AND NOT EXISTS(SELECT 1 FROM signals WHERE run_id=?2)",
                 params![number(signal.at)?, id],
             )?;
+            let session_id = if signal.agent == crate::model::AgentKind::Codex
+                && signal.source != "hook:codex"
+            {
+                None
+            } else {
+                signal.agent_session_id.as_ref()
+            };
             tx.execute("UPDATE runs SET agent_session_id=COALESCE(?1,agent_session_id), transcript_path=COALESCE(?2,transcript_path) WHERE id=?3",
-                params![signal.agent_session_id,signal.transcript_path,id])?;
+                params![session_id,signal.transcript_path,id])?;
             let run = tx.query_row("SELECT * FROM runs WHERE id=?1", [id], row)?;
-            tx.execute(
-                "DELETE FROM pending_sends WHERE run_id=?1 AND at<=?2",
-                params![id, number(signal.at)?],
-            )?;
             let last_signal_at = self
                 .latest_hook_at(&run.id)
                 .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
@@ -86,9 +95,14 @@ impl Store {
                 params![id, number(signal.at)?, signal.source, signal.event, payload,signal.detail],
             )?;
             let cause = tx.last_insert_rowid();
+            tx.execute(
+                "DELETE FROM pending_sends WHERE run_id=?1 AND signal_id<?2",
+                params![id, cause],
+            )?;
             let (state, _) = crate::engine::transition(
-                &run,
+                &original,
                 crate::engine::Evidence::Hook {
+                    session_id: signal.agent_session_id.as_deref(),
                     event: &signal.event,
                     detail: signal.detail.as_deref(),
                     at: signal.at,
@@ -110,7 +124,8 @@ impl Store {
             Ok(())
         })();
         result.map_err(|e| db_error(&self.path, e))?;
-        tx.commit().map_err(|e| db_error(&self.path, e))
+        tx.commit().map_err(|e| db_error(&self.path, e))?;
+        Ok(dropped)
     }
 }
 #[cfg(test)]

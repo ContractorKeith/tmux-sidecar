@@ -6,10 +6,14 @@ impl Store {
             .connection
             .unchecked_transaction()
             .map_err(io::Error::other)?;
-        self.connection.execute("INSERT INTO pending_sends(run_id,at,prior_json) VALUES(?1,?2,?3) ON CONFLICT(run_id) DO UPDATE SET at=excluded.at",
-            params![run_id(&run.id).map_err(io::Error::other)?,number(at).map_err(io::Error::other)?,serde_json::to_string(run)?]).map_err(io::Error::other)?;
         self.change(run, AgentState::Working, at, "send", None)
             .map_err(io::Error::other)?;
+        let prior = serde_json::to_string(run)?;
+        self.connection.execute("INSERT INTO signals(run_id,at,source,event,payload_json) VALUES(?1,?2,'send','prompt_sent',?3)",
+            params![run_id(&run.id).map_err(io::Error::other)?,number(at).map_err(io::Error::other)?,prior]).map_err(io::Error::other)?;
+        let cursor = self.connection.last_insert_rowid();
+        self.connection.execute("INSERT INTO pending_sends(run_id,at,prior_json,signal_id) VALUES(?1,?2,?3,?4) ON CONFLICT(run_id) DO UPDATE SET at=excluded.at,signal_id=excluded.signal_id",
+            params![run_id(&run.id).map_err(io::Error::other)?,number(at).map_err(io::Error::other)?,prior,cursor]).map_err(io::Error::other)?;
         tx.commit().map_err(io::Error::other)
     }
     pub(super) fn expire_sends(&self, now: u64, confirm_ms: u64) -> io::Result<()> {
@@ -37,6 +41,21 @@ impl Store {
                 && run.state == AgentState::Working
             {
                 self.change(&run, prior.state, now, "send_timeout", None)
+                    .map_err(io::Error::other)?;
+                self.connection
+                    .execute(
+                        "UPDATE runs SET state_since=?1,read_at=?2 WHERE id=?3",
+                        params![
+                            number(prior.state_since).map_err(io::Error::other)?,
+                            prior
+                                .read_at
+                                .max(run.read_at)
+                                .map(number)
+                                .transpose()
+                                .map_err(io::Error::other)?,
+                            id
+                        ],
+                    )
                     .map_err(io::Error::other)?;
             }
             self.connection

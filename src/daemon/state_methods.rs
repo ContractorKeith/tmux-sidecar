@@ -18,7 +18,7 @@ struct Params {
 }
 pub fn handle(method: &str, params: Option<Value>, store: &Store, server_start: u64) -> Result {
     let allowed: &[&str] = match method {
-        "attention" | "group.ls" => &[],
+        "group.ls" => &[],
         "subscribe" => &["views"],
         "history" => &["sel", "limit"],
         "name" => &["sel", "name"],
@@ -35,7 +35,6 @@ pub fn handle(method: &str, params: Option<Value>, store: &Store, server_start: 
     let params: Params =
         serde_json::from_value(params.filter(|v| !v.is_null()).unwrap_or(json!({})))
             .map_err(|e| (rpc::INVALID_PARAMS, e.to_string()))?;
-    let active = store.active().map_err(internal)?;
     let select = |sel: &str| -> std::result::Result<AgentRun, (i32, String)> {
         let selector = sel
             .parse()
@@ -46,31 +45,6 @@ pub fn handle(method: &str, params: Option<Value>, store: &Store, server_start: 
             .ok_or((rpc::NOT_FOUND, format!("run {sel} not found")))
     };
     match method {
-        "attention" => {
-            let mut runs: Vec<_> = active
-                .into_iter()
-                .filter(|r| {
-                    matches!(
-                        r.state,
-                        crate::model::AgentState::Blocked
-                            | crate::model::AgentState::Error
-                            | crate::model::AgentState::Waiting
-                    ) && r.read_at.is_none_or(|at| at < r.state_since)
-                })
-                .collect();
-            runs.sort_by_key(|r| {
-                (
-                    match r.state {
-                        crate::model::AgentState::Blocked => 0,
-                        crate::model::AgentState::Error => 1,
-                        _ => 2,
-                    },
-                    r.state_since,
-                    r.id[1..].parse::<u64>().expect("stored numeric run id"),
-                )
-            });
-            Ok(json!(runs))
-        }
         "group.ls" => store.groups().map_err(internal),
         "subscribe" => {
             let _ = params.views;

@@ -13,6 +13,7 @@ mod peer;
 mod poll;
 mod replay;
 mod shutdown;
+mod signal_delivery;
 mod store_worker;
 mod transport;
 use crate::{
@@ -76,7 +77,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         socket.clone(),
         paths.state.clone(),
         notify_config,
-        store.events.subscribe(),
+        store.notifications.subscribe(),
     );
     let _notifications = NotificationTask(notifications);
     let poll_ms = config::poll_ms(paths)?;
@@ -173,6 +174,13 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                     connections.spawn(async move {list::serve(call,worker).await;Ok(())});
                     continue;
                 }
+                if call.request.method == "signal" {
+                    let worker=store.clone();let state=paths.state.clone();
+                    connections.spawn(async move {
+                        let response=signal_delivery::respond(call.request,&worker,state).await;
+                        let _=call.reply.send(response);Ok(())
+                    });continue;
+                }
                 let stop = call.request.method == "daemon.stop" && methods::empty_params(&call.request);
                 let key = key.clone();
                 let prepared = methods::prepare(&call.request);
@@ -189,10 +197,8 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 } else {
                     let worker = store.clone();
                     connections.spawn(async move {
-                        // Every method committing state changes must go through with(), never read().
-                        let mutation = call.request.method == "signal";
                         let job = move |store: &crate::store::Store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared,server_start);
-                        let response = if mutation { worker.with(job).await } else { worker.read(job).await }?;
+                        let response = worker.read(job).await?;
                         let _ = call.reply.send(response);
                         Ok(())
                     });
@@ -205,7 +211,8 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     transcripts.stop().await;
     drop(polling);
     drop(listener);
-    let drained = shutdown::drain(&mut connections, &mut receiver, &store, &key, poll_ms).await;
+    let drained =
+        shutdown::drain(&mut connections, &mut receiver, &store, paths.state.clone()).await;
     store.close().await?;
     result.and(drained)
 }

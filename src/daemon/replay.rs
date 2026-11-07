@@ -95,7 +95,7 @@ async fn replay_claim(
     let mut signals = signals;
     signals.sort_by_key(|signal| signal.at);
     for signal in signals {
-        worker.with(move |store| store.signal(&signal)).await??;
+        super::signal_delivery::record(worker, signal, state.clone()).await?;
     }
     tokio::task::spawn_blocking(move || {
         if !rejected.is_empty() {
