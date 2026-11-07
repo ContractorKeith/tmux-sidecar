@@ -38,8 +38,8 @@ fn panic_restores_terminal_before_printing_diagnostic() {
             &mut master,
             &mut slave,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
     assert_eq!(opened, 0);
@@ -68,7 +68,7 @@ fn panic_restores_terminal_before_printing_diagnostic() {
     // stdin is our valid PTY slave and becomes this child's controlling terminal.
     unsafe {
         command.pre_exec(|| {
-            if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY, 0) < 0 {
+            if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
