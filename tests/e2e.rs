@@ -143,6 +143,12 @@ mod ui;
 #[path = "support/ui_lifecycle.rs"]
 mod ui_lifecycle;
 
+#[path = "support/codex_app_server.rs"]
+mod codex_app_server;
+#[path = "support/connection_limits.rs"]
+mod connection_limits;
+#[path = "support/daemon_round2.rs"]
+mod daemon_round2;
 #[path = "support/history_recovery.rs"]
 mod history_recovery;
 #[path = "support/round2_hooks.rs"]

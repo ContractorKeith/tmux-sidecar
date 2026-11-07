@@ -12,6 +12,7 @@ e2e_test!(mcp_fake_replies_match_real_wait_and_send_contract, {
     }
     let guard = TmuxGuard::start_capture();
     let run = list(&guard)[0].clone();
+    super::cli_verbs::fire(&guard, &run, "Stop");
     let mut mcp = Mcp::start(&guard, true);
     let actual = mcp.json(
         "wait_for_state",

@@ -29,7 +29,7 @@ pub fn parse(input: &[u8]) -> io::Result<Vec<PaneSnapshot>> {
 pub fn parse_scan(mut input: &[u8]) -> io::Result<PaneScan> {
     let mut scan = PaneScan::default();
     while !input.is_empty() {
-        let fields: Vec<_> = (0..8)
+        let fields: Vec<_> = (0..9)
             .map(|_| field(&mut input))
             .collect::<io::Result<_>>()?;
         input = input.strip_prefix(b"\n").ok_or_else(invalid)?;
@@ -38,6 +38,14 @@ pub fn parse_scan(mut input: &[u8]) -> io::Result<PaneScan> {
         // Without a usable id we cannot protect the previous run from this incomplete tick.
         if !matches!(pane_id.parse(), Ok(crate::model::RunSelector::Pane(_))) {
             return Err(invalid());
+        }
+        // Dead panes are authoritative exits even if their old pid was reused.
+        if text[8] == "1" {
+            continue;
+        }
+        if text[8] != "0" {
+            scan.skipped.push(pane_id);
+            continue;
         }
         let record = || -> Option<PaneSnapshot> {
             let cwd = PathBuf::from(OsStr::from_bytes(fields[3]));

@@ -38,10 +38,17 @@ fn main() {
     if let Some(cwd) = args.iter().find_map(|a| a.strip_prefix("--cwd=")) {
         std::env::set_current_dir(cwd).unwrap();
     }
-    let _host = if args.iter().any(|a| a == "--plugin-host") {
+    let _host = if args
+        .iter()
+        .any(|a| a == "--plugin-host" || a == "--app-server")
+    {
         let child = ChildGuard(
             command(std::env::current_exe().unwrap())
-                .arg("--host-child")
+                .arg(if args.iter().any(|a| a == "--app-server") {
+                    "app-server"
+                } else {
+                    "--host-child"
+                })
                 .spawn()
                 .unwrap(),
         );
