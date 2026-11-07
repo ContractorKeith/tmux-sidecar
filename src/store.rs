@@ -23,7 +23,7 @@ fn db_error(path: &Path, error: impl std::fmt::Display) -> io::Error {
     let hint = if error.contains("newer than this binary") {
         ""
     } else {
-        "; move it aside to start fresh"
+        "; check write permissions on the database, its -shm and -wal files, and their directory; move it aside together with -shm and -wal to start fresh"
     };
     io::Error::other(format!("database {}: {error}{hint}", path.display()))
 }

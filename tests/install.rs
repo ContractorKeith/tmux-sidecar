@@ -13,7 +13,19 @@ fn round_trip_crlf_user_hooks_comments_idempotence_and_missing_files() {
     let result = install_support::output(
         std::process::Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
             .env("HOME", home)
-            .args(["hooks", "install", "--dry-run"]),
+            .args([
+                "hooks",
+                "install",
+                "--agent",
+                "claude",
+                "--agent",
+                "codex",
+                "--agent",
+                "grok",
+                "--agent",
+                "opencode",
+                "--dry-run",
+            ]),
     );
     assert!(result.status.success());
     assert!(String::from_utf8(result.stdout).unwrap().contains("@@ -"));

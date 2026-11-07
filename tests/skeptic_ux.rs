@@ -120,7 +120,19 @@ fn dry_run_is_a_patch_for_new_and_existing_files() {
     let output = support::output(
         Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
             .env("HOME", &alias)
-            .args(["hooks", "install", "--dry-run"]),
+            .args([
+                "hooks",
+                "install",
+                "--agent",
+                "claude",
+                "--agent",
+                "codex",
+                "--agent",
+                "grok",
+                "--agent",
+                "opencode",
+                "--dry-run",
+            ]),
     );
     assert!(output.status.success());
     let text = String::from_utf8(output.stdout).unwrap();

@@ -74,8 +74,8 @@ pub(super) fn checks(
             && result
                 .as_ref()
                 .is_err_and(|e| e.kind() == io::ErrorKind::NotFound);
-        checks.push(if absent && !hooked.unwrap_or(false) {
-            Check::skip(&store_name, &format!("{} absent; agent has no managed hooks", store.display()))
+        checks.push(if absent {
+            Check::skip(&store_name, &format!("{} absent; agent not run yet", store.display()))
         } else {
             Check::new(&store_name, result.map_err(|e| io::Error::other(format!("{}: {e}", store.display()))),
                 "run the agent once to create its store; check read/search permissions and agent home overrides")
