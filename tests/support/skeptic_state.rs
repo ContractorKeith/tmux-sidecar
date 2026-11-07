@@ -129,6 +129,7 @@ e2e_test!(agent_process_cwd_and_attention_project_root_agree, {
     let guard = TmuxGuard::start();
     let repo = guard.scratch.path().join("agent-project");
     fs::create_dir(&repo).unwrap();
+    let repo = repo.canonicalize().unwrap();
     assert!(
         output(std::process::Command::new("git").arg("init").arg(&repo))
             .status
