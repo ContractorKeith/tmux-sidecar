@@ -72,22 +72,35 @@ e2e_test!(emfile_accept_error_keeps_daemon_alive_and_recovers, {
     let mut daemon = ChildGuard::new(command.spawn().unwrap());
     until!(|| g.scratch.path().join("run/sock").exists());
     let socket = g.scratch.path().join("run/sock");
-    let mut clients = Vec::new();
-    // The shared connector bounds backlog waits and keeps every descriptor CLOEXEC.
-    for _ in 0..180 {
-        match crate::support::socket::connect(&socket) {
-            Ok(stream) => clients.push(stream),
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
-                ) =>
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let clients = runtime.block_on(async {
+        let mut clients = Vec::new();
+        // Bound backlog waits without setting socket options after peer closure.
+        for _ in 0..180 {
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(250),
+                tokio::net::UnixStream::connect(&socket),
+            )
+            .await
             {
-                break;
+                Ok(Ok(stream)) => clients.push(stream),
+                Err(_) => break,
+                Ok(Err(error))
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::WouldBlock
+                    ) =>
+                {
+                    break;
+                }
+                Ok(Err(error)) => panic!("connect pressure client: {error}"),
             }
-            Err(error) => panic!("connect pressure client: {error}"),
         }
-    }
+        clients
+    });
     until!(
         || std::fs::read_to_string(g.scratch.path().join("state/daemon.log"))
             .unwrap_or_default()
