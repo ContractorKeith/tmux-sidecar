@@ -1,6 +1,8 @@
 //! One socket owner and one poller per tmux server.
+mod accept;
 mod actions;
 mod config;
+mod freshness;
 mod labels;
 mod list;
 pub mod log;
@@ -25,12 +27,12 @@ use std::{
     fs,
     future::Future,
     io,
-    os::unix::fs::PermissionsExt,
     path::PathBuf,
     pin::Pin,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::{net::UnixListener, sync::mpsc, task::JoinSet};
+use tokio::{sync::mpsc, task::JoinSet};
+mod startup;
 
 type PollFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, poll::Failure>> + 'a>>;
 
@@ -44,45 +46,22 @@ fn other(e: impl std::error::Error + Send + Sync + 'static) -> io::Error {
     io::Error::other(e)
 }
 
-use shutdown::{NotificationTask, RuntimeGuard};
+use shutdown::RuntimeGuard;
 
-pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
-    let result = run_inner(socket, &paths).await;
-    if let Err(error) = &result
-        && paths::prepare(&paths).is_ok()
-    {
-        let _ = log::write(&paths.state, &error.to_string());
-    }
-    result
-}
+pub use startup::run;
 async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     paths::prepare(paths)?;
     // Also protects foreground starts; never unlink a live daemon's socket.
-    let _lock = FileLock::try_acquire(&paths.runtime.join("daemon.lock"))?;
+    let _lock = FileLock::try_acquire(&paths.state.join("daemon.lock"))?;
+    let _legacy = startup::legacy_lock(paths)?;
     let _guard = RuntimeGuard(paths.runtime.clone());
     match fs::remove_file(paths.runtime.join("sock")) {
         Ok(()) => (),
         Err(e) if e.kind() == io::ErrorKind::NotFound => (),
         Err(e) => return Err(e),
     }
-    let db = paths.state.join("tmux-sidecar.db");
-    let recreated = recovery::was_deleted(&paths.state, &db)?;
-    if !db.exists() && !recreated {
-        log::write(
-            &paths.state,
-            &format!("creating fresh database {}", db.display()),
-        )?;
-    }
-    let store = store_worker::StoreWorker::open(db).await?;
-    recovery::created(paths, recreated)?;
-    let notify_config = crate::notify::Config::read(&paths.config)?;
-    let notifications = crate::notify::start(
-        socket.clone(),
-        paths.state.clone(),
-        notify_config,
-        store.notifications.subscribe(),
-    );
-    let _notifications = NotificationTask(notifications);
+    let store = startup::store(paths).await?;
+    let _notifications = startup::notifications(&socket, paths, &store)?;
     let poll_ms = config::poll_ms(paths)?;
     let idle_after_ms = config::idle_after_ms(paths)?;
     let send_confirm_ms = config::send_confirm_ms(paths)?;
@@ -97,6 +76,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     )
     .await;
     health.record(&initial);
+    poll::publish(&store, &initial);
     match initial {
         Ok(false) => return Err(io::Error::other("tmux server is not running")),
         Err(f) if f.fatal => return Err(f.error),
@@ -112,18 +92,11 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         &store,
     )
     .await;
-    let listener = UnixListener::bind(paths.runtime.join("sock"))?;
-    fs::set_permissions(
-        paths.runtime.join("sock"),
-        fs::Permissions::from_mode(0o600),
-    )?;
-    fs::write(
-        paths.runtime.join("daemon.pid"),
-        std::process::id().to_string(),
-    )?;
+    let listener = startup::listener(paths)?;
     let key = paths::server_key(&socket)?;
     let (sender, mut receiver) = mpsc::channel::<transport::Call>(64);
     let mut connections = JoinSet::new();
+    let mut acceptor = accept::Acceptor::new()?;
     let mut interval = tokio::time::interval(Duration::from_millis(poll_ms));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
@@ -155,26 +128,28 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
             } => {
                 polling = None;
                 let stop = health.record(&result);
+                poll::publish(&store, &result);
                 match result {
                     Ok(true) => (), Ok(false) => break Ok(()), Err(failure) => {
                         let message = format!("poll failure {}: {}", health.failures(), failure.error);
                         let _ = log::write(&paths.state, &message);
                         if stop {
-                            let _ = log::write(&paths.state, "daemon exiting after fatal database loss or 5 consecutive poll failures");
+                            let _ = log::write(&paths.state, "daemon exiting after fatal database loss, 5 consecutive poll failures, or 60 consecutive descriptor failures");
                             break Err(failure.error);
                         }
                     }
                 }
             },
-            incoming = listener.accept() => match incoming {
-                Ok((stream, _)) => { let sender = sender.clone(); let events=store.events.subscribe(); let views=store.views.subscribe(); connections.spawn(async move { transport::serve(stream, sender, events, views).await }); },
-                Err(e) => break Err(e),
+            incoming = acceptor.accept(&listener) => match incoming {
+                Ok(stream) => acceptor.start(stream, sender.clone(), &store, &mut connections),
+                Err(error) => acceptor.retry(error, &paths.state),
             },
             Some(mut call) = receiver.recv() => {
                 if call.request.method=="signal" && let Some(params)=&mut call.request.params {crate::hook::context::resolve(params,&paths.runtime,&socket);}
                 if matches!(call.request.method.as_str(), "list" | "attention") {
                     let worker=store.clone();
-                    connections.spawn(async move {list::serve(call,worker).await;Ok(())});
+                    let stale=store.poll_error.borrow().clone();
+                    connections.spawn(async move {list::serve(call,worker,stale).await;Ok(())});
                     continue;
                 }
                 if call.request.method == "signal" {
@@ -199,9 +174,13 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                     let _ = call.reply.send(response);
                 } else {
                     let worker = store.clone();
+                    let status=call.request.method=="daemon.status";
                     connections.spawn(async move {
                         let job = move |store: &crate::store::Store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared,server_start);
-                        let response = worker.read(job).await?;
+                        let mut response = worker.read(job).await?;
+                        if status && let crate::rpc::Outcome::Success{result}=&mut response.outcome {
+                            result["poll_error"]=serde_json::json!(worker.poll_error.borrow().clone());
+                        }
                         let _ = call.reply.send(response);
                         Ok(())
                     });

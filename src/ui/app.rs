@@ -4,6 +4,8 @@ use serde::Deserialize;
 pub struct Run {
     #[serde(flatten)]
     pub run: AgentRun,
+    #[serde(default)]
+    pub stale_reason: Option<String>,
     pub pane_name: Option<String>,
 }
 #[derive(Clone, Debug, Default, Deserialize)]

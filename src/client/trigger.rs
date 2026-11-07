@@ -7,7 +7,7 @@ use std::{
 };
 /// Daemon lifetime locking arbitrates concurrent triggers; the hook never waits for startup.
 pub fn trigger_spawn(socket: &Path, paths: &Paths) -> io::Result<()> {
-    let _lock = FileLock::try_acquire(&paths.runtime.join("spawn.lock"))?;
+    let _lock = FileLock::try_acquire(&paths.state.join("spawn.lock"))?;
     let log = crate::daemon::log::open(&paths.state)?;
     let mut command = Command::new(std::env::current_exe()?);
     command
@@ -18,6 +18,14 @@ pub fn trigger_spawn(socket: &Path, paths: &Paths) -> io::Result<()> {
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
+    match crate::tmux::for_spawn(paths) {
+        Ok(binary) => {
+            command.env("TMUX_SIDECAR_TMUX", binary);
+        }
+        Err(_) => {
+            command.env_remove("TMUX_SIDECAR_TMUX");
+        }
+    }
     // SAFETY: setsid is async-signal-safe and receives no pointers.
     unsafe {
         command.pre_exec(|| {

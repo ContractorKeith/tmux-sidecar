@@ -67,7 +67,7 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
     paths::prepare(paths)?;
     let deadline = Instant::now() + Duration::from_secs(2);
     let _lock = loop {
-        match FileLock::try_acquire(&paths.runtime.join("spawn.lock")) {
+        match FileLock::try_acquire(&paths.state.join("spawn.lock")) {
             Ok(lock) => break lock,
             Err(e) if e.kind() == io::ErrorKind::WouldBlock && Instant::now() < deadline => {
                 tokio::time::sleep(Duration::from_millis(20)).await;
@@ -77,7 +77,7 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
                     io::ErrorKind::TimedOut,
                     format!(
                         "waiting for {} exceeded 2 s",
-                        paths.runtime.join("spawn.lock").display()
+                        paths.state.join("spawn.lock").display()
                     ),
                 ));
             }
@@ -87,22 +87,13 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
     if connect(paths).await.is_ok() {
         return Ok(());
     }
-    let pid = fs::read_to_string(paths.runtime.join("daemon.pid"))
-        .ok()
-        .and_then(|p| p.trim().parse().ok());
-    if !pid.is_some_and(crate::proc::alive) {
-        match fs::remove_file(paths.runtime.join("sock")) {
-            Ok(()) => (),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => (),
-            Err(e) => return Err(e),
-        }
-    }
     let log = crate::daemon::log::open(&paths.state)?;
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("--tmux-socket")
         .arg(socket)
         .env("TMUX_SIDECAR_DETACHED", "1")
+        .env("TMUX_SIDECAR_TMUX", crate::tmux::for_spawn(paths)?)
         .args(["daemon", "run"])
         .kill_on_drop(false)
         .stdin(Stdio::null())
@@ -134,7 +125,7 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
         {
             // A detached hook trigger can win the lifetime lock after our connect.
             // Join that startup rather than reporting the losing child's lock error.
-            if FileLock::try_acquire(&paths.runtime.join("daemon.lock"))
+            if FileLock::try_acquire(&paths.state.join("daemon.lock"))
                 .is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock)
             {
                 starting.release();

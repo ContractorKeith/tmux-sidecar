@@ -143,11 +143,24 @@ mod ui;
 #[path = "support/ui_lifecycle.rs"]
 mod ui_lifecycle;
 
+#[path = "support/codex_app_server.rs"]
+mod codex_app_server;
+#[path = "support/connection_limits.rs"]
+mod connection_limits;
+#[path = "support/daemon_round2.rs"]
+mod daemon_round2;
 #[path = "support/history_recovery.rs"]
 mod history_recovery;
+#[path = "support/review_a2.rs"]
+mod review_a2;
 #[path = "support/round2_hooks.rs"]
 mod round2_hooks;
 #[path = "support/skeptic_state.rs"]
 mod skeptic_state;
 #[path = "support/skeptic_ux.rs"]
 mod skeptic_ux;
+#[path = "support/ui_stale.rs"]
+mod ui_stale;
+
+#[path = "support/binary_recovery.rs"]
+mod binary_recovery;

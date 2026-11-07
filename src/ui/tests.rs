@@ -173,3 +173,30 @@ fn connection_error_is_visible_with_no_runs() {
         .collect::<String>();
     assert!(text.contains("wrong tmux server"));
 }
+
+#[test]
+fn stale_run_warning_appears_in_status_line() {
+    let mut app = fixture();
+    app.data.runs[0].stale_reason = Some("probe-broken".into());
+    let mut terminal = Terminal::new(TestBackend::new(80, 18)).unwrap();
+    terminal.draw(|f| render::draw(&app, f, 61_000)).unwrap();
+    let text = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|c| c.symbol())
+        .collect::<String>();
+    assert!(text.contains("daemon can't reach tmux: probe-broken"));
+    app.data.runs.clear();
+    app.data.error = "daemon can't reach tmux: probe-broken".into();
+    terminal.draw(|f| render::draw(&app, f, 61_000)).unwrap();
+    let text = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|c| c.symbol())
+        .collect::<String>();
+    assert!(text.contains("daemon can't reach tmux: probe-broken"));
+}

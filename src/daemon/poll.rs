@@ -45,8 +45,13 @@ pub async fn tick(
         };
         let scan = match tmux.scan() {
             Ok(scan) => scan,
-            Err(error) if tmux.confirmed_gone(&error) => return Ok(Snapshot::Gone),
-            Err(error) => return Err(error),
+            Err(error) => {
+                crate::tmux::retry_path();
+                if tmux.confirmed_gone(&error) {
+                    return Ok(Snapshot::Gone);
+                }
+                return Err(error);
+            }
         };
         if let Some(pane) = scan.panes.first() {
             crate::hook::context::write(&runtime, pane.server_start, &socket)?;
@@ -104,22 +109,31 @@ pub async fn tick(
 #[derive(Default)]
 pub struct Health {
     failures: u8,
+    resource_failures: u8,
 }
 impl Health {
     pub fn record(&mut self, result: &Result<bool, Failure>) -> bool {
         match result {
             Ok(_) => {
                 self.failures = 0;
+                self.resource_failures = 0;
                 false
             }
             Err(f) => {
-                self.failures += 1;
-                f.fatal || self.failures >= 5
+                let exhausted = matches!(f.error.raw_os_error(), Some(libc::EMFILE | libc::ENFILE));
+                if exhausted {
+                    self.failures = 0;
+                    self.resource_failures = self.resource_failures.saturating_add(1);
+                } else {
+                    self.resource_failures = 0;
+                    self.failures = self.failures.saturating_add(1);
+                }
+                f.fatal || self.failures >= 5 || self.resource_failures >= 60
             }
         }
     }
     pub fn failures(&self) -> u8 {
-        self.failures
+        self.failures.max(self.resource_failures)
     }
 }
 #[cfg(test)]
@@ -137,5 +151,41 @@ mod tests {
             assert!(!health.record(&fail()));
         }
         assert!(health.record(&fail()));
+    }
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+    #[test]
+    fn descriptor_exhaustion_has_a_separate_sixty_tick_budget() {
+        let mut health = Health::default();
+        let exhausted = || Err(Failure::from(io::Error::from_raw_os_error(libc::EMFILE)));
+        for _ in 0..59 {
+            assert!(!health.record(&exhausted()));
+        }
+        assert!(health.record(&exhausted()));
+        assert!(!health.record(&Ok(true)));
+        for _ in 0..4 {
+            assert!(!health.record(&Err(Failure::from(io::Error::other("ps failed")))));
+        }
+        assert!(health.record(&Err(Failure::from(io::Error::other("ps failed")))));
+    }
+}
+
+pub(super) fn publish(worker: &StoreWorker, result: &Result<bool, Failure>) {
+    let next = result.as_ref().err().map(|f| {
+        let reason = f.error.to_string();
+        if reason.is_empty() {
+            "pane/process poll failed".into()
+        } else {
+            reason
+        }
+    });
+    if *worker.poll_error.borrow() != next {
+        worker.poll_error.send_replace(next);
+        worker
+            .views
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
     }
 }

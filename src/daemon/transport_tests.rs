@@ -140,3 +140,41 @@ async fn disconnected_client_cancels_an_unfinished_reply() {
         .unwrap()
         .unwrap();
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn foreign_uid_never_reaches_dispatch() {
+    let (server, mut client) = UnixStream::pair().unwrap();
+    let (calls, mut receive) = mpsc::channel::<Call>(1);
+    let (events, _) = broadcast::channel(256);
+    let task = tokio::spawn(transport::serve_with_peer(
+        server,
+        calls,
+        events.subscribe(),
+        tokio::sync::watch::channel(0).1,
+        |_| Ok(crate::paths::uid().wrapping_add(1)),
+    ));
+    let _ = client
+        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"hello\"}\n")
+        .await;
+    tokio::time::timeout(std::time::Duration::from_secs(1), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(
+            receive.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected)
+        ),
+        "foreign uid reached dispatcher"
+    );
+    use tokio::io::AsyncReadExt;
+    let mut bytes = Vec::new();
+    let read = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        client.read_to_end(&mut bytes),
+    )
+    .await
+    .unwrap();
+    assert!(read.is_err() || bytes.is_empty());
+}

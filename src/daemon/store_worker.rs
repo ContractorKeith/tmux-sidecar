@@ -13,6 +13,7 @@ pub struct StoreWorker {
     >,
     pub events: broadcast::Sender<serde_json::Value>,
     pub notifications: broadcast::Sender<serde_json::Value>,
+    pub poll_error: tokio::sync::watch::Sender<Option<String>>,
     pub views: tokio::sync::watch::Sender<u64>,
     done: Option<oneshot::Receiver<()>>,
 }
@@ -72,6 +73,7 @@ impl StoreWorker {
             sender,
             mutation: Default::default(),
             locks: Default::default(),
+            poll_error: tokio::sync::watch::channel(None).0,
             done: Some(done),
             events,
             notifications,
@@ -143,6 +145,7 @@ impl Clone for StoreWorker {
             events: self.events.clone(),
             notifications: self.notifications.clone(),
             views: self.views.clone(),
+            poll_error: self.poll_error.clone(),
             done: None,
         }
     }

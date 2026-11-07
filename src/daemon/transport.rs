@@ -27,10 +27,20 @@ pub fn failure(id: Option<Id>, code: i32, message: impl Into<String>) -> Respons
 pub async fn serve(
     stream: UnixStream,
     sender: mpsc::Sender<Call>,
+    events: tokio::sync::broadcast::Receiver<Value>,
+    views: tokio::sync::watch::Receiver<u64>,
+) -> std::io::Result<()> {
+    serve_with_peer(stream, sender, events, views, super::peer::uid).await
+}
+
+pub(super) async fn serve_with_peer(
+    stream: UnixStream,
+    sender: mpsc::Sender<Call>,
     mut events: tokio::sync::broadcast::Receiver<Value>,
     mut views: tokio::sync::watch::Receiver<u64>,
+    peer_uid: impl FnOnce(&UnixStream) -> std::io::Result<u32>,
 ) -> std::io::Result<()> {
-    if !super::peer::authorize(&stream)? {
+    if !super::peer::same_uid(peer_uid(&stream)?, crate::paths::uid()) {
         return Ok(());
     }
     let (reader, mut writer) = stream.into_split();

@@ -149,6 +149,7 @@ e2e_test!(mcp_send_delivers_only_to_waiting_run, {
     }
     let guard = TmuxGuard::start_capture();
     let run = list(&guard)[0].clone();
+    super::cli_verbs::fire(&guard, &run, "Stop");
     let mut mcp = Mcp::start(&guard, true);
     mcp.json(
         "send_prompt",

@@ -115,6 +115,7 @@ e2e_test!(idle_accepts_send_and_unconfirmed_send_reverts, {
         fs::write(guard.scratch.path().join(path), config).unwrap();
     }
     let run = list(&guard)[0].clone();
+    super::cli_verbs::fire(&guard, &run, "Stop");
     rpc(&guard, "ack", json!({"sel":run["id"]}));
     until!(|| list(&guard)[0]["state"] == "idle");
     super::cli_verbs::cli(&guard, &["send", "%0", "next prompt"], 0);
@@ -161,6 +162,7 @@ e2e_test!(send_errors_distinguish_before_paste_from_unknown_outcome, {
     for (phase, code) in [("load-buffer", 4), ("paste-buffer", 1), ("send-keys", 1)] {
         let guard = TmuxGuard::start_capture();
         let run = list(&guard)[0].clone();
+        super::cli_verbs::fire(&guard, &run, "Stop");
         let real = std::env::split_paths(&std::env::var_os("PATH").unwrap())
             .map(|p| p.join("tmux"))
             .find(|p| p.is_file())
@@ -175,6 +177,8 @@ e2e_test!(send_errors_distinguish_before_paste_from_unknown_outcome, {
         )
         .unwrap();
         fs::set_permissions(script, fs::Permissions::from_mode(0o700)).unwrap();
+        super::lifecycle::stop(&guard);
+        list(&guard);
         let result = output(guard.sidecar().args(["send", "%0", "exactly once"]));
         assert_eq!(result.status.code(), Some(code));
         let error = String::from_utf8_lossy(&result.stderr);

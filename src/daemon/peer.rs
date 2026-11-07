@@ -5,7 +5,7 @@ pub fn same_uid(peer: u32, owner: u32) -> bool {
     peer == owner
 }
 
-pub fn authorize(stream: &UnixStream) -> io::Result<bool> {
+pub fn uid(stream: &UnixStream) -> io::Result<u32> {
     #[cfg(target_os = "linux")]
     let uid = stream.peer_cred()?.uid(); // tokio uses SO_PEERCRED.
     #[cfg(target_os = "macos")]
@@ -18,7 +18,7 @@ pub fn authorize(stream: &UnixStream) -> io::Result<bool> {
         }
         uid
     };
-    Ok(same_uid(uid, crate::paths::uid()))
+    Ok(uid)
 }
 /// EOF alone is a write-half close; POLLHUP identifies a fully disconnected peer.
 pub fn disconnected(stream: &UnixStream) -> bool {
@@ -56,7 +56,7 @@ mod tests {
         })
         .await
         .expect("connect and accept peer descriptors within 1 s");
-        assert!(super::authorize(&server).unwrap());
+        assert_eq!(super::uid(&server).unwrap(), crate::paths::uid());
         for fd in [listener.as_raw_fd(), client.as_raw_fd(), server.as_raw_fd()] {
             // SAFETY: listener/client/server own every descriptor throughout this loop.
             let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };

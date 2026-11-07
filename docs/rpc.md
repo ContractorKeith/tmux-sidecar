@@ -2,6 +2,21 @@
 
 The per-tmux-server `<runtime>/sock` is a Unix socket, mode 0600 inside a directory
 owned by the daemon uid with mode 0700. Connections from other uids are dropped.
+The lifetime lock is `<state>/daemon.lock`, beside the database. Before removing
+or binding a socket, startup also acquires the legacy `<runtime>/daemon.lock` and
+keeps both locks for its lifetime. A held legacy lock refuses startup with the old
+pid and stop/kill guidance, preserving the socket. Clients never remove sockets.
+The daemon records
+its socket path in `<state>/daemon.socket`; clients with another runtime directory
+use that socket and verify `hello.server_key` before requests. Spawned daemons inherit
+the absolute tmux binary resolved by the client. `TMUX_SIDECAR_TMUX` takes priority
+when executable; a missing/non-executable pin falls back to PATH with one warning.
+A failed tmux poll re-resolves PATH, retaining the pin only as a last resort.
+Hooks still trigger detached startup when local resolution fails; that daemon
+reports the missing-tmux diagnostic and retries its polls.
+At most 256 connections are served concurrently; extras receive -32600 with id null
+and are closed. Accept errors (including EMFILE) are logged and retried with a
+50–500 ms backoff without stopping polling or existing RPC connections.
 Each UTF-8 JSON object occupies one newline-terminated frame (maximum 1 MiB excluding the terminating newline).
 An oversized frame receives -32600, "frame exceeds 1 MiB", with id null; the
 daemon then closes that connection.
@@ -71,7 +86,9 @@ signal notifications for up to one second (idle clients cannot hold shutdown), c
 removes socket and pid file, and exits. CLI stop waits up to five seconds for the acknowledged pid to exit (a zombie
 already counts as exited) and for socket cleanup; it never spawns. SIGTERM and SIGINT also preserve runs for re-adoption at startup. Only a
 confirmed tmux server exit ends all its runs. Poll errors are logged and retried;
-five consecutive failures stop the daemon without ending runs. RPC requests remain
+five consecutive failures stop the daemon without ending runs. Descriptor exhaustion
+(EMFILE/ENFILE) has a separate budget of 60 consecutive failures; successful polls
+reset both budgets. This permits recovery after clients close and bounds a real fd leak. RPC requests remain
 available while a process snapshot is being collected. Losing or replacing
 the database file is fatal immediately and logged with its path.
 
@@ -119,8 +136,12 @@ Without confirmation within `send_confirm_secs`
 (default 30), the next poll restores the prior state, state age and read mark.
 Rollback is visible in history and state subscriptions with `notify: false`; it
 never generates desktop or tmux notifications.
+Process-only runs (including clock-derived idle) refuse unforced sends with -32003:
+"no hook evidence yet; install hooks (tmux-sidecar hooks install) or use --force".
+Hook or transcript evidence is required to establish readiness; MCP `send_prompt`
+uses the same guard.
 The daemon requires a live run in waiting or idle at paste time, else -32003 with the
-current state. `force` skips only the state guard; ended or missing runs return
+current state. `force` skips the evidence and state guards; ended or missing runs return
 -32005. Empty or NUL text returns -32602; terminal failures before paste return -32603.
 A per-run lock covers guard, paste and optimistic commit. Hook, transcript and
 poll state mutations acquire current send locks in stable order before committing.
@@ -325,6 +346,19 @@ CLI errors map to 1 general, 2 usage, 3 refused, 4 timeout, 5 selector not found
 6 unreachable after auto-spawn. Mutation commands report a brief success message.
 
 ### UI view invalidation (M5)
+
+`list` and `attention` rows include `stale: true` while the latest pane/process
+poll has failed, and `stale: false` after a successful poll. `daemon.status`
+additionally exposes nullable `poll_error`, so empty human lists
+and empty UI views can report health failures too. `stale_reason` contains
+the diagnostic when stale, otherwise null. Human `list` and `attention` append
+`STALE` to the state and print `daemon can't reach tmux: <reason>`. The UI displays
+the same warning on its status line; poll health changes push view invalidations.
+`wait` and `send` reject stale state with -32001 and that diagnostic, including
+forced sends. A pending wait fails if polling becomes unhealthy; a send rechecks
+health under its run lock and immediately before paste. Stale rows preserve
+stored state for diagnosis; they do not assert current liveness. A dead pane
+(`pane_dead`) or missing agent pid ends its run, including remain-on-exit panes.
 
 `list` results additionally include nullable `pane_name`, attached to the run's pane
 key. `subscribe` accepts optional `views: true` (boolean). These subscribers also
