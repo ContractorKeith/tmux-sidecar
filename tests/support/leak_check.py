@@ -1,4 +1,4 @@
-"""Snapshot real-machine boundaries before isolation; reject additions after cleanup."""
+"""Reject processes and paths tied to acceptance’s scratch directory after cleanup."""
 import json
 import os
 from pathlib import Path
@@ -23,7 +23,7 @@ def paths(roots):
     return found
 
 
-def processes():
+def processes(scope=None):
     result = subprocess.run(['/bin/ps', '-A', '-o', 'pid=,uid=,stat=,comm='],
                             capture_output=True, text=True, check=True, timeout=5)
     found = set()
@@ -32,25 +32,37 @@ def processes():
         if len(fields) == 4 and int(fields[1]) == os.getuid() and 'Z' not in fields[2]:
             name = Path(fields[3]).name.split(':')[0]
             if name in ('tmux', 'tmux-sidecar'):
-                found.add(fields[0] + ' ' + fields[3])
+                pid = fields[0]
+                if scope and not references(pid, scope):
+                    continue
+                found.add(pid + ' ' + fields[3])
     return found
 
 
-def roots():
-    home = Path.home()
-    state = Path(os.environ.get('XDG_STATE_HOME', home / '.local/state'))
-    socket_dirs = {Path('/tmp') / f'tmux-{os.getuid()}',
-                   Path(os.environ.get('TMUX_TMPDIR', '/tmp')) / f'tmux-{os.getuid()}'}
-    return dict(socket_dirs=sorted(map(str, socket_dirs)), state_dirs=list(map(str, {
-        state / 'tmux-sidecar', home / '.local/state/tmux-sidecar',
-        home / 'Library/Application Support/tmux-sidecar'})))
+def references(pid, scope):
+    scope = os.fsencode(str(Path(scope).resolve()))
+    if sys.platform.startswith('linux'):
+        try:
+            proc = Path('/proc') / pid
+            values = [proc.joinpath('cmdline').read_bytes(),
+                      proc.joinpath('environ').read_bytes(),
+                      os.fsencode(os.readlink(proc / 'cwd'))]
+        except OSError:
+            return False  # The process exited during the snapshot.
+        return any(scope in value for value in values)
+    # Darwin ps -E includes the environment, including HOME and TMUX_TMPDIR.
+    result = subprocess.run(['/bin/ps', '-E', '-ww', '-p', pid, '-o', 'command='],
+                            capture_output=True, check=False, timeout=5)
+    if scope in result.stdout:
+        return True
+    result = subprocess.run(['/usr/sbin/lsof', '-a', '-p', pid, '-d', 'cwd', '-Fn'],
+                            capture_output=True, check=False, timeout=5)
+    return scope in result.stdout
 
 
 def snapshot(boundaries):
-    sockets = [Path(parent) for parent in boundaries['socket_dirs']]
-    return dict(paths=sorted(paths(sockets + list(Path(boundaries.get('scratch_dir', '/tmp')).glob('tsx-*')) +
-                                  [Path(p) for p in boundaries['state_dirs']])),
-                processes=sorted(processes()))
+    scope = boundaries['scratch_dir']
+    return dict(paths=sorted(paths([scope])), processes=sorted(processes(scope)))
 
 
 def cleanup(root):
@@ -105,10 +117,10 @@ def cleanup(root):
 
 
 if __name__ == '__main__':
-    action, filename = sys.argv[1:]
+    action, filename = sys.argv[1:3]
     file = Path(filename)
     if action == 'snapshot':
-        boundary = roots()
+        boundary = dict(scratch_dir=str(Path(sys.argv[3]).resolve()))
         file.write_text(json.dumps(dict(boundaries=boundary, before=snapshot(boundary))))
     elif action == 'check':
         baseline = json.loads(file.read_text())

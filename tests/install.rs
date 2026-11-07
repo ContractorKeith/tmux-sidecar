@@ -158,3 +158,36 @@ fn user_comments_added_after_install_are_preserved() {
             .contains("# added while installed")
     );
 }
+
+#[test]
+fn crlf_settings_survive_install_and_user_edits_before_uninstall() {
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join(".claude/settings.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let before = "{\r\n  \"model\": \"user\"\r\n}\r\n";
+    std::fs::write(&path, before).unwrap();
+    tmux_sidecar::install::run(
+        home.path(),
+        std::path::Path::new("/bin/sidecar"),
+        &[tmux_sidecar::model::AgentKind::Claude],
+        true,
+        false,
+        false,
+    )
+    .unwrap();
+    let installed = std::fs::read_to_string(&path).unwrap();
+    assert!(!installed.replace("\r\n", "").contains('\n'));
+    std::fs::write(&path, installed.replace("user", "edited")).unwrap();
+    tmux_sidecar::install::run(
+        home.path(),
+        std::path::Path::new("/bin/sidecar"),
+        &[tmux_sidecar::model::AgentKind::Claude],
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    let removed = std::fs::read_to_string(&path).unwrap();
+    assert!(removed.contains("edited"));
+    assert!(!removed.replace("\r\n", "").contains('\n'));
+}

@@ -187,7 +187,11 @@ e2e_test!(desktop_notification_names_agent_project_and_pane, {
         .join("tests/fixtures/hooks/grok/PermissionRequest.json");
     super::hooks::fire(&g, run["agent_pid"].as_u64().unwrap(), "claude", &fixture);
     let recorded = g.scratch.path().join("state/desktop.args");
-    until!(|| recorded.exists());
+    crate::support::wait_for_timeout(
+        "desktop notification delivery",
+        std::time::Duration::from_secs(10),
+        || recorded.exists(),
+    );
     let args = fs::read_to_string(recorded).unwrap();
     assert!(
         args.contains("grok") && args.contains("named-project") && args.contains("review-pane"),

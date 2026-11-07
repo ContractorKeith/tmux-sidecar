@@ -8,9 +8,9 @@ set -eu
 cd "$(dirname "$0")/.."
 command -v tmux >/dev/null || { echo "accept: tmux is required" >&2; exit 1; }
 
-leak_snapshot="$(mktemp)"
-python3 tests/support/leak_check.py snapshot "$leak_snapshot"
 scratch="$(mktemp -d /tmp/tsx-accept-XXXXXX)"
+leak_snapshot="$(mktemp)"
+python3 tests/support/leak_check.py snapshot "$leak_snapshot" "$scratch"
 tsock="tsx-accept-$$"
 cleanup() {
   result=$?
@@ -47,7 +47,7 @@ python3 tests/support/leak_check_test.py
 cargo fmt --all --check
 rustfmt --edition 2024 --check tests/support/fake_agent.rs
 cargo clippy --locked --all-targets -- -D warnings
-TMUX_SIDECAR_E2E=1 cargo test --locked
+TMUX_SIDECAR_E2E=1 cargo test --locked --features test-util
 test "$(cargo tree -d --locked 2>/dev/null | grep -c 'libsqlite3-sys')" -eq 0
 
 echo "== build"
@@ -56,7 +56,7 @@ bin="${ACCEPT_BIN:-$PWD/target/release/tmux-sidecar}"
 "$bin" --version
 
 echo "== e2e (real tmux)"
-TMUX_SIDECAR_E2E=1 cargo test --locked --test e2e
+TMUX_SIDECAR_E2E=1 cargo test --locked --features test-util --test e2e
 
 echo "== live checks"
 # M1: the script owns this server and daemon; the EXIT trap handles failures too.

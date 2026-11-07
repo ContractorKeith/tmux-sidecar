@@ -170,3 +170,6 @@ mod round3_daemon;
 mod round3_send;
 #[path = "support/round3_transcripts.rs"]
 mod round3_transcripts;
+
+#[path = "support/notify_episodes.rs"]
+mod notify_episodes;

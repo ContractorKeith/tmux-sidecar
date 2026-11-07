@@ -41,7 +41,7 @@ fn bursts_queue_all_runs_and_repeats_collapse() {
         event("r1", "blocked"),
         now + Duration::from_secs(10),
     );
-    assert_eq!(queue.drain(now + Duration::from_secs(12)).len(), 1);
+    assert!(queue.drain(now + Duration::from_secs(12)).is_empty());
 }
 #[test]
 fn waiting_has_its_own_window_and_disabled_channels_do_not_queue() {
@@ -79,4 +79,20 @@ fn config_defaults_and_validation() {
     assert_eq!(config.debounce_secs, 3);
     std::fs::write(&path, "[notify]\ndebounce_secs=-1").unwrap();
     assert!(Config::read(&path).is_err());
+}
+
+#[test]
+fn each_block_episode_notifies_once_even_inside_debounce_window() {
+    let mut queue = Debounce::default();
+    let now = Instant::now();
+    let mut first = event("r1", "blocked");
+    first["at"] = json!(100);
+    queue.push(&Config::default(), first.clone(), now);
+    assert_eq!(queue.drain(now + Duration::from_secs(2))[0].len(), 1);
+    queue.push(&Config::default(), first, now + Duration::from_secs(3));
+    assert!(queue.drain(now + Duration::from_secs(3)).is_empty());
+    let mut next = event("r1", "blocked");
+    next["at"] = json!(200);
+    queue.push(&Config::default(), next, now + Duration::from_secs(4));
+    assert_eq!(queue.drain(now + Duration::from_secs(6))[0].len(), 1);
 }

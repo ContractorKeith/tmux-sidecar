@@ -12,12 +12,12 @@ with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
     for name in ['sockets', 'scratch', 'state']:
         (root / name).mkdir()
-    boundary = dict(socket_dirs=[str(root / 'sockets')],
-                    state_dirs=[str(root / 'state')], scratch_dir=str(root / 'scratch'))
+    boundary = dict(scratch_dir=str(root))
     env = dict(os.environ, HOME=str(root), TMUX_TMPDIR=str(root),
                TMUX_SIDECAR_RUNTIME_DIR=str(root / 'run'), TMUX_SIDECAR_STATE_DIR=str(root / 'state'))
-    before = snapshot(boundary)
     baseline = root / 'baseline.json'
+    baseline.touch()
+    before = snapshot(boundary)
     baseline.write_text(json.dumps(dict(boundaries=boundary, before=before)))
     command = [sys.executable, str(Path(__file__).with_name('leak_check.py')), 'check', str(baseline)]
     for path in [root / 'sockets/tsx-leak', root / 'sockets/default', root / 'scratch/tsx-leak', root / 'state/new-key']:
@@ -27,6 +27,8 @@ with tempfile.TemporaryDirectory() as directory:
         path.rmdir()
     private = root / 'fixture'
     private.mkdir()
+    before = snapshot(boundary)
+    baseline.write_text(json.dumps(dict(boundaries=boundary, before=before)))
     socket = private / 't'
     (private / 'tmux.socket').write_text(str(socket))
     child_env = dict(env, HOME=str(private), TMUX_TMPDIR=str(private),
@@ -38,10 +40,18 @@ with tempfile.TemporaryDirectory() as directory:
         pid = subprocess.run(['tmux', '-S', str(socket), 'display', '-p', '#{pid}'],
                              env=child_env, capture_output=True, text=True, check=True, timeout=5).stdout.strip()
         (private / 'tmux.pid').write_text(pid)
-        assert any(item.startswith(pid + ' ') for item in processes()), 'live tmux server was invisible'
+        assert any(item.startswith(pid + ' ') for item in processes(root)), 'live tmux server was invisible'
         result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=5)
         assert result.returncode != 0 and pid in result.stderr, result
     finally:
         cleanup(private)
-    subprocess.run(command, env=env, check=True, timeout=5)
+    # Removed scratch paths are allowed. An unrelated server must be ignored.
+    with tempfile.TemporaryDirectory() as elsewhere:
+        other = Path(elsewhere)
+        other_env = {key: value.replace(str(root), elsewhere) for key, value in env.items()}
+        try:
+            subprocess.run(['tmux', '-S', str(other / 'sock'), '-f', '/dev/null', 'new-session', '-d', '-s', 'other', '/bin/sleep 30'], env=other_env, check=True, timeout=5)
+            subprocess.run(command, env=env, check=True, timeout=5)
+        finally:
+            subprocess.run(['tmux', '-S', str(other / 'sock'), 'kill-server'], env=other_env, check=False, timeout=5)
     print('accept: leak detector rejects new sockets, scratch directories and real-state entries and live servers')

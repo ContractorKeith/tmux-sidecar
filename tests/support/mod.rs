@@ -10,7 +10,7 @@ mod process;
 pub mod socket;
 pub mod watchdog;
 pub mod workers;
-pub use process::{BoundedCommand, ChildGuard, output, stage, wait_for};
+pub use process::{BoundedCommand, ChildGuard, output, stage, wait_for, wait_for_timeout};
 use std::{
     ffi::OsString,
     fs,
@@ -131,9 +131,11 @@ impl TmuxGuard {
         )
         .unwrap();
         guard.adapter.socket = Socket::Path(guard.server_socket.clone());
-        wait_for("fake Claude startup", || {
-            guard.scratch.path().join("state/ready-claude").exists()
-        });
+        process::wait_for_timeout(
+            "fake Claude startup",
+            std::time::Duration::from_secs(10),
+            || guard.scratch.path().join("state/ready-claude").exists(),
+        );
         guard
     }
     pub fn isolate(&self, command: &mut Command) {

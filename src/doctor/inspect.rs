@@ -66,12 +66,26 @@ pub(super) async fn local(home: &Path, binary: &Path, requested: &[AgentKind]) -
     }
     .command();
     command.arg("-V");
-    let version = crate::proc::bounded::output(
-        command,
-        tokio::time::Instant::now() + Duration::from_secs(1),
+    let version = tokio::time::timeout(
+        probe_timeout(),
+        tokio::process::Command::from(command)
+            .kill_on_drop(true)
+            .output(),
     )
     .await
-    .and_then(|o| tmux_version(&String::from_utf8_lossy(&o.stdout)));
+    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "tmux version probe timed out"))
+    .and_then(|result| result)
+    .map_err(|e| io::Error::new(e.kind(), format!("could not run tmux version probe: {e}")))
+    .and_then(|output| {
+        if output.status.success() {
+            tmux_version(&String::from_utf8_lossy(&output.stdout))
+        } else {
+            Err(io::Error::other(format!(
+                "tmux version probe failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )))
+        }
+    });
     let slow = version
         .as_ref()
         .is_err_and(|e| e.kind() == io::ErrorKind::TimedOut);
@@ -114,4 +128,33 @@ pub(super) async fn local(home: &Path, binary: &Path, requested: &[AgentKind]) -
         ],
     ));
     checks
+}
+
+// access checks the current uid, ACLs and read-only mounts without modifying history.
+pub(super) fn writable(path: &Path) -> io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let meta =
+        fs::metadata(path).map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+    let name = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
+    // SAFETY: name is a live NUL-terminated path; access does not retain it.
+    let allowed = unsafe { libc::access(name.as_ptr(), libc::W_OK) } == 0;
+    if !allowed || meta.mode() & 0o222 == 0 {
+        return Err(io::Error::other(format!(
+            "{} is not writable; check write permissions",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn probe_timeout() -> Duration {
+    #[cfg(feature = "test-util")]
+    let multiplier = std::env::var("TMUX_SIDECAR_TEST_TIMEOUT_MULTIPLIER")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(1)
+        .clamp(1, 4);
+    #[cfg(not(feature = "test-util"))]
+    let multiplier = 1;
+    Duration::from_secs(1) * multiplier
 }

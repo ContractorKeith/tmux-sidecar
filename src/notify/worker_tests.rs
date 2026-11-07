@@ -35,3 +35,21 @@ async fn desktop_uses_project_basename_and_name_or_pane_id() {
         );
     }
 }
+
+#[tokio::test]
+async fn stale_episode_is_dropped_at_delivery() {
+    struct Resumed;
+    impl Backend for Resumed {
+        async fn current(&mut self, _: &serde_json::Value) -> bool {
+            false
+        }
+        async fn desktop(&mut self, _: &str) -> io::Result<()> {
+            panic!("stale notification delivered")
+        }
+        async fn waiting(&mut self, _: &str, _: u64, _: &str) -> io::Result<()> {
+            panic!("desktop only")
+        }
+    }
+    let event = serde_json::json!({"run_id":"r1","from":"working","to":"blocked","at":100});
+    deliver(&mut Resumed, &[event], false).await.unwrap();
+}

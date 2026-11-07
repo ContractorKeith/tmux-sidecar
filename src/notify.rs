@@ -1,4 +1,5 @@
 //! Desktop notifications consume committed changes outside the store and RPC tasks.
+mod backend;
 #[cfg(test)]
 mod burst_tests;
 mod command;
@@ -51,7 +52,7 @@ struct Window {
 }
 #[derive(Default)]
 struct Debounce {
-    runs: HashMap<(String, String), Instant>,
+    runs: HashMap<(String, String), (serde_json::Value, Instant)>,
     windows: [Window; 2],
 }
 impl Debounce {
@@ -61,6 +62,9 @@ impl Debounce {
         };
         if event["from"] == event["to"] {
             return;
+        }
+        if to == "done" {
+            self.runs.retain(|(run, _), _| run != id);
         }
         let channel = match to {
             "waiting"
@@ -73,14 +77,18 @@ impl Debounce {
             "blocked" | "error" if config.desktop => 0,
             _ => return,
         };
-        self.runs.retain(|_, at| {
-            now.saturating_duration_since(*at) < Duration::from_secs(config.debounce_secs)
-        });
         let key = (id.to_owned(), to.to_owned());
-        if self.runs.contains_key(&key) {
-            return;
+        if let Some((episode, at)) = self.runs.get(&key) {
+            let duplicate = if channel == 0 {
+                event["at"] == *episode
+            } else {
+                now.saturating_duration_since(*at) < Duration::from_secs(config.debounce_secs)
+            };
+            if duplicate {
+                return;
+            }
         }
-        self.runs.insert(key, now);
+        self.runs.insert(key, (event["at"].clone(), now));
         let window = &mut self.windows[channel];
         if window.pending.is_empty() {
             window.next = Some(now + Duration::from_secs(2));
@@ -118,5 +126,5 @@ pub(crate) fn start(
     config: Config,
     events: broadcast::Receiver<serde_json::Value>,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(worker::run(worker::Real { socket }, state, config, events))
+    tokio::spawn(worker::run(backend::Real { socket }, state, config, events))
 }

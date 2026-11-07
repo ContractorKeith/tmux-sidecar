@@ -159,10 +159,10 @@ pub async fn run(
                 "{}",
                 serde_json::to_string(&checks).map_err(|e| (1, e.to_string()))?
             )
-            .map_err(crate::cli::output_error)?;
+            .map_err(crate::cli::stdout_error)?;
         } else {
             for check in &checks {
-                writeln!(out, "{}", check.human()).map_err(crate::cli::output_error)?;
+                writeln!(out, "{}", check.human()).map_err(crate::cli::stdout_error)?;
             }
         }
     }

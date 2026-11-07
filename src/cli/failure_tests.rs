@@ -113,3 +113,19 @@ fn wait_shutdown_response_is_general_but_send_timeout_remains_timeout() {
         4
     );
 }
+
+#[test]
+fn stdout_errors_name_the_output_stream() {
+    let error = stdout_error(io::Error::from_raw_os_error(libc::ENOSPC));
+    assert_eq!(error.0, 1);
+    assert!(error.1.contains("stdout"), "{}", error.1);
+}
+
+#[test]
+fn non_output_errors_do_not_blame_stdout() {
+    let error = output_error(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "settings.json is not writable",
+    ));
+    assert_eq!(error, (1, "settings.json is not writable".into()));
+}
