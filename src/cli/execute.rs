@@ -48,25 +48,7 @@ async fn execute_inner(mut cli: Cli) -> Result<(), Failure> {
         return Ok(());
     }
     if let Command::Hooks { command } = &cli.command {
-        let (install, chain, agent, dry_run) = match command {
-            Hooks::Install {
-                chain,
-                agent,
-                dry_run,
-            } => (true, *chain, agent, *dry_run),
-            Hooks::Uninstall { agent, dry_run } => (false, false, agent, *dry_run),
-        };
-        let home = std::env::var_os("HOME").ok_or_else(|| (1, "HOME is missing".into()))?;
-        let binary = std::env::current_exe().map_err(|e| (1, e.to_string()))?;
-        return crate::install::run(
-            std::path::Path::new(&home),
-            &binary,
-            agent,
-            install,
-            chain,
-            dry_run,
-        )
-        .map_err(output_error);
+        return super::hooks::run(command, cli.quiet);
     }
     if let Command::Mcp { allow_send } = cli.command {
         let socket = client::select_socket(cli.tmux_socket.as_deref()).map_err(unreachable)?;

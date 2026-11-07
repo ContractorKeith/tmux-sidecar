@@ -17,7 +17,15 @@ fn doctor_quiet_still_reports_failure_exit_code() {
         .env("OPENCODE_DB", root.path().join("opencode.db"))
         .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
         .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"))
-        .args(["--tmux-socket", "/tmp/unused", "-q", "doctor", "--json"])
+        .args([
+            "--tmux-socket",
+            "/tmp/unused",
+            "-q",
+            "doctor",
+            "--agent",
+            "claude",
+            "--json",
+        ])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));

@@ -87,7 +87,7 @@ printf '%s\n' '{"user": true}' > "$HOME/.claude/settings.json"
 printf '%s\n' '# user comment' 'model = "fixture"' > "$HOME/.codex/config.toml"
 cp "$HOME/.claude/settings.json" "$scratch/claude.before"
 cp "$HOME/.codex/config.toml" "$scratch/codex.before"
-"$bin" hooks install --dry-run > "$scratch/hooks.diff"
+"$bin" hooks install --agent claude --agent codex --agent grok --agent opencode --dry-run > "$scratch/hooks.diff"
 test -s "$scratch/hooks.diff"
 cmp "$scratch/claude.before" "$HOME/.claude/settings.json"
 cmp "$scratch/codex.before" "$HOME/.codex/config.toml"
@@ -171,7 +171,7 @@ echo "== doctor live checks"
 status=0
 "$bin" --tmux-socket "$socket" doctor --agent claude --agent codex --agent grok --agent opencode --json > "$scratch/doctor-before.json" || status=$?
 test "$status" -eq 1
-"$bin" hooks install
+"$bin" hooks install --agent claude --agent codex --agent grok --agent opencode
 status=0
 "$bin" --tmux-socket "$socket" doctor --json > "$scratch/doctor-after.json" || status=$?
 python3 - "$scratch/doctor-before.json" "$scratch/doctor-after.json" <<'PYDOCTOR'

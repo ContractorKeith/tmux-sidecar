@@ -26,11 +26,13 @@ scrubbed. No token or account fields are retained.
   session.execution.started and session.execution.succeeded. Detached hook
   children preserve the final notification during OpenCode teardown.
 - Codex notify: the original argv capture is real. The 2026-11-07 skeptic run on
-  **Codex 0.166.0 proved inline UserPromptSubmit, PreToolUse, PermissionRequest,
+  **Codex 0.166.0 on Linux and macOS proved inline UserPromptSubmit, PreToolUse, PermissionRequest,
   PostToolUse and SessionEnd live** in an isolated CODEX_HOME. The earlier scratch
   run produced no inline captures; that limitation is superseded by the skeptic
   evidence. Committed inline payload files remain synthesized schema fixtures;
-  Interrupt remains unproven live.
+  Interrupt remains unproven live. The macOS TUI runs turns in a child
+  `codex app-server`; hook ownership must resolve to the outer TUI agent run.
+  On first use the "Hooks need review" screen records trust in `config.toml`.
 
 All live runs had 50-second deadlines and process-group cleanup. The initial
 capture round's incidental real Codex trust and OpenCode service writes were

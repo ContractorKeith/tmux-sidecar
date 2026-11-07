@@ -65,11 +65,7 @@ impl TmuxGuard {
             )
             .unwrap();
         }
-        let helper = guard.scratch.path().join("fake-agent");
-        fake_binary::write(&helper);
-        for agent in ["claude", "codex", "grok", "opencode"] {
-            fs::copy(&helper, guard.scratch.path().join("bin").join(agent)).unwrap();
-        }
+        fake_binary::link_agents(&guard.scratch.path().join("bin"));
         let mut paths = vec![guard.scratch.path().join("bin")];
         paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
         guard.path = std::env::join_paths(paths).unwrap();
@@ -188,7 +184,8 @@ impl Drop for TmuxGuard {
 }
 // Concurrent forks can briefly inherit a copy's writable fd before exec closes it.
 fn spawn_fixture(command: &mut Command) -> Child {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    let deadline =
+        std::time::Instant::now() + process::load_timeout(std::time::Duration::from_secs(1));
     loop {
         match command.spawn() {
             Ok(child) => return child,

@@ -47,107 +47,142 @@ pub(super) async fn run(
     let mut debounce = Debounce::default();
     let mut warned = [false; 2];
     loop {
-        let event = match events.recv().await {
-            Ok(event) => event,
-            Err(broadcast::error::RecvError::Lagged(_)) => continue,
-            Err(_) => break,
+        let deadline = debounce.deadline();
+        let closed = tokio::select! {
+            event = events.recv() => match event {
+                Ok(event) => { debounce.push(&config, event, Instant::now()); false }
+                Err(broadcast::error::RecvError::Lagged(_)) => false,
+                Err(_) => true,
+            },
+            _ = async {
+                match deadline {
+                    Some(at) => tokio::time::sleep_until(at.into()).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => false,
         };
-        let Some(id) = event["run_id"].as_str() else {
-            continue;
-        };
-        let Some(to) = event["to"].as_str() else {
-            continue;
-        };
-        if event["from"] == event["to"] {
-            continue;
-        }
-        if !debounce.allow(&config, id, to, Instant::now()) {
-            continue;
-        }
-        let message = format!("Agent run {id} is {to}");
-        let result = if to == "waiting" {
-            let Some(pane) = event["pane_id"].as_str() else {
-                continue;
-            };
-            let Some(server_start) = event["server_start"].as_u64() else {
-                continue;
-            };
-            backend.waiting(pane, server_start, &message).await
+        let batches = if closed {
+            debounce.finish()
         } else {
-            let root = match event["project_root"].as_str() {
-                Some(root) => Some(root.to_owned()),
-                None => backend.project_root(id).await,
-            };
-            let project = root
-                .as_deref()
-                .and_then(|root| std::path::Path::new(root).file_name())
-                .and_then(|name| name.to_str())
-                .unwrap_or("unknown project");
-            let agent = event["agent"].as_str().unwrap_or("agent");
-            let pane = event["pane_name"]
-                .as_str()
-                .or_else(|| event["pane_id"].as_str())
-                .unwrap_or("unknown pane");
-            backend
-                .desktop(&format!("{agent} in {project} ({pane}) is {to}"))
-                .await
+            debounce.drain(Instant::now())
         };
-        let warning_kind = usize::from(to == "waiting");
-        if let Err(error) = result
-            && !warned[warning_kind]
-        {
-            warned[warning_kind] = true;
-            let backend = if to == "waiting" {
-                "tmux waiting message"
-            } else {
-                "desktop notifier"
-            };
-            let log_state = state.clone();
-            let _ = tokio::task::spawn_blocking(move || {
-                crate::daemon::log::write(&log_state, &format!("{backend} unavailable: {error}"))
-            })
-            .await;
+        for batch in batches {
+            let waiting = batch[0]["to"] == "waiting";
+            let result = deliver(&mut backend, &batch, waiting).await;
+            let kind = usize::from(waiting);
+            if let Err(error) = result
+                && !warned[kind]
+            {
+                warned[kind] = true;
+                let backend = if waiting {
+                    "tmux waiting message"
+                } else {
+                    "desktop notifier"
+                };
+                let log_state = state.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    crate::daemon::log::write(
+                        &log_state,
+                        &format!("{backend} unavailable: {error}"),
+                    )
+                })
+                .await;
+            }
         }
+        if closed {
+            break;
+        }
+    }
+}
+async fn deliver(
+    backend: &mut impl Backend,
+    batch: &[serde_json::Value],
+    waiting: bool,
+) -> io::Result<()> {
+    let mut descriptions = Vec::new();
+    for event in batch {
+        let root = match event["project_root"].as_str() {
+            Some(root) => Some(root.to_owned()),
+            None => {
+                backend
+                    .project_root(
+                        event["run_id"]
+                            .as_str()
+                            .expect("queued event has validated text"),
+                    )
+                    .await
+            }
+        };
+        let project = root
+            .as_deref()
+            .and_then(|r| std::path::Path::new(r).file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown project");
+        let agent = event["agent"].as_str().unwrap_or("agent");
+        let pane = event["pane_name"]
+            .as_str()
+            .or_else(|| event["pane_id"].as_str())
+            .unwrap_or("unknown pane");
+        descriptions.push(format!("{agent} in {project} ({pane})"));
+    }
+    let to = batch[0]["to"]
+        .as_str()
+        .expect("queued event has validated text");
+    let message = if batch.len() == 1 {
+        if waiting {
+            format!(
+                "Agent run {} is waiting",
+                batch[0]["run_id"]
+                    .as_str()
+                    .expect("queued event has validated text")
+            )
+        } else {
+            format!("{} is {to}", descriptions[0])
+        }
+    } else if batch.iter().all(|e| e["to"] == to) {
+        format!("{} runs {to}: {}", batch.len(), descriptions.join(", "))
+    } else {
+        let details: Vec<_> = descriptions
+            .iter()
+            .zip(batch)
+            .map(|(d, e)| {
+                format!(
+                    "{d} is {}",
+                    e["to"].as_str().expect("queued event has validated text")
+                )
+            })
+            .collect();
+        format!(
+            "{} runs need attention: {}",
+            batch.len(),
+            details.join(", ")
+        )
+    };
+    if waiting {
+        // Deliver the summary to every affected tmux session, not just its first pane.
+        let mut failure = None;
+        for event in batch {
+            if let Err(error) = backend
+                .waiting(
+                    event["pane_id"]
+                        .as_str()
+                        .expect("queued event has validated text"),
+                    event["server_start"]
+                        .as_u64()
+                        .expect("queued waiting event has server_start"),
+                    &message,
+                )
+                .await
+            {
+                failure.get_or_insert(error);
+            }
+        }
+        failure.map_or(Ok(()), Err)
+    } else {
+        backend.desktop(&message).await
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::{Arc, Mutex};
-    struct Recording(Arc<Mutex<Vec<String>>>);
-    impl Backend for Recording {
-        async fn desktop(&mut self, message: &str) -> io::Result<()> {
-            self.0.lock().unwrap().push(message.into());
-            Ok(())
-        }
-        async fn waiting(&mut self, _: &str, _: u64, _: &str) -> io::Result<()> {
-            panic!("desktop transition must not send a tmux message")
-        }
-    }
-    #[tokio::test]
-    async fn desktop_uses_project_basename_and_name_or_pane_id() {
-        for (name, pane) in [(Some("review"), "review"), (None, "%7")] {
-            let root = tempfile::tempdir().unwrap();
-            let calls = Arc::new(Mutex::new(Vec::new()));
-            let (send, receive) = broadcast::channel(1);
-            send.send(serde_json::json!({"run_id":"r1","from":"working","to":"blocked", "agent":"grok", "project_root":"/work/project", "pane_name":name, "pane_id":"%7"})).unwrap();
-            drop(send);
-            tokio::time::timeout(
-                std::time::Duration::from_secs(1),
-                run(
-                    Recording(calls.clone()),
-                    root.path().into(),
-                    Config::default(),
-                    receive,
-                ),
-            )
-            .await
-            .unwrap();
-            assert_eq!(
-                *calls.lock().unwrap(),
-                [format!("grok in project ({pane}) is blocked")]
-            );
-        }
-    }
-}
+#[path = "worker_tests.rs"]
+mod tests;

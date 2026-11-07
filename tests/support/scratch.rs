@@ -6,6 +6,14 @@ impl Scratch {
         super::watchdog::register(root.path());
         Self(root)
     }
+    pub fn short() -> Self {
+        let root = tempfile::Builder::new()
+            .prefix("tsx-group-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        super::watchdog::register(root.path());
+        Self(root)
+    }
     pub fn path(&self) -> &Path {
         self.0.path()
     }
