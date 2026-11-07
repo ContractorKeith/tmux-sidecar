@@ -6,8 +6,7 @@ pub const STATES: &str = "An agent run is one coding-agent process in one tmux p
 pub fn definitions(allow_send: bool) -> Vec<Tool> {
     let selector =
         json!({"type":"string","description":"Agent run id (r42) or current pane selector (%7)."});
-    let states =
-        json!({"type":"string","enum":["working","waiting","blocked","idle","error","done"]});
+    let states = json!({"type":"string","enum":["working","waiting","blocked","idle","error","done"],"description":"working: processing; waiting: wants next prompt; blocked: needs approval; idle: read waiting run inactive; error: failed turn; done: ended run."});
     let mut tools = vec![
         definition(
             "list_runs",
@@ -27,7 +26,7 @@ pub fn definitions(allow_send: bool) -> Vec<Tool> {
             "run_history",
             "Read an agent run's signals and state changes, newest first. Default limit 100.",
             json!({
-                "selector":selector,"limit":{"type":"integer","minimum":0,"maximum":u32::MAX}
+                "selector":selector,"limit":{"type":"integer","minimum":0,"maximum":u32::MAX,"description":"Maximum history rows, default 100; newest first."}
             }),
             &["selector"],
         ),
@@ -35,15 +34,15 @@ pub fn definitions(allow_send: bool) -> Vec<Tool> {
             "wait_for_state",
             "Wait for an agent run to reach waiting, blocked or done. Timeout defaults to 600 seconds and cannot exceed 600; timeout is a tool error.",
             json!({
-                "selector":selector,"state":{"type":"string","enum":["waiting","blocked","done"]},
-                "timeout":{"type":"integer","minimum":0,"maximum":600,"default":600}
+                "selector":selector,"state":{"type":"string","enum":["waiting","blocked","done"],"description":"Target: wants next prompt, needs approval, or ended run."},
+                "timeout":{"type":"integer","minimum":0,"maximum":600,"default":600,"description":"Maximum seconds to wait (0 through 600)."}
             }),
             &["selector", "state"],
         ),
     ];
     if allow_send {
         tools.push(definition("send_prompt", "Paste text and Enter into a waiting agent run. Refuses working, blocked, idle, error and done runs; cannot override the guard. Only exposed with --allow-send.", json!({
-            "selector":selector,"text":{"type":"string"}
+            "selector":selector,"text":{"type":"string","description":"Prompt text pasted literally and followed by Enter into a waiting run."}
         }), &["selector", "text"]));
     }
     tools
@@ -52,7 +51,7 @@ fn definition(name: &'static str, description: &str, properties: Value, required
     let schema = json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
     Tool::new(
         name,
-        format!("{description} {STATES}"),
+        description.to_string(),
         schema.as_object().expect("object schema").clone(),
     )
 }

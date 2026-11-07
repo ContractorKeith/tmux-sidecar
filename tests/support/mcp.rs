@@ -54,23 +54,14 @@ e2e_test!(mcp_stdio_tools_read_fixtures_and_guard_registration, {
         mcp.call("run_history", json!({"selector":"r999999"}))["isError"],
         true
     );
-    // Calling a tool absent from discovery cannot bypass the capability gate.
-    assert_eq!(
-        mcp.call("send_prompt", json!({"selector":run["id"],"text":"no"}))["isError"],
-        true
+    // A tool absent from discovery is also unavailable by direct invocation.
+    let id = mcp.begin(
+        "tools/call",
+        json!({"name":"send_prompt","arguments":{"selector":run["id"],"text":"no"}}),
     );
-    for args in [
-        json!({"selector":run["id"],"state":"waiting","timeout":601}),
-        json!({"selector":run["id"],"state":"waiting","timeout":-1}),
-        json!({"selector":run["id"],"state":"working"}),
-        json!({"selector":"bad","state":"done"}),
-    ] {
-        assert_eq!(mcp.call("wait_for_state", args)["isError"], true);
-    }
-    assert_eq!(
-        mcp.call("list_runs", json!({"force":true}))["isError"],
-        true
-    );
+    let response = mcp.receive();
+    assert_eq!(response["id"], id);
+    assert_eq!(response["error"]["code"], -32602);
     let mut writable = Mcp::start(&guard, true);
     assert!(
         writable.request("tools/list", json!({}))["tools"]

@@ -118,5 +118,9 @@ mod cli_stream;
 mod mcp;
 #[path = "support/mcp_client.rs"]
 mod mcp_client;
+#[path = "support/mcp_daemon.rs"]
+mod mcp_daemon;
+#[path = "support/mcp_lifecycle.rs"]
+mod mcp_lifecycle;
 #[path = "support/mcp_rpc.rs"]
 mod mcp_rpc;

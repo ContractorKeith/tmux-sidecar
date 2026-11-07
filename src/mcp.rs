@@ -1,4 +1,5 @@
 //! Stdio MCP tools are a thin adapter over the per-tmux-server RPC socket.
+mod input;
 mod tools;
 use crate::{client, paths::Paths};
 use rmcp::{
@@ -15,6 +16,7 @@ struct Sidecar {
     socket: PathBuf,
     paths: Paths,
     allow_send: bool,
+    closed: tokio::sync::watch::Receiver<bool>,
 }
 impl ServerHandler for Sidecar {
     fn get_info(&self) -> ServerConfig {
@@ -43,8 +45,14 @@ impl ServerHandler for Sidecar {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        if self.get_tool(&request.name).is_none() {
+            return Err(ErrorData::invalid_params(
+                format!("unknown tool: {}", request.name),
+                None,
+            ));
+        }
         let (method, params, timeout) = match tools::prepare(
             &request.name,
             request.arguments.unwrap_or_default(),
@@ -53,15 +61,21 @@ impl ServerHandler for Sidecar {
             Ok(call) => call,
             Err(message) => return Ok(tool_error(message).into()),
         };
-        let result = client::request_with_timeout(
+        let mut closed = self.closed.clone();
+        let call = client::request_with_timeout(
             &self.socket,
             &self.paths,
             method,
             params,
             true,
             Duration::from_secs(timeout),
-        )
-        .await;
+        );
+        let result = tokio::select! {
+            biased;
+            _ = context.ct.cancelled() => return Ok(tool_error("cancelled: MCP request cancelled".into()).into()),
+            _ = closed.wait_for(|closed| *closed) => return Ok(tool_error("cancelled: MCP stdin closed".into()).into()),
+            result = call => result,
+        };
         Ok(match result {
             Ok(value) => CallToolResult::success(vec![ContentBlock::text(value.to_string())]),
             Err(error) => tool_error(error.to_string()),
@@ -74,12 +88,15 @@ fn tool_error(message: String) -> CallToolResult {
 }
 
 pub async fn run(socket: PathBuf, paths: Paths, allow_send: bool) -> io::Result<()> {
+    let (closed, receiver) = tokio::sync::watch::channel(false);
+    let (reader, writer) = rmcp::transport::stdio();
     let service = Sidecar {
         socket,
         paths,
         allow_send,
+        closed: receiver,
     }
-    .serve(rmcp::transport::stdio())
+    .serve((input::Input { reader, closed }, writer))
     .await
     .map_err(io::Error::other)?;
     service.waiting().await.map_err(io::Error::other)?;
