@@ -63,6 +63,8 @@ fn peer(home: &Path, version: &str, count: usize) -> std::thread::JoinHandle<()>
         while served < count {
             match listener.accept() {
                 Ok((socket, _)) => {
+                    // macOS inherits O_NONBLOCK from the listener; Linux does not.
+                    socket.set_nonblocking(false).unwrap();
                     socket
                         .set_read_timeout(Some(Duration::from_secs(2)))
                         .unwrap();
