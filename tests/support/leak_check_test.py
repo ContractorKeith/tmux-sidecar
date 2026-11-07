@@ -8,6 +8,13 @@ import tempfile
 sys.dont_write_bytecode = True
 from leak_check import snapshot, processes, cleanup
 
+# macOS reports /tmp in process environments and /private/tmp from realpath.
+from unittest.mock import patch
+from types import SimpleNamespace
+from leak_check import references
+with patch('leak_check.sys.platform', 'darwin'), patch('leak_check.Path.resolve', return_value=Path('/private/tmp/tsx-owned')), patch('leak_check.subprocess.run', return_value=SimpleNamespace(stdout=b'HOME=/tmp/tsx-owned/home')):
+    assert references('123', '/tmp/tsx-owned'), 'lexical /tmp alias was invisible'
+
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
     for name in ['sockets', 'scratch', 'state']:

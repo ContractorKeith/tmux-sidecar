@@ -40,7 +40,7 @@ def processes(scope=None):
 
 
 def references(pid, scope):
-    scope = os.fsencode(str(Path(scope).resolve()))
+    scopes = {os.fsencode(str(Path(scope).absolute())), os.fsencode(str(Path(scope).resolve()))}
     if sys.platform.startswith('linux'):
         try:
             proc = Path('/proc') / pid
@@ -49,15 +49,15 @@ def references(pid, scope):
                       os.fsencode(os.readlink(proc / 'cwd'))]
         except OSError:
             return False  # The process exited during the snapshot.
-        return any(scope in value for value in values)
+        return any(scope in value for scope in scopes for value in values)
     # Darwin ps -E includes the environment, including HOME and TMUX_TMPDIR.
     result = subprocess.run(['/bin/ps', '-E', '-ww', '-p', pid, '-o', 'command='],
                             capture_output=True, check=False, timeout=5)
-    if scope in result.stdout:
+    if any(scope in result.stdout for scope in scopes):
         return True
     result = subprocess.run(['/usr/sbin/lsof', '-a', '-p', pid, '-d', 'cwd', '-Fn'],
                             capture_output=True, check=False, timeout=5)
-    return scope in result.stdout
+    return any(scope in result.stdout for scope in scopes)
 
 
 def snapshot(boundaries):
@@ -120,7 +120,7 @@ if __name__ == '__main__':
     action, filename = sys.argv[1:3]
     file = Path(filename)
     if action == 'snapshot':
-        boundary = dict(scratch_dir=str(Path(sys.argv[3]).resolve()))
+        boundary = dict(scratch_dir=str(Path(sys.argv[3]).absolute()))
         file.write_text(json.dumps(dict(boundaries=boundary, before=snapshot(boundary))))
     elif action == 'check':
         baseline = json.loads(file.read_text())
