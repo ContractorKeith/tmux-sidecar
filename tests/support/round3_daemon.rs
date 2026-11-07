@@ -114,3 +114,60 @@ e2e_test!(
             .any(|r| r["id"] == run["id"] && r["state"] == "blocked"));
     }
 );
+e2e_test!(raised_soft_fd_limit_does_not_stall_daemon_spawn, {
+    if !enabled() {
+        return;
+    }
+    let g = TmuxGuard::start();
+    let mut cmd = g.sidecar();
+    // SAFETY: get/setrlimit operate on one initialized stack record, before exec.
+    unsafe {
+        cmd.pre_exec(|| {
+            let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+            if libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let mut limit = limit.assume_init();
+            limit.rlim_cur = limit.rlim_max;
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                // macOS may advertise infinity but enforce kern.maxfilesperproc.
+                if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINVAL) {
+                    return Err(std::io::Error::last_os_error());
+                }
+                limit.rlim_cur = limit.rlim_max.min(10240);
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+            Ok(())
+        });
+    }
+    let start = std::time::Instant::now();
+    let out = output(cmd.args(["list", "--json"]));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(start.elapsed() < std::time::Duration::from_secs(3));
+});
+e2e_test!(second_scan_error_can_confirm_the_server_is_gone, {
+    if !enabled() {
+        return;
+    }
+    let g = TmuxGuard::start();
+    let script = g.scratch.path().join("bin/tmux");
+    fs::write(&script,"#!/bin/sh\nif [ ! -e \"$HOME/probed\" ]; then touch \"$HOME/probed\"; echo transient >&2; else echo 'no server running' >&2; fi\nexit 1\n").unwrap();
+    fs::set_permissions(script, fs::Permissions::from_mode(0o700)).unwrap();
+    let out = output(
+        g.sidecar()
+            .env_remove("TMUX_SIDECAR_TMUX")
+            .args(["daemon", "run"]),
+    );
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("tmux server is not running"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+});

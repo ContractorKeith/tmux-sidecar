@@ -44,7 +44,7 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
         return Ok(());
     };
     let raw = if format == "codex-notify" {
-        Ok(args.get(1).cloned().unwrap_or_default().into_bytes())
+        Ok((notify_payload(&args), false))
     } else {
         input::read_stdin(started + Duration::from_millis(60))
     };
@@ -56,7 +56,19 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
     };
     let paths = paths::current(&socket)?;
     let result = match raw {
-        Ok(raw) => record(&raw, format, pane, &socket, &paths, started).await,
+        Ok((raw, expired)) => {
+            if expired && !raw.is_empty() {
+                paths::prepare(&paths)?;
+                super::log(
+                    &paths.state,
+                    &format!("hook stdin read budget expired after {} bytes", raw.len()),
+                )?;
+                if serde_json::from_slice::<serde_json::Value>(&raw).is_err() {
+                    return Ok(());
+                }
+            }
+            record(&raw, format, pane, &socket, &paths, started).await
+        }
         Err(error) => Err(error),
     };
     if let Err(error) = &result {
@@ -156,6 +168,14 @@ async fn record(
     );
     let _ = client::trigger_spawn(socket, paths);
     Ok(())
+}
+
+fn notify_payload(args: &[String]) -> Vec<u8> {
+    args.last()
+        .filter(|_| args.len() > 1)
+        .cloned()
+        .unwrap_or_default()
+        .into_bytes()
 }
 
 #[cfg(test)]

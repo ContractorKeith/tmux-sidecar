@@ -49,7 +49,9 @@ pub async fn tick(
                 crate::tmux::retry_path();
                 match tmux.scan() {
                     Ok(scan) => scan,
-                    Err(_) if tmux.confirmed_gone(&error) => return Ok(Snapshot::Gone),
+                    Err(second) if tmux.confirmed_gone(&error) || tmux.confirmed_gone(&second) => {
+                        return Ok(Snapshot::Gone);
+                    }
                     Err(_) => return Err(error),
                 }
             }

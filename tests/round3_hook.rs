@@ -72,3 +72,43 @@ fn missing_or_unknown_hook_arguments_are_a_quiet_success() {
         assert!(out.stdout.is_empty() && out.stderr.is_empty());
     }
 }
+#[test]
+fn partial_stdin_deadline_names_the_budget_and_byte_count() {
+    let root = tempfile::tempdir().unwrap();
+    let mut child = process::ChildGuard(
+        Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+            .args(["hook", "claude"])
+            .env("HOME", root.path())
+            .env(
+                "TMUX",
+                format!("{},1,0", root.path().join("absent").display()),
+            )
+            .env("TMUX_PANE", "%0")
+            .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
+            .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    use std::io::Write;
+    child
+        .0
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"{\"partial\":")
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while child.0.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let log = std::fs::read_to_string(root.path().join("state/hook.log")).unwrap();
+    assert!(
+        log.contains("hook stdin read budget expired after 11 bytes"),
+        "{log}"
+    );
+    assert!(!log.contains("EOF while parsing"), "{log}");
+}

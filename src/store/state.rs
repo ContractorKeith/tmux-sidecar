@@ -141,6 +141,10 @@ impl Store {
                 .saturating_mul(1000);
             let clears_block = run.agent == crate::model::AgentKind::Claude
                 && run.state == AgentState::Blocked
+                && reading
+                    .last_user_text
+                    .trim_start()
+                    .starts_with("[Request interrupted by user")
                 && matches!(reading.status, Status::Waiting | Status::Idle)
                 && at > self.latest_hook_at(id)?.unwrap_or(run.state_since);
             if has_hooks && !clears_block {

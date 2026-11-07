@@ -255,8 +255,10 @@ from the same agent session; a different
 session id or UserPromptSubmit can reopen it. Claude SessionEnd clear/logout is
 waiting; other verified in-pane SessionEnd reasons are done. Process exit sets ended_at and is final.
 Unhooked transcript Done means waiting while alive; transcript-derived done can resume.
-Blocked hooked Claude runs are scanned for newer waiting/idle evidence after interruption;
-that evidence clears the block to waiting. Other hooked states remain authoritative.
+Blocked hooked Claude runs are scanned for newer waiting/idle evidence with the
+`[Request interrupted by user…]` marker; only that evidence clears the block to waiting.
+A bound transcript path is preferred while its reading exists; if absent, unhooked runs
+can bind a replacement file after a new session. Other hooked states remain authoritative.
 For Codex, only inline hooks establish native session identity; notify never does.
 OpenCode V2 execution.started maps to
 session.status/busy, execution.succeeded/interrupted to session.idle, and

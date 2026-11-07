@@ -206,11 +206,12 @@ meta(schema_version)
 | waiting for longer than `idle_after` (default 30 min) and read | idle |
 
 Precedence: hooks own state, except a blocked Claude run can return to waiting from a
-newer sboard waiting/idle reading after interruption. Other hooked runs skip transcript scans
+newer sboard waiting/idle reading carrying `[Request interrupted by user…]`. Other hooked runs skip transcript scans
 and use hook metadata. Unhooked runs use sboard's derivation, with Done mapped to waiting
 while the process lives. Transcript-derived done can resume; process exit is final.
-Transcript assignment reserves known identities and paths, then gives a new transcript to
-the closest-started unbound run of the same agent and cwd. The OpenCode event
+Transcript assignment prefers known identities and current paths, then gives a new transcript to
+the closest-started unbound run of the same agent and cwd. Missing bound paths allow
+fallback to a replacement transcript after a new session. The OpenCode event
 names above were confirmed against the installed OpenCode 2.2.5 binary on 2026-11-04.
 
 **Attention queue.** Runs not ended, state in {blocked, error, waiting}, `read_at` null or

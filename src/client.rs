@@ -1,4 +1,5 @@
 //! Every non-daemon reader uses this transport; only list auto-spawns in M1.
+mod fds;
 mod launch;
 mod spawn;
 use crate::{

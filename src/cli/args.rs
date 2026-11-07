@@ -89,6 +89,7 @@ pub enum Command {
         command: Hooks,
     },
     /// Receive an agent hook payload.
+    #[command(disable_help_flag = true)]
     Hook {
         #[arg(
             default_value = "unknown",

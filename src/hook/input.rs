@@ -3,11 +3,11 @@ use serde_json::Value;
 use std::io::{self, Read};
 const INPUT_LIMIT: usize = 64 * 1024 * 1024;
 /// Poll a nonblocking stdin only within the hook's input budget.
-pub fn read_stdin(deadline: std::time::Instant) -> io::Result<Vec<u8>> {
+pub fn read_stdin(deadline: std::time::Instant) -> io::Result<(Vec<u8>, bool)> {
     use std::{io::IsTerminal, os::fd::AsRawFd};
     let stdin = io::stdin();
     if stdin.is_terminal() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), false));
     }
     let fd = stdin.as_raw_fd();
     // SAFETY: stdin is live; fcntl only queries/updates descriptor flags.
@@ -50,7 +50,7 @@ pub fn read_stdin(deadline: std::time::Instant) -> io::Result<Vec<u8>> {
                 let ms = deadline
                     .saturating_duration_since(std::time::Instant::now())
                     .as_millis()
-                    .min(60) as i32;
+                    .clamp(1, 60) as i32;
                 // SAFETY: poll points at one writable pollfd; timeout is bounded.
                 unsafe {
                     libc::poll(&mut poll, 1, ms);
@@ -60,7 +60,8 @@ pub fn read_stdin(deadline: std::time::Instant) -> io::Result<Vec<u8>> {
             Err(e) => return Err(e),
         }
     }
-    Ok(bytes)
+    let expired = std::time::Instant::now() >= deadline;
+    Ok((bytes, expired))
 }
 fn prefix(text: &str, limit: usize) -> &str {
     let mut end = text.len().min(limit);

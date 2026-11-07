@@ -75,9 +75,19 @@ fn interrupted_claude_transcript_can_clear_only_a_newer_block() {
     store.transcript(&id, &reading("working", 3), 3000).unwrap();
     assert_eq!(store.active().unwrap()[0].state, AgentState::Blocked);
     store.transcript(&id, &reading("idle", 3), 3000).unwrap();
+    assert_eq!(
+        store.active().unwrap()[0].state,
+        AgentState::Blocked,
+        "idle alone is not interruption evidence"
+    );
+    let mut interrupted = reading("idle", 3);
+    interrupted.last_user_text = "[Request interrupted by user for tool use]".into();
+    store.transcript(&id, &interrupted, 3000).unwrap();
     assert_eq!(store.active().unwrap()[0].state, AgentState::Waiting);
     store.signal(&signal("PermissionRequest", 4000)).unwrap();
-    store.transcript(&id, &reading("waiting", 5), 5000).unwrap();
+    let mut interrupted = reading("waiting", 5);
+    interrupted.last_user_text = "[Request interrupted by user]".into();
+    store.transcript(&id, &interrupted, 5000).unwrap();
     assert_eq!(store.active().unwrap()[0].state, AgentState::Waiting);
 }
 #[test]

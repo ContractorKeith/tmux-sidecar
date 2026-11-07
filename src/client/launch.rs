@@ -22,16 +22,9 @@ pub(super) fn prepare(command: &mut Command) -> io::Result<()> {
     command
         .env_clear()
         .envs(std::env::vars_os().filter(|(key, _)| allowed(key)));
-    #[cfg(target_os = "macos")]
-    let max_fd = {
-        let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
-        // SAFETY: limit is writable storage for exactly one rlimit.
-        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: getrlimit succeeded and initialized limit.
-        unsafe { limit.assume_init() }.rlim_cur.min(i32::MAX as u64) as i32
-    };
+    // getdtablesize can follow an agent's raised soft limit. Bound fallback work.
+    // SAFETY: getdtablesize has no pointers and only queries the descriptor limit.
+    let max_fd = super::fds::limit(unsafe { libc::getdtablesize() });
     // SAFETY: only async-signal-safe syscalls run after fork. Mark all fd >= 3
     // CLOEXEC, including concurrent pipe creations; keep Rust's error pipe until exec.
     unsafe {
@@ -40,14 +33,14 @@ pub(super) fn prepare(command: &mut Command) -> io::Result<()> {
                 return Err(io::Error::last_os_error());
             }
             #[cfg(target_os = "linux")]
-            if libc::close_range(3, u32::MAX, libc::CLOSE_RANGE_CLOEXEC as i32) != 0 {
-                return Err(io::Error::last_os_error());
-            }
+            let range = if libc::close_range(3, u32::MAX, libc::CLOSE_RANGE_CLOEXEC as i32) == 0 {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error())
+            };
             #[cfg(target_os = "macos")]
-            for fd in 3..max_fd {
-                libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
-            }
-            Ok(())
+            let range = Err(io::Error::from_raw_os_error(libc::ENOSYS));
+            super::fds::mark_inherited(max_fd, range)
         });
     }
     Ok(())

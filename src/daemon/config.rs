@@ -44,7 +44,13 @@ fn bounded(
 }
 pub fn poll_ms(paths: &Paths) -> io::Result<u64> {
     let table = validate(&paths.config)?;
-    let value = if let Ok(value) = std::env::var("TMUX_SIDECAR_POLL_MS") {
+    let value = if let Some(value) = std::env::var_os("TMUX_SIDECAR_POLL_MS") {
+        let value = value.to_str().ok_or_else(|| {
+            error(
+                &paths.config,
+                "TMUX_SIDECAR_POLL_MS (poll_ms) must be a UTF-8 integer",
+            )
+        })?;
         value.parse::<u64>().map_err(|e| {
             error(
                 &paths.config,
