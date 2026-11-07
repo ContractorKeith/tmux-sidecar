@@ -160,8 +160,9 @@ async fn deliver(
     };
     if waiting {
         // Deliver the summary to every affected tmux session, not just its first pane.
+        let mut failure = None;
         for event in batch {
-            backend
+            if let Err(error) = backend
                 .waiting(
                     event["pane_id"]
                         .as_str()
@@ -171,9 +172,12 @@ async fn deliver(
                         .expect("queued waiting event has server_start"),
                     &message,
                 )
-                .await?;
+                .await
+            {
+                failure.get_or_insert(error);
+            }
         }
-        Ok(())
+        failure.map_or(Ok(()), Err)
     } else {
         backend.desktop(&message).await
     }

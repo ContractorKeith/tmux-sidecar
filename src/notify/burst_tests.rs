@@ -58,3 +58,41 @@ async fn queued_desktop_burst_flushes_on_timer_and_waiting_does_not_block_it() {
         ]
     );
 }
+
+#[tokio::test]
+async fn a_disappeared_waiting_pane_does_not_discard_other_recipients() {
+    struct Vanished(Arc<Mutex<Vec<String>>>);
+    impl worker::Backend for Vanished {
+        async fn desktop(&mut self, _: &str) -> io::Result<()> {
+            panic!("waiting only")
+        }
+        async fn waiting(&mut self, pane: &str, _: u64, _: &str) -> io::Result<()> {
+            self.0.lock().unwrap().push(pane.into());
+            if pane == "%1" {
+                Err(io::Error::other("pane no longer exists"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let (send, receive) = broadcast::channel(4);
+    send.send(event("r1", "waiting", "claude", "/work/proj", "%1"))
+        .unwrap();
+    send.send(event("r2", "waiting", "grok", "/work/api", "%2"))
+        .unwrap();
+    drop(send);
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        worker::run(
+            Vanished(calls.clone()),
+            root.path().into(),
+            Config::default(),
+            receive,
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(*calls.lock().unwrap(), ["%1", "%2"]);
+}
