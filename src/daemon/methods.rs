@@ -24,7 +24,7 @@ pub fn prepare(request: &Request) -> Prepared {
 }
 pub fn handle(request: Request, store: &Store, key: &str, poll_ms: u64) -> Response {
     let prepared = prepare(&request);
-    handle_prepared(request, store, key, poll_ms, prepared)
+    handle_prepared(request, store, key, poll_ms, prepared, 0)
 }
 pub fn handle_prepared(
     request: Request,
@@ -32,6 +32,7 @@ pub fn handle_prepared(
     key: &str,
     poll_ms: u64,
     prepared: Prepared,
+    server_start: u64,
 ) -> Response {
     let id = Some(request.id.clone());
     let result = match request.method.as_str() {
@@ -47,9 +48,12 @@ pub fn handle_prepared(
         "daemon.stop" => Ok(json!({"stopping":true,"pid":std::process::id()})),
         "list" => list(&request, store),
         "attention" | "history" | "ack" | "name" | "group.add" | "group.rm" | "group.ls"
-        | "subscribe" => {
-            super::state_methods::handle(&request.method, request.params.clone(), store)
-        }
+        | "subscribe" => super::state_methods::handle(
+            &request.method,
+            request.params.clone(),
+            store,
+            server_start,
+        ),
         "signal" => match prepared.expect("signal prepared before dispatch") {
             Err(e) => Err((rpc::INVALID_PARAMS, e)),
             Ok(signal) => store
@@ -59,8 +63,7 @@ pub fn handle_prepared(
         },
         method => {
             let milestone = match method {
-                "attention" | "group.add" | "group.rm" | "group.ls" | "subscribe" => "M3",
-                "history" | "wait" | "send" | "ack" | "name" => "M4",
+                "wait" | "send" => "M4",
                 _ => return failure(id, rpc::METHOD_NOT_FOUND, "unknown method"),
             };
             return failure(
@@ -104,34 +107,14 @@ pub(super) fn filters(request: &Request) -> Result<Filters, (i32, String)> {
 }
 fn list(request: &Request, store: &Store) -> Result<Value, (i32, String)> {
     let filters = filters(request)?;
-    let runs = store
-        .query_runs(
-            filters.all,
-            filters.state,
-            if filters.group.is_some() {
-                u32::MAX
-            } else {
-                filters.limit
-            },
-        )
-        .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))?;
-    let runs = if let Some(group) = filters.group {
-        let mut selected = Vec::new();
-        for run in runs {
-            if store
-                .group_contains(&group, &run)
-                .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))?
-            {
-                selected.push(run);
-            }
-        }
-        if filters.all {
-            selected.truncate(filters.limit as usize);
-        }
-        selected
-    } else {
-        runs
-    };
+    let group = super::labels::Group::parse(filters.group.as_deref())?;
+    let runs = super::list::stored(
+        store,
+        &filters,
+        group.as_ref(),
+        None,
+        filters.all.then_some(filters.limit),
+    )?;
     serde_json::to_value(runs).map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))
 }
 

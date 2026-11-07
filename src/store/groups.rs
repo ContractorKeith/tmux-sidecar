@@ -6,8 +6,10 @@ impl Store {
             .connection
             .unchecked_transaction()
             .map_err(io::Error::other)?;
-        tx.execute("INSERT OR IGNORE INTO groups(name) VALUES (?1)", [name])
-            .map_err(io::Error::other)?;
+        if add {
+            tx.execute("INSERT OR IGNORE INTO groups(name) VALUES (?1)", [name])
+                .map_err(io::Error::other)?;
+        }
         for run in runs {
             self.pane(run.server_start, &run.pane_id)?;
             let sql = if add {

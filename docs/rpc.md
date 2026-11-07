@@ -36,7 +36,10 @@ Lists active runs by default, newest id first. Optional `all: true` also include
 ended history, capped by `limit` (default 100, unsigned 32-bit count). The limit
 applies after filtering; active-only results are not capped. Optional `state` filters
 by working, waiting, blocked, idle, error or done.
-Optional `group` matches a manual group name or the absolute project root. Project roots
+Optional `group` selects one namespace: `manual:NAME` or `project:/absolute/root`.
+A bare name means manual; a bare absolute path means project. A manual name that
+looks like a path remains accessible with `manual:`; the two namespaces never union.
+Project roots
 are resolved afresh using session-board's git-root rules, outside the SQLite worker and
 RPC task; `project_root` in each list result contains the resolved path. Group filtering
 precedes the history limit. Unknown params and
@@ -71,7 +74,7 @@ the database file is fatal immediately and logged with its path.
 ## attention
 
 Accepts omitted, null or empty object params. Returns an array of active unread runs
-in blocked, error, waiting order, then `state_since` ascending (id breaks ties).
+in blocked, error, waiting order, then `state_since` ascending (numeric rowid breaks ties).
 A read mark at or after `state_since` removes the run. Each state change clears `read_at`.
 Polling marks focused panes read only when pane_active, window_active and session_attached
 are all true; detached sessions and hidden windows stay unread.
@@ -97,25 +100,29 @@ Reserved for M4; returns -32601, "not implemented yet (M4)".
 ## ack
 
 Params: `{"selectors":["r1","%2"]}` (or `{"sel":"r1"}`). All selectors are resolved
-before mutation. Sets `read_at` to daemon time; returns `{}`. Missing runs return -32005.
+before mutation. Sets `read_at` to daemon time; returns `{}`. Pane selectors use the
+daemon-cached current tmux server start, even when newer stale
+run records exist. Missing runs return -32005.
 An empty selector list or malformed selector returns -32602.
 
 ## name
 
 Params: `{"sel":"r1","name":"build"}`. Omitted or null `name` clears the pane name.
-Returns `{}`; names attach to pane keys and survive agent restarts. Missing runs return -32005.
+Names contain 1–64 Unicode characters and no control characters; invalid values return
+-32602. Returns `{}`; names attach to pane keys and survive agent restarts. Missing runs return -32005.
 
 ## group.add
 
 Params: `{"group":"review","selectors":["r1","%2"]}` (single `sel` also accepted).
-Creates the manual group if necessary and adds pane keys idempotently; returns `{}`.
+Manual names contain 1–64 Unicode characters and no control characters. Creates the
+manual group if necessary and adds pane keys idempotently; returns `{}`.
 All selectors are validated first. Membership survives agent restarts in the same pane,
 and does not transfer across tmux server restarts. Missing runs return -32005.
 
 ## group.rm
 
 Same params as `group.add`. Removes matching pane keys idempotently; returns `{}`.
-Empty groups remain listed.
+Empty existing groups remain listed; removing an absent group does not create one.
 
 ## group.ls
 
@@ -162,12 +169,18 @@ Unknown runs are created immediately with an initial waiting state. Session id
 and transcript metadata attach to existing runs, including ended runs. Each signal applies
 the exact per-agent event/detail state table. The receipt, signal,
 run state and any `state_changed` history row commit in one transaction. Unknown events
-retain state but establish hook precedence. Signals older than `state_since` retain
-history and metadata without changing state, except the first hook for a run. Spool
+retain state but establish hook precedence. Signals older than the newest stored hook
+timestamp for the run retain
+history and metadata without changing state. Same-state hooks advance that high-water
+mark without changing `state_since` or read marks. The first hook is always eligible. Spool
 batches are sorted by capture time. Process exit always wins over hooks and transcripts.
-Once a hook has arrived, transcripts only fill metadata; transcript-only runs follow
-session-board source derivation, scanned at most every two seconds per run on blocking
-tasks. Read waiting runs become idle after config `idle_after_secs` (default 1800). Re-reading
+Once a hook has arrived, transcript scanning stops for that run; subsequent metadata
+comes from hook payloads. Transcript-only runs follow session-board source derivation.
+A separate task scans at most every two seconds and drops ticks while a scan is busy;
+slow transcript work never delays pane/process polling. The v0.1.0 readers apply age
+filters after parsing; pre-parse file filtering is deferred to
+[session-board#130](https://github.com/ContractorKeith/session-board/issues/130).
+Read waiting runs become idle after config `idle_after_secs` (default 1800). Re-reading
 the same completed transcript turn does not undo clock-derived idle. Requests may use an
 id and receive `{}` after storage;
 invalid params return -32602. Notifications receive no response.

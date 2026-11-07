@@ -15,7 +15,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
                     event,
                     detail,
                     at: 101,
-                    first: false
+                    last_signal_at: Some(current.state_since)
                 },
                 101
             ),
@@ -29,7 +29,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
                 event: "PreToolUse",
                 detail: None,
                 at: 99,
-                first: false
+                last_signal_at: Some(current.state_since)
             },
             101
         ),
@@ -42,7 +42,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
                 event: "PreToolUse",
                 detail: None,
                 at: 99,
-                first: true
+                last_signal_at: None
             },
             101
         ),
@@ -55,7 +55,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
                 event: "Stop",
                 detail: None,
                 at: 101,
-                first: false
+                last_signal_at: Some(current.state_since)
             },
             101
         ),
@@ -107,7 +107,7 @@ fn precedence_unknown_exact_matching_reordering_duplicates_and_idle() {
                 event: "PreToolUse",
                 detail: None,
                 at: 201,
-                first: false
+                last_signal_at: Some(current.state_since)
             },
             201
         ),

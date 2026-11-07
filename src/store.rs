@@ -8,6 +8,7 @@ use std::{
 };
 
 mod groups;
+mod lists;
 mod queries;
 mod row;
 mod signals;
@@ -73,7 +74,8 @@ impl Store {
         }
         tx.execute_batch(
             "CREATE INDEX IF NOT EXISTS signals_changes ON signals(event,id);
-            CREATE INDEX IF NOT EXISTS signals_run ON signals(run_id,source);",
+            CREATE INDEX IF NOT EXISTS signals_run ON signals(run_id,source);
+            CREATE INDEX IF NOT EXISTS hook_time ON signals(run_id,at DESC) WHERE source GLOB 'hook:*';",
         )?;
         tx.commit()?;
         let meta = std::fs::metadata(path)
@@ -126,23 +128,7 @@ impl Store {
         state: Option<crate::model::AgentState>,
         limit: u32,
     ) -> io::Result<Vec<AgentRun>> {
-        (|| -> rusqlite::Result<_> {
-            self.connection
-                .prepare(
-                    "SELECT * FROM runs WHERE (?1 OR ended_at IS NULL)
-                AND (?2 IS NULL OR state=?2) ORDER BY id DESC LIMIT ?3",
-                )?
-                .query_map(
-                    params![
-                        all,
-                        state.as_ref().map(enum_name),
-                        if all { i64::from(limit) } else { -1 }
-                    ],
-                    row,
-                )?
-                .collect()
-        })()
-        .map_err(|e| db_error(&self.path, e))
+        self.list_page(all, state, all.then_some(limit), None, None)
     }
 }
 

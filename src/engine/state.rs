@@ -8,7 +8,7 @@ pub enum Evidence<'a> {
         event: &'a str,
         detail: Option<&'a str>,
         at: u64,
-        first: bool,
+        last_signal_at: Option<u64>,
     },
     Transcript {
         state: AgentState,
@@ -29,8 +29,8 @@ pub fn transition(run: &AgentRun, evidence: Evidence<'_>, now: u64) -> (AgentSta
                 event,
                 detail,
                 at,
-                first,
-            } if first || at >= run.state_since => {
+                last_signal_at,
+            } if last_signal_at.is_none_or(|latest| at >= latest) => {
                 hook(run.agent, event, detail).unwrap_or(run.state)
             }
             Evidence::Transcript {
@@ -67,7 +67,7 @@ fn hook(agent: AgentKind, event: &str, detail: Option<&str>) -> Option<AgentStat
             Some(Working)
         }
         (Claude | Grok, "Notification", Some("permission_prompt"))
-        | (Claude | Codex, "PermissionRequest", _) => Some(Blocked),
+        | (Claude | Grok | Codex, "PermissionRequest", _) => Some(Blocked),
         (Claude | Grok, "Stop", _)
         | (Grok, "StopCancelled", _)
         | (Claude | Grok, "Notification", Some("idle_prompt"))

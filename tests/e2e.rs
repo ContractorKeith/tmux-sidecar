@@ -95,9 +95,15 @@ mod shutdown;
 
 #[path = "support/focus.rs"]
 mod focus;
+#[path = "support/ordering.rs"]
+mod ordering;
+#[path = "support/selector_groups.rs"]
+mod selector_groups;
 #[path = "support/spool_load.rs"]
 mod spool_load;
 #[path = "support/state.rs"]
 mod state;
 #[path = "support/transcript.rs"]
 mod transcript;
+#[path = "support/transcript_poll.rs"]
+mod transcript_poll;

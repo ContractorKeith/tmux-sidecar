@@ -102,9 +102,10 @@ e2e_test!(parallel_stop_start_twenty_cycles, true, {
     }
     // Twenty independent servers churn concurrently; each gets three complete cycles.
     let (send, receive) = std::sync::mpsc::channel();
+    let mut workers = Vec::new();
     for _ in 0..20 {
         let send = send.clone();
-        std::thread::spawn(move || {
+        workers.push(std::thread::spawn(move || {
             let outcome = std::panic::catch_unwind(|| {
                 let guard = TmuxGuard::start();
                 for _ in 0..3 {
@@ -113,14 +114,9 @@ e2e_test!(parallel_stop_start_twenty_cycles, true, {
                 }
             });
             let _ = send.send(outcome);
-        });
+        }));
     }
     drop(send);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(50);
-    for _ in 0..20 {
-        receive
-            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
-            .unwrap()
-            .unwrap_or_else(|e| std::panic::resume_unwind(e));
-    }
+    crate::support::workers::finish(workers, receive, deadline);
 });

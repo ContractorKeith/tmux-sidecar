@@ -47,6 +47,7 @@ fn every_plan_hook_row_from_real_and_synthesized_fixtures() {
             ],
             Grok => vec![
                 ("UserPromptSubmit", Working),
+                ("PermissionRequest", Blocked),
                 ("PreToolUse", Working),
                 ("PostToolUse", Working),
                 ("Notification-permission_prompt", Blocked),
@@ -91,7 +92,7 @@ fn every_plan_hook_row_from_real_and_synthesized_fixtures() {
                     event: &parsed.event,
                     detail: parsed.detail.as_deref(),
                     at: 101,
-                    first: false,
+                    last_signal_at: Some(current.state_since),
                 },
                 101,
             );

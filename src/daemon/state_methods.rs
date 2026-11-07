@@ -15,7 +15,7 @@ struct Params {
     name: Option<String>,
     limit: Option<u32>,
 }
-pub fn handle(method: &str, params: Option<Value>, store: &Store) -> Result {
+pub fn handle(method: &str, params: Option<Value>, store: &Store, server_start: u64) -> Result {
     let allowed: &[&str] = match method {
         "attention" | "subscribe" | "group.ls" => &[],
         "history" => &["sel", "limit"],
@@ -38,9 +38,8 @@ pub fn handle(method: &str, params: Option<Value>, store: &Store) -> Result {
         let selector = sel
             .parse()
             .map_err(|e: &str| (rpc::INVALID_PARAMS, e.into()))?;
-        let start = active.last().map(|r| r.server_start).unwrap_or(0);
         store
-            .get(selector, start)
+            .get(selector, server_start)
             .map_err(internal)?
             .ok_or((rpc::NOT_FOUND, format!("run {sel} not found")))
     };
@@ -65,7 +64,7 @@ pub fn handle(method: &str, params: Option<Value>, store: &Store) -> Result {
                         _ => 2,
                     },
                     r.state_since,
-                    r.id.clone(),
+                    r.id[1..].parse::<u64>().expect("stored numeric run id"),
                 )
             });
             Ok(json!(runs))
@@ -84,6 +83,9 @@ pub fn handle(method: &str, params: Option<Value>, store: &Store) -> Result {
                     .history(&run, params.limit.unwrap_or(100))
                     .map_err(internal)
             } else {
+                if let Some(name) = params.name.as_deref() {
+                    super::labels::validate(name)?;
+                }
                 store
                     .name_pane(run.server_start, &run.pane_id, params.name.as_deref())
                     .map_err(internal)?;
@@ -109,6 +111,7 @@ pub fn handle(method: &str, params: Option<Value>, store: &Store) -> Result {
                     .group
                     .filter(|s| !s.is_empty())
                     .ok_or((rpc::INVALID_PARAMS, "group is required".into()))?;
+                super::labels::validate(&group)?;
                 store
                     .group_edit(&group, &runs, method == "group.add")
                     .map_err(internal)?;

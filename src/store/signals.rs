@@ -57,8 +57,8 @@ impl Store {
             tx.execute("UPDATE runs SET agent_session_id=COALESCE(?1,agent_session_id), transcript_path=COALESCE(?2,transcript_path) WHERE id=?3",
                 params![signal.agent_session_id,signal.transcript_path,id])?;
             let run = tx.query_row("SELECT * FROM runs WHERE id=?1", [id], row)?;
-            let first = !self
-                .has_hooks(&run.id)
+            let last_signal_at = self
+                .latest_hook_at(&run.id)
                 .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
             tx.execute(
                 "INSERT INTO signals(run_id,at,source,event,payload_json,detail) VALUES (?1,?2,?3,?4,?5,?6)",
@@ -71,7 +71,7 @@ impl Store {
                     event: &signal.event,
                     detail: signal.detail.as_deref(),
                     at: signal.at,
-                    first,
+                    last_signal_at,
                 },
                 signal.at,
             );

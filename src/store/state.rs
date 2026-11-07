@@ -5,14 +5,18 @@ use crate::{
 };
 use serde_json::{Value, json};
 impl Store {
-    pub fn has_hooks(&self, id: &str) -> io::Result<bool> {
+    pub fn latest_hook_at(&self, id: &str) -> io::Result<Option<u64>> {
         self.connection
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM signals WHERE run_id=?1 AND source LIKE 'hook:%')",
+                "SELECT at FROM signals WHERE run_id=?1 AND source GLOB 'hook:*' ORDER BY at DESC LIMIT 1",
                 [run_id(id).map_err(io::Error::other)?],
-                |r| r.get(0),
+                |r|row::unsigned(r,0),
             )
+            .optional()
             .map_err(io::Error::other)
+    }
+    pub fn has_hooks(&self, id: &str) -> io::Result<bool> {
+        Ok(self.latest_hook_at(id)?.is_some())
     }
     /// Caller owns the transaction, so history and run state become visible together.
     pub(super) fn change(
@@ -50,20 +54,18 @@ impl Store {
             .connection
             .unchecked_transaction()
             .map_err(io::Error::other)?;
-        for run in self.active()? {
+        for mut run in self.active()? {
             if panes.iter().any(|p| {
-                p.server_start == run.server_start
+                run.read_at.is_none_or(|at| at < run.state_since)
+                    && p.server_start == run.server_start
                     && p.pane_id == run.pane_id
                     && p.pane_active
                     && p.window_active
                     && p.session_attached
             }) {
                 self.ack(&run, now)?;
+                run.read_at = Some(now);
             }
-            let mut run = run;
-            run.read_at = self
-                .get(run.id.parse().map_err(io::Error::other)?, run.server_start)?
-                .and_then(|r| r.read_at);
             let (state, _) = transition(&run, Evidence::Tick { idle_after_ms }, now);
             self.change(&run, state, now, "clock", None)
                 .map_err(io::Error::other)?;
@@ -80,6 +82,9 @@ impl Store {
             .connection
             .unchecked_transaction()
             .map_err(io::Error::other)?;
+        if self.has_hooks(id)? {
+            return Ok(());
+        }
         if let Some(run) = self.get(id.parse().map_err(io::Error::other)?, 0)? {
             use session_board::model::Status;
             let state = match reading.status {

@@ -4,6 +4,7 @@ pub mod load;
 mod process;
 pub mod socket;
 pub mod watchdog;
+pub mod workers;
 pub use process::{BoundedCommand, ChildGuard, output, stage, wait_for};
 use std::{
     ffi::OsString,

@@ -189,7 +189,7 @@ meta(schema_version)
 | Signal | → state |
 |---|---|
 | Claude/Grok `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
-| Claude/Grok `Notification` `permission_prompt`, Claude `PermissionRequest` | blocked |
+| Claude/Grok `Notification` `permission_prompt`, Claude/Grok `PermissionRequest` | blocked |
 | Claude/Grok `Stop`, `Notification` `idle_prompt` | waiting |
 | Grok `StopCancelled` | waiting |
 | Claude/Grok `StopFailure` | error |
