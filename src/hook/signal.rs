@@ -7,6 +7,10 @@ use std::io;
 #[serde(deny_unknown_fields)]
 pub struct Signal {
     pub server_start: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_key: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub pane_verified: bool,
     pub pane_id: String,
     pub agent: AgentKind,
     pub agent_pid: u32,

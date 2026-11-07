@@ -26,6 +26,8 @@ fn result(store: &Store, method: &str, params: Value) -> Value {
 fn seed(store: &Store, pid: u32) {
     store
         .signal(&Signal {
+            server_key: None,
+            pane_verified: true,
             server_start: 1,
             pane_id: format!("%{pid}"),
             agent: tmux_sidecar::model::AgentKind::Claude,

@@ -2,6 +2,8 @@ use serde_json::{Value, json};
 use tmux_sidecar::{daemon, hook::signal::Signal, model::AgentKind, rpc, store::Store};
 fn signal(pid: u32, event: &str, at: u64) -> Signal {
     Signal {
+        server_key: None,
+        pane_verified: true,
         server_start: 1,
         pane_id: format!("%{pid}"),
         agent: AgentKind::Claude,

@@ -1,8 +1,8 @@
 use super::{TmuxGuard, enabled};
 use serde_json::{Value, json};
 use std::{fs, path::Path};
-fn frame(run: &Value, nonce: u32) -> Value {
-    json!({"jsonrpc":"2.0","method":"signal","params":{"server_start":run["server_start"],"pane_id":run["pane_id"],"agent":run["agent"],"agent_pid":run["agent_pid"],"at":1000,"nonce":format!("{nonce:032x}"),"source":"hook:claude","event":"Stop","detail":"end_turn","agent_session_id":null,"cwd":"/fixture","transcript_path":null,"payload":{"hook_event_name":"Stop"}}})
+fn frame(guard: &TmuxGuard, run: &Value, nonce: u32) -> Value {
+    json!({"jsonrpc":"2.0","method":"signal","params":{"server_key":tmux_sidecar::paths::server_key(&guard.socket()).unwrap(),"server_start":run["server_start"],"pane_id":run["pane_id"],"agent":run["agent"],"agent_pid":run["agent_pid"],"at":1000,"nonce":format!("{nonce:032x}"),"source":"hook:claude","event":"Stop","detail":"end_turn","agent_session_id":null,"cwd":"/fixture","transcript_path":null,"payload":{"hook_event_name":"Stop"}}})
 }
 fn history(guard: &TmuxGuard) -> Vec<Value> {
     tmux_sidecar::store::Store::open(&guard.scratch.path().join("state/tmux-sidecar.db"))
@@ -19,8 +19,8 @@ e2e_test!(
         let guard = TmuxGuard::start();
         let runs = super::lifecycle::list(&guard);
         super::lifecycle::stop(&guard);
-        let first = frame(&runs[0], 1);
-        let second = frame(&runs[0], 2);
+        let first = frame(&guard, &runs[0], 1);
+        let second = frame(&guard, &runs[0], 2);
         let bytes = format!("{{\"half-written\":\n{first}\nnot json\n{first}\n{second}\n{{\"tail");
         fs::write(guard.scratch.path().join("state/spool.ndjson"), bytes).unwrap();
         assert_eq!(super::lifecycle::list(&guard).as_array().unwrap().len(), 1);
@@ -155,7 +155,7 @@ e2e_test!(
         // A failed rejected-file write in an old claim must not starve a new claim.
         fs::write(
             guard.scratch.path().join("state/spool.ndjson"),
-            format!("{}\n", frame(&runs[0], 999)),
+            format!("{}\n", frame(&guard, &runs[0], 999)),
         )
         .unwrap();
         until!(

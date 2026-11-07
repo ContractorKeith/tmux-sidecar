@@ -32,6 +32,16 @@ impl Store {
         let mut runs: Vec<_> = self
             .active()?
             .into_iter()
+            .map(|r| {
+                let notify_only = r.agent == crate::model::AgentKind::Codex
+                    && self.has_hooks(&r.id)?
+                    && !self.has_guard_hooks(&r.id)?;
+                self.has_state_evidence(&r.id)
+                    .map(|has| (r, has && !notify_only))
+            })
+            .collect::<io::Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|(r, has)| has.then_some(r))
             .filter(|r| {
                 matches!(
                     r.state,

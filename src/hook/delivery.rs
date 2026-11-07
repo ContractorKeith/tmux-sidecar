@@ -33,18 +33,6 @@ async fn deliver(
 pub async fn run(args: Vec<String>) -> io::Result<()> {
     let started = Instant::now();
     let format = args.first().map(String::as_str).unwrap_or("");
-    // Drain piped input for every format, even on no-op paths. Notify may inherit a tty.
-    use std::io::IsTerminal;
-    let drained = if std::io::stdin().is_terminal() {
-        Ok(Vec::new())
-    } else {
-        input::read(&mut std::io::stdin())
-    };
-    let raw = if format == "codex-notify" {
-        drained.map(|_| args.get(1).cloned().unwrap_or_default().into_bytes())
-    } else {
-        drained
-    };
     if !matches!(
         format,
         "claude" | "codex" | "codex-notify" | "grok" | "opencode"
@@ -54,6 +42,11 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
     }
     let Some(tmux) = std::env::var_os("TMUX") else {
         return Ok(());
+    };
+    let raw = if format == "codex-notify" {
+        Ok(args.get(1).cloned().unwrap_or_default().into_bytes())
+    } else {
+        input::read_stdin(started + Duration::from_millis(60))
     };
     let Some(pane) = std::env::var("TMUX_PANE").ok().filter(|p| !p.is_empty()) else {
         return Ok(());
@@ -94,6 +87,8 @@ async fn record(
     let payload: serde_json::Value = serde_json::from_slice(raw)?;
     let parsed = signal::parse(format, &payload)?;
     let mut signal = Signal {
+        server_key: Some(paths::server_key(socket)?),
+        pane_verified: false,
         server_start: context::read(&paths.runtime, socket).unwrap_or(0),
         pane_id: pane,
         agent,

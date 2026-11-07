@@ -11,7 +11,13 @@ its socket path in `<state>/daemon.socket`; clients with another runtime directo
 use that socket and verify `hello.server_key` before requests. Spawned daemons inherit
 the absolute tmux binary resolved by the client. `TMUX_SIDECAR_TMUX` takes priority
 when executable; a missing/non-executable pin falls back to PATH with one warning.
-A failed tmux poll re-resolves PATH, retaining the pin only as a last resort.
+A failed tmux poll re-resolves PATH, retaining the pin only as a last resort;
+a successful scan resets that retry and restores preference for the pin.
+Spawned daemons whitelist HOME, PATH, LANG/LC_*, TMPDIR, XDG_*, TMUX_SIDECAR_*,
+CLAUDE_CONFIG_DIR, CODEX_HOME, GROK_HOME and OPENCODE_DB from the spawning client.
+Agent context such as CLAUDECODE and TMUX_PANE is excluded; inherited fd ≥3 close on exec.
+Config bounds are poll_ms 50–60000, idle_after_secs/send_confirm_secs 0–86400,
+and notify.debounce_secs 0–3600; invalid values name the key and file.
 Hooks still trigger detached startup when local resolution fails; that daemon
 reports the missing-tmux diagnostic and retries its polls.
 At most 256 connections are served concurrently; extras receive -32600 with id null
@@ -77,6 +83,9 @@ unreachable daemon gives exit 6.
 
 ## daemon.stop
 
+The CLI waits for the responding daemon and that connection's endpoint to disappear.
+An absent daemon is a successful no-op and prints "daemon not running".
+
 Request: `{"jsonrpc":"2.0","id":4,"method":"daemon.stop"}`
 
 Response: `{"jsonrpc":"2.0","id":4,"result":{"stopping":true,"pid":123}}`
@@ -139,10 +148,14 @@ never generates desktop or tmux notifications.
 Process-only runs (including clock-derived idle) refuse unforced sends with -32003:
 "no hook evidence yet; install hooks (tmux-sidecar hooks install) or use --force".
 Hook or transcript evidence is required to establish readiness; MCP `send_prompt`
-uses the same guard.
+uses the same guard. Codex notify alone never satisfies it: -32003,
+"Codex notify can't see approval prompts; install Codex inline hooks (tmux-sidecar hooks install --agent codex) or use --force".
+Process-only and notify-only runs are excluded from attention and remain in list.
 The daemon requires a live run in waiting or idle at paste time, else -32003 with the
 current state. `force` skips the evidence and state guards; ended or missing runs return
--32005. Empty or NUL text returns -32602; terminal failures before paste return -32603.
+-32005. Empty text or any C0 control other than newline/tab (including ESC, NUL and CR)
+returns -32602, even with force. CLI validation returns exit 2; MCP validates the same text.
+Terminal failures before paste return -32603.
 A per-run lock covers guard, paste and optimistic commit. Hook, transcript and
 poll state mutations acquire current send locks in stable order before committing.
 SQLite and read RPCs remain available during terminal work. Sends to distinct runs
@@ -212,13 +225,15 @@ Hooks append a durable frame first, call `hello` and verify `server_key`, then
 attempt live delivery of the same invocation:
 
 ```json
-{"jsonrpc":"2.0","method":"signal","params":{"server_start":1793800000,"pane_id":"%0","agent":"grok","agent_pid":1234,"at":1793800000000,"nonce":"8f221dfd42762f2bef936db976722638c","source":"hook:claude","event":"Notification","detail":"permission_prompt","agent_session_id":"fake-session","cwd":"/work","transcript_path":null,"payload":{"hook_event_name":"Notification","notification_type":"permission_prompt"}}}
+{"jsonrpc":"2.0","method":"signal","params":{"server_key":"012345abcdef","pane_verified":true,"server_start":1793800000,"pane_id":"%0","agent":"grok","agent_pid":1234,"at":1793800000000,"nonce":"8f221dfd42762f2bef936db976722638c","source":"hook:claude","event":"Notification","detail":"permission_prompt","agent_session_id":"fake-session","cwd":"/work","transcript_path":null,"payload":{"hook_event_name":"Notification","notification_type":"permission_prompt"}}}
 ```
 
 `agent` and `agent_pid` identify the outermost agent ancestor within the pane's
 process tree, independent of the payload parser named by `source` (`hook:claude`, `hook:codex`,
 `hook:codex-notify`, `hook:grok`, `hook:opencode`). Linux ancestry reads `/proc`
-directly; macOS reads ppid and comm per pid with `proc_pidinfo`. Neither hook ancestor
+directly; macOS reads ppid and comm per pid with `proc_pidinfo`. Agent identity also checks
+argv[0] and executable basenames (KERN_PROCARGS2 on macOS), so symlink targets need not
+have the agent's name. Matches are exact. Neither hook ancestor
 walk spawns a process. Pane-root pids are cached by polling; a missing or stale
 cache uses a bounded tmux query. If ancestry does not reach that pane (including
 a deleted pane), hooks set the out-of-band `orphaned` field and log the reason.
@@ -226,14 +241,22 @@ The daemon first matches the agent session id, then an identified `parent_agent_
 then the single same-agent, same-cwd active run without a session id. Ambiguous or
 missing owners are dropped and logged; no run is created on the stale pane.
 A failed pane-pid lookup is unknown and preserves normal pane/pid delivery; a direct
-agent child of init still proves orphaning. Routing fields are not stored in payload.
+agent child of init still proves orphaning. `pane_verified` defaults false and is true only
+when ancestry reaches the pane. Only verified hooks can set done; outside-pane hooks can
+still update other states through orphan routing. Routing fields are not stored in payload.
+Spooled frames must carry the matching `server_key`; missing/mismatched keys are rejected
+and logged in hook.log before resolving server_start 0. Legacy frames without a key are
+quarantined rather than attributed to an unknown server.
 `server_start` is tmux's start
 time in seconds; `at` is capture time in Unix milliseconds. `event` is the hook
 event name; optional `detail` holds notification type, tool matcher, reason or
 status type. Both are stored separately. Hook-derived done rejects later hooks
 from the same agent session; a different
 session id or UserPromptSubmit can reopen it. Claude SessionEnd clear/logout is
-waiting; other SessionEnd reasons are done. Process exit sets ended_at and is final.
+waiting; other verified in-pane SessionEnd reasons are done. Process exit sets ended_at and is final.
+Unhooked transcript Done means waiting while alive; transcript-derived done can resume.
+Blocked hooked Claude runs are scanned for newer waiting/idle evidence after interruption;
+that evidence clears the block to waiting. Other hooked states remain authoritative.
 For Codex, only inline hooks establish native session identity; notify never does.
 OpenCode V2 execution.started maps to
 session.status/busy, execution.succeeded/interrupted to session.idle, and

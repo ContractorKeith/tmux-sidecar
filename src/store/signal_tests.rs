@@ -4,6 +4,8 @@ fn unknown_run_metadata_dedupe_and_late_replay_preserve_state() {
     let root = tempfile::tempdir().unwrap();
     let store = Store::open(&root.path().join("db")).unwrap();
     let mut signal = Signal {
+        server_key: None,
+        pane_verified: true,
         server_start: 42,
         pane_id: "%0".into(),
         agent: crate::model::AgentKind::Grok,
@@ -54,6 +56,8 @@ mod migration_tests {
         let db = root.path().join("db");
         let store = Store::open(&db).unwrap();
         let signal = Signal {
+            server_key: None,
+            pane_verified: true,
             server_start: 1,
             pane_id: "%0".into(),
             agent: crate::model::AgentKind::Claude,

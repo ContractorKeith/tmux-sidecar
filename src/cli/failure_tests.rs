@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Duration;
 #[test]
 fn connected_send_and_wait_failures_are_errors_not_unreachable() {
     for kind in [

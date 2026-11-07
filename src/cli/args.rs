@@ -90,10 +90,14 @@ pub enum Command {
     },
     /// Receive an agent hook payload.
     Hook {
-        #[arg(help = "Payload format: claude, codex, codex-notify, grok, opencode")]
+        #[arg(
+            default_value = "unknown",
+            allow_hyphen_values = true,
+            help = "Payload format: claude, codex, codex-notify, grok, opencode"
+        )]
         agent: String,
-        #[arg(allow_hyphen_values = true)]
-        payload: Option<String>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        payload: Vec<String>,
     },
     /// Manage the per-tmux-server daemon.
     Daemon {

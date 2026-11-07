@@ -48,7 +48,7 @@ pub fn transition(run: &AgentRun, evidence: Evidence<'_>, now: u64) -> (AgentSta
                 at,
             } => {
                 // Re-reading the same completed turn must not undo clock-derived idle.
-                if run.state == Done {
+                if run.state == Done && run.state_source != "transcript" {
                     Done
                 } else if run.state == Idle
                     && run.state_source == "clock"

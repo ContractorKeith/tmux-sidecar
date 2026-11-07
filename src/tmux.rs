@@ -79,7 +79,9 @@ impl Tmux for RealTmux {
                 String::from_utf8_lossy(&output.stderr).into_owned(),
             ));
         }
-        parse_scan(&output.stdout)
+        let scan = parse_scan(&output.stdout)?;
+        binary::scan_succeeded();
+        Ok(scan)
     }
     fn paste_text(&self, pane: &str, text: &str) -> io::Result<()> {
         paste::paste(self, pane, text)

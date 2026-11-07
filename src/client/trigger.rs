@@ -1,7 +1,6 @@
 use crate::{client::FileLock, paths::Paths};
 use std::{
     io,
-    os::unix::process::CommandExt,
     path::Path,
     process::{Command, Stdio},
 };
@@ -10,6 +9,7 @@ pub fn trigger_spawn(socket: &Path, paths: &Paths) -> io::Result<()> {
     let _lock = FileLock::try_acquire(&paths.state.join("spawn.lock"))?;
     let log = crate::daemon::log::open(&paths.state)?;
     let mut command = Command::new(std::env::current_exe()?);
+    super::super::launch::prepare(&mut command)?;
     command
         .arg("--tmux-socket")
         .arg(socket)
@@ -25,16 +25,6 @@ pub fn trigger_spawn(socket: &Path, paths: &Paths) -> io::Result<()> {
         Err(_) => {
             command.env_remove("TMUX_SIDECAR_TMUX");
         }
-    }
-    // SAFETY: setsid is async-signal-safe and receives no pointers.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() < 0 {
-                Err(io::Error::last_os_error())
-            } else {
-                Ok(())
-            }
-        });
     }
     let mut child = command.spawn()?;
     std::thread::spawn(move || {

@@ -51,6 +51,12 @@ async fn tick(
                 .iter()
                 .filter_map(|r| match store.has_hooks(&r.id) {
                     Ok(false) => Some(Ok(r.clone())),
+                    Ok(true)
+                        if r.agent == crate::model::AgentKind::Claude
+                            && r.state == crate::model::AgentState::Blocked =>
+                    {
+                        Some(Ok(r.clone()))
+                    }
                     Ok(true) => None,
                     Err(e) => Some(Err(e)),
                 })

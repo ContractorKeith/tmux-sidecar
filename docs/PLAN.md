@@ -193,7 +193,7 @@ meta(schema_version)
 | Claude/Grok `Stop`, `Notification` `idle_prompt` | waiting |
 | Grok `StopCancelled` | waiting |
 | Claude/Grok `StopFailure` | error |
-| Claude/Grok/Codex `SessionEnd` | done; Claude clear/logout → waiting |
+| Claude/Grok/Codex in-pane `SessionEnd` | done; Claude clear/logout → waiting |
 | Codex `notify` `agent-turn-complete`; Codex `Interrupt` | waiting |
 | Codex `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
 | Codex `PermissionRequest` | blocked |
@@ -205,13 +205,19 @@ meta(schema_version)
 | agent pid gone from the pane | done |
 | waiting for longer than `idle_after` (default 30 min) and read | idle |
 
-Precedence: once a run has received any hook signal, transcripts never set its state (they
-still fill `last_assistant_text` and `transcript_path`). A run with no hook signal takes its
-state from sboard's derivation, mapped one to one (sboard has no blocked). The OpenCode event
+Precedence: hooks own state, except a blocked Claude run can return to waiting from a
+newer sboard waiting/idle reading after interruption. Other hooked runs skip transcript scans
+and use hook metadata. Unhooked runs use sboard's derivation, with Done mapped to waiting
+while the process lives. Transcript-derived done can resume; process exit is final.
+Transcript assignment reserves known identities and paths, then gives a new transcript to
+the closest-started unbound run of the same agent and cwd. The OpenCode event
 names above were confirmed against the installed OpenCode 2.2.5 binary on 2026-11-04.
 
 **Attention queue.** Runs not ended, state in {blocked, error, waiting}, `read_at` null or
 older than `state_since`; ordered blocked, error, waiting, then `state_since` ascending.
+Process-only and Codex notify-only runs stay visible in list with their evidence source,
+but do not enter attention. Codex notify is turn-completion evidence only and never
+establishes safe readiness for send; inline hooks or explicit `--force` are required.
 Focusing the pane (the poll sees `#{pane_active}` in the active window of an attached client)
 or `ack` sets `read_at`. Any state change makes the item unread again.
 
@@ -241,6 +247,10 @@ tmux-sidecar mcp [--allow-send]
 Global flags: `--tmux-socket PATH` (else `$TMUX`, else tmux's default socket), `-q`.
 Config precedence: flag > env > config file > default. Config keys: `poll_ms` (1000),
 `idle_after_secs` (1800), `send_confirm_secs` (30), `notify.desktop` (true), `notify.debounce_secs` (10).
+Bounds: poll_ms 50–60000, idle_after_secs/send_confirm_secs 0–86400, debounce_secs 0–3600.
+Invalid values name the key and config file. Send refuses ESC and C0 controls other than
+newline/tab (exit 2), including forced sends. Daemon stop is idempotent and waits for
+cleanup of the endpoint it actually stopped.
 
 Exit codes: 0 ok · 1 error · 2 usage · 3 refused (send guard) · 4 timeout (wait) ·
 5 not found (selector) · 6 daemon unreachable after auto-spawn.
@@ -259,17 +269,24 @@ exists.
 **Auto-spawn.** A client that cannot connect takes an exclusive lock on
 `<runtime>/spawn.lock`, re-checks, starts `tmux-sidecar daemon run` detached (setsid, stdio to
 `<state>/daemon.log`), and waits up to 2 s for the socket. The hook command never waits: it
-spools, triggers a detached spawn, and exits.
+spools, triggers a detached spawn, and exits. Spawn closes inherited descriptors ≥3 on exec
+and whitelists HOME, PATH, LANG/LC_*, TMPDIR, XDG_*, TMUX_SIDECAR_*, CLAUDE_CONFIG_DIR,
+CODEX_HOME, GROK_HOME and OPENCODE_DB from that client; it excludes agent context such as
+CLAUDECODE and TMUX_PANE. A successful tmux scan restores preference for the pinned binary.
 
-**Hook delivery.** `hook` reads the payload (stdin; Codex `notify` passes JSON as the last
-argv), reads `$TMUX` and `$TMUX_PANE` (no `$TMUX` → exit 0, nothing recorded), walks its own
+**Hook delivery.** `hook` checks `$TMUX` before reading stdin (no `$TMUX` → exit 0).
+Stdin reads have a 60 ms deadline within the 200 ms budget; Codex notify uses argv only.
+It reads `$TMUX_PANE` and walks its own
 ancestor chain to the outermost `claude`, `codex`, `grok`, `opencode` or `opencode.exe`
 within the pane's process tree (the argument selects the payload format). Pane-root lookup
 failure is unknown rather than orphaned. Proven orphan hooks route only to an unambiguous
 session owner, parent client, or unidentified same-cwd run; other orphans are dropped and logged.
+Only verified in-pane ancestry can set hook-derived done. Agent identity matches comm,
+argv[0] basename or executable basename exactly, including symlinked agent installs.
 It attempts one O_APPEND frame write before live delivery, without appender locks; append
 failure still allows live delivery. Connect/write budget is 100 ms, total budget 200 ms.
-The daemon claims spool files for replay and deduplicates invocation nonces. Appenders check
+Frames carry the server key; replay rejects missing/mismatched keys to hook.log before
+resolving unknown server_start values. The daemon claims spool files for replay and deduplicates invocation nonces. Appenders check
 and retry inode changes across replay renames; replay recovers leftover claims before the live spool.
 
 **Hooks install.** Claude Code: entries in `~/.claude/settings.json` for Notification,

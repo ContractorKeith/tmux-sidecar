@@ -1,7 +1,7 @@
 use super::*;
 use crate::{client, daemon, paths};
 use serde_json::json;
-use std::{io, time::Duration};
+use std::io;
 pub(super) type Failure = (u8, String);
 pub(super) fn response_error(error: io::Error) -> Failure {
     if let Some(rpc) = error
@@ -158,27 +158,20 @@ async fn execute_inner(mut cli: Cli) -> Result<(), Failure> {
         } => ("daemon.stop", json!({}), false, false),
         _ => unreachable!(),
     };
+    if method == "daemon.stop" {
+        let stopped = client::stop(&socket, &paths)
+            .await
+            .map_err(response_error)?;
+        if !stopped && !cli.quiet {
+            use std::io::Write;
+            writeln!(io::stdout().lock(), "daemon not running").map_err(output_error)?;
+        }
+        return Ok(());
+    }
     let result = client::request(&socket, &paths, method, params, spawn)
         .await
         .map_err(response_error)?;
-    if method == "daemon.stop" {
-        let pid = result["pid"]
-            .as_i64()
-            .and_then(|pid| i32::try_from(pid).ok())
-            .filter(|pid| *pid > 0)
-            .ok_or_else(|| (6, "daemon.stop response did not identify its pid".into()))?;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while crate::proc::running(pid).map_err(unreachable)? || paths.runtime.join("sock").exists()
-        {
-            if tokio::time::Instant::now() >= deadline {
-                return Err((
-                    6,
-                    format!("waiting for daemon pid {pid} to exit and socket cleanup exceeded 5 s"),
-                ));
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    } else if !cli.quiet {
+    if !cli.quiet {
         super::output::print_read(&socket, &paths, method, &result, json_output)
             .await
             .map_err(output_error)?;

@@ -40,7 +40,7 @@ e2e_test!(poll_failure_re_resolves_a_still_executable_broken_pin, {
     fs::write(
         &pinned,
         format!(
-            "#!/bin/sh\n[ ! -e \"$HOME/break-pin\" ] || {{ echo no server running >&2; exit 1; }}\nexec '{}' \"$@\"\n",
+            "#!/bin/sh\n[ ! -e \"$HOME/break-pin\" ] || {{ echo no server running >&2; exit 1; }}\ntouch \"$HOME/pin-used\"\nexec '{}' \"$@\"\n",
             real.display()
         ),
     )
@@ -64,6 +64,9 @@ e2e_test!(poll_failure_re_resolves_a_still_executable_broken_pin, {
     );
     until!(|| list(&g)[0]["stale"] == false);
     assert_eq!(list(&g)[0]["id"], original);
+    fs::remove_file(g.scratch.path().join("home/pin-used")).unwrap();
+    fs::remove_file(g.scratch.path().join("home/break-pin")).unwrap();
+    until!(|| g.scratch.path().join("home/pin-used").exists());
 });
 
 e2e_test!(hook_fallback_probes_stay_silent, {
@@ -95,7 +98,7 @@ e2e_test!(hook_fallback_probes_stay_silent, {
     super::cli_verbs::fire(&g, &serde_json::to_value(&run).unwrap(), "Stop");
 });
 
-fn current_run(g: &TmuxGuard) -> tmux_sidecar::model::AgentRun {
+pub(super) fn current_run(g: &TmuxGuard) -> tmux_sidecar::model::AgentRun {
     use tmux_sidecar::seams::{ProcessTree, Tmux};
     let mut run = None;
     super::support::wait_for("respawned fake agent and valid pane metadata", || {

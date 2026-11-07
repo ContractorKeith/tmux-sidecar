@@ -18,9 +18,15 @@ impl Store {
     pub fn has_hooks(&self, id: &str) -> io::Result<bool> {
         Ok(self.latest_hook_at(id)?.is_some())
     }
+    pub fn has_guard_hooks(&self, id: &str) -> io::Result<bool> {
+        self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM signals WHERE run_id=?1 AND source GLOB 'hook:*' AND source!='hook:codex-notify')",
+            [run_id(id).map_err(io::Error::other)?], |r| r.get(0),
+        ).map_err(io::Error::other)
+    }
     pub fn has_state_evidence(&self, id: &str) -> io::Result<bool> {
         self.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM signals WHERE run_id=?1 AND (source GLOB 'hook:*' OR source='transcript'))",
+            "SELECT EXISTS(SELECT 1 FROM signals WHERE run_id=?1 AND ((source GLOB 'hook:*' AND source!='hook:codex-notify') OR source='transcript'))",
             [run_id(id).map_err(io::Error::other)?], |r| r.get(0),
         ).map_err(io::Error::other)
     }
@@ -34,6 +40,14 @@ impl Store {
         cause: Option<i64>,
     ) -> rusqlite::Result<()> {
         if state == run.state {
+            if run.state_source == "process"
+                && (source.starts_with("hook:") || source == "transcript")
+            {
+                self.connection.execute(
+                    "UPDATE runs SET state_source=?1 WHERE id=?2",
+                    params![source, run_id(&run.id)?],
+                )?;
+            }
             return Ok(());
         }
         self.connection.execute(
@@ -104,9 +118,6 @@ impl Store {
             .connection
             .unchecked_transaction()
             .map_err(io::Error::other)?;
-        if self.has_hooks(id)? {
-            return Ok(());
-        }
         let payload = serde_json::to_string(reading)?;
         let previous: Option<String> = self.connection.query_row(
             "SELECT payload_json FROM signals WHERE run_id=?1 AND source='transcript' ORDER BY id DESC LIMIT 1",
@@ -122,16 +133,29 @@ impl Store {
                 Status::Waiting => AgentState::Waiting,
                 Status::Idle => AgentState::Idle,
                 Status::Error => AgentState::Error,
-                Status::Done => AgentState::Done,
+                Status::Done => AgentState::Waiting,
             };
+            let has_hooks = self.has_hooks(id)?;
+            let at = u64::try_from(reading.last_activity_at)
+                .unwrap_or(0)
+                .saturating_mul(1000);
+            let clears_block = run.agent == crate::model::AgentKind::Claude
+                && run.state == AgentState::Blocked
+                && matches!(reading.status, Status::Waiting | Status::Idle)
+                && at > self.latest_hook_at(id)?.unwrap_or(run.state_since);
+            if has_hooks && !clears_block {
+                return Ok(());
+            }
             let (state, _) = transition(
                 &run,
                 Evidence::Transcript {
-                    state,
-                    has_hooks: self.has_hooks(id)?,
-                    at: u64::try_from(reading.last_activity_at)
-                        .unwrap_or(0)
-                        .saturating_mul(1000),
+                    state: if clears_block {
+                        AgentState::Waiting
+                    } else {
+                        state
+                    },
+                    has_hooks: false,
+                    at,
                 },
                 now,
             );

@@ -31,11 +31,13 @@ e2e_test!(
         let guard = TmuxGuard::start();
         let (run, at) = streak(&guard);
         stop(&guard);
+        let mut replay = signal(&run, "Stop", at + 10);
+        replay["server_key"] = json!(tmux_sidecar::paths::server_key(&guard.socket()).unwrap());
         std::fs::write(
             guard.scratch.path().join("state/spool.replaying.123"),
             format!(
                 "{}\n",
-                json!({"jsonrpc":"2.0","method":"signal","params":signal(&run,"Stop",at+10)})
+                json!({"jsonrpc":"2.0","method":"signal","params":replay})
             ),
         )
         .unwrap();

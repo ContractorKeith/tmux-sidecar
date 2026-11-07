@@ -12,29 +12,43 @@ pub fn agent(kind: AgentKind) -> Agent {
 pub fn assign(runs: &[AgentRun], sessions: &[Session]) -> Vec<(String, Session)> {
     let mut used = HashSet::new();
     let mut assigned = Vec::new();
-    // Reserve explicit identities, including hooked runs, before cwd-only fallback.
-    for has_id in [true, false] {
-        for run in runs
-            .iter()
-            .filter(|r| r.agent_session_id.is_some() == has_id)
-        {
-            let Ok(cwd) = Path::new(&run.cwd).canonicalize() else {
-                continue;
-            };
-            let reading = sessions.iter().find(|s| {
-                agent(run.agent) == s.agent
-                    && s.last_activity_at >= 0
-                    && (s.last_activity_at as u64) >= run.started_at / 1000
-                    && s.cwd.canonicalize().is_ok_and(|p| p == cwd)
-                    && run.agent_session_id.as_ref().is_none_or(|id| {
-                        id == &s.id || s.id.split_once(':').is_some_and(|(_, native)| native == id)
-                    })
-                    && !used.contains(&s.transcript_path)
-            });
-            if let Some(reading) = reading {
-                used.insert(reading.transcript_path.clone());
-                assigned.push((run.id.clone(), reading.clone()));
-            }
+    // Reserve explicit identities and existing paths before assigning new transcripts.
+    let mut ordered: Vec<_> = runs.iter().collect();
+    ordered.sort_by_key(|r| {
+        (
+            r.agent_session_id.is_none(),
+            r.transcript_path.is_none(),
+            std::cmp::Reverse(r.started_at),
+        )
+    });
+    for run in ordered {
+        let Ok(cwd) = Path::new(&run.cwd).canonicalize() else {
+            continue;
+        };
+        let matches = |s: &&Session| {
+            agent(run.agent) == s.agent
+                && s.last_activity_at >= 0
+                && s.last_activity_at as u64 >= run.started_at / 1000
+                && s.cwd.canonicalize().is_ok_and(|p| p == cwd)
+                && !used.contains(&s.transcript_path)
+                && run.agent_session_id.as_ref().is_none_or(|id| {
+                    id == &s.id || s.id.split_once(':').is_some_and(|(_, native)| native == id)
+                })
+                && run
+                    .transcript_path
+                    .as_ref()
+                    .is_none_or(|path| Path::new(path) == s.transcript_path)
+        };
+        let reading = sessions.iter().filter(matches).min_by_key(|s| {
+            // A resumed transcript can predate the process; prefer the nearest start.
+            (
+                s.started_at < (run.started_at / 1000) as i64,
+                s.started_at.abs_diff((run.started_at / 1000) as i64),
+            )
+        });
+        if let Some(reading) = reading {
+            used.insert(reading.transcript_path.clone());
+            assigned.push((run.id.clone(), reading.clone()));
         }
     }
     assigned
@@ -70,5 +84,30 @@ mod tests {
         assert_eq!(result[0].1.id, "claude_code:known");
         assert_eq!(result[1].0, "r1");
         assert_eq!(result[1].1.id, "claude_code:other");
+    }
+    #[test]
+    fn new_session_goes_to_closest_unbound_run_and_stays_bound() {
+        let root = tempfile::tempdir().unwrap();
+        let cwd = root.path();
+        let old:AgentRun=serde_json::from_value(json!({"id":"r1","server_start":1,"pane_id":"%0","agent":"claude","agent_pid":1,"agent_session_id":null,"cwd":cwd,"project_root":null,"started_at":1000,"ended_at":null,"state":"waiting","state_since":1000,"state_source":"transcript","read_at":null,"last_assistant_text":"","transcript_path":cwd.join("old.jsonl")})).unwrap();
+        let mut fresh = old.clone();
+        fresh.id = "r2".into();
+        fresh.started_at = 3000;
+        fresh.transcript_path = None;
+        let session:Session=serde_json::from_value(json!({"id":"claude_code:new","agent":"claude_code","cwd":cwd,"project_root":cwd,"title":"new","started_at":4,"last_activity_at":5,"status":"waiting","last_user_text":"","last_assistant_text":"","transcript_path":cwd.join("new.jsonl"),"resume_hint":"","pane":null})).unwrap();
+        let mut earlier = session.clone();
+        earlier.id = "claude_code:old".into();
+        earlier.started_at = 2;
+        earlier.transcript_path = cwd.join("old.jsonl");
+        // Newest session first, as the scanner supplies them.
+        let assigned = assign(&[old, fresh], &[session, earlier]);
+        assert_eq!(
+            assigned.iter().find(|(id, _)| id == "r2").unwrap().1.id,
+            "claude_code:new"
+        );
+        assert_eq!(
+            assigned.iter().find(|(id, _)| id == "r1").unwrap().1.id,
+            "claude_code:old"
+        );
     }
 }

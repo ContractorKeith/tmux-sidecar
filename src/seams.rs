@@ -79,3 +79,16 @@ impl Clock for SystemClock {
 
 #[cfg(feature = "test-util")]
 pub mod fakes;
+
+/// Prompt text cannot escape bracketed paste or synthesize terminal keys.
+pub fn validate_prompt(text: &str) -> Result<(), &'static str> {
+    if text.is_empty() {
+        return Err("empty prompt");
+    }
+    if text.bytes().any(|b| b < 0x20 && b != b'\n' && b != b'\t') {
+        return Err(
+            "prompt contains a terminal control character; only newline and tab are allowed",
+        );
+    }
+    Ok(())
+}
