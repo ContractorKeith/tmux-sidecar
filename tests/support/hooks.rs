@@ -3,15 +3,25 @@ use crate::support::BoundedCommand;
 use serde_json::Value;
 use std::{fs, path::Path};
 pub(super) fn fire(guard: &TmuxGuard, pid: u64, format: &str, fixture: &Path) {
+    fire_on_pane(guard, pid, format, fixture, None);
+}
+pub(super) fn fire_on_pane(
+    guard: &TmuxGuard,
+    pid: u64,
+    format: &str,
+    fixture: &Path,
+    pane: Option<&str>,
+) {
     let state = guard.scratch.path().join("state");
     let done = state.join(format!("fired-{pid}"));
     let _ = fs::remove_file(&done);
     fs::write(
         state.join(format!("fire-{pid}.new")),
         format!(
-            "{}\n{format}\n{}",
+            "{}\n{format}\n{}{}",
             env!("CARGO_BIN_EXE_tmux-sidecar"),
-            fixture.display()
+            fixture.display(),
+            pane.map(|p| format!("\n{p}")).unwrap_or_default()
         ),
     )
     .unwrap();
@@ -73,6 +83,10 @@ e2e_test!(every_fixture_is_delivered_by_its_real_ancestor, {
         .collect();
         files.sort();
         for fixture in files {
+            // Auxiliary title turns are intentionally ignored, not delivered evidence.
+            if fixture.file_stem().unwrap() == "title-notify" {
+                continue;
+            }
             let format = if fixture.file_stem().unwrap() == "notify" {
                 "codex-notify"
             } else if agent == "grok" {
@@ -166,4 +180,12 @@ e2e_test!(outside_tmux_or_without_an_agent_records_nothing, {
     }
     assert!(!guard.scratch.path().join("state/spool.ndjson").exists());
     assert!(!guard.scratch.path().join("state/tmux-sidecar.db").exists());
+    let log = fs::read_to_string(guard.scratch.path().join("state/hook.log")).unwrap();
+    assert_eq!(log.lines().count(), 1);
+    // The test runner itself can have a real coding-agent ancestor. In that case
+    // the empty payload is rejected; a truly agent-free walk logs its missing ancestor.
+    assert!(
+        log.contains("no agent ancestor") || log.contains("EOF while parsing"),
+        "{log}"
+    );
 });

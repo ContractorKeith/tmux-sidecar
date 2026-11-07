@@ -132,6 +132,11 @@ fn gone_evidence(error: &io::Error, socket_exists: bool) -> bool {
 }
 mod parse;
 mod paste;
+pub(crate) fn paste_outcome_unknown(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|e| e.is::<paste::OutcomeUnknown>())
+}
 pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64> {
     let output = tokio::time::timeout(
         std::time::Duration::from_millis(30),
@@ -146,6 +151,26 @@ pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64>
     .map_err(std::io::Error::other)??;
     if !output.status.success() {
         return Err(std::io::Error::other("tmux context unavailable"));
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .map_err(std::io::Error::other)
+}
+pub async fn hook_pane_pid(socket: &std::path::Path, pane: &str) -> std::io::Result<u32> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_millis(30),
+        tokio::process::Command::new("tmux")
+            .arg("-S")
+            .arg(socket)
+            .args(["display-message", "-p", "-t", pane, "#{pane_pid}"])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(std::io::Error::other)??;
+    if !output.status.success() {
+        return Err(std::io::Error::other("pane context unavailable"));
     }
     String::from_utf8_lossy(&output.stdout)
         .trim()

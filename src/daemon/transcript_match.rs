@@ -23,6 +23,8 @@ pub fn assign(runs: &[AgentRun], sessions: &[Session]) -> Vec<(String, Session)>
             };
             let reading = sessions.iter().find(|s| {
                 agent(run.agent) == s.agent
+                    && s.last_activity_at >= 0
+                    && (s.last_activity_at as u64) >= run.started_at / 1000
                     && s.cwd.canonicalize().is_ok_and(|p| p == cwd)
                     && run.agent_session_id.as_ref().is_none_or(|id| {
                         id == &s.id || s.id.split_once(':').is_some_and(|(_, native)| native == id)
@@ -53,6 +55,15 @@ mod tests {
         let mut other = session.clone();
         other.id = "claude_code:other".into();
         other.transcript_path = cwd.join("other.jsonl");
+        let mut fresh = run.clone();
+        fresh.started_at = 4000;
+        assert!(
+            assign(std::slice::from_ref(&fresh), std::slice::from_ref(&session)).is_empty(),
+            "older reading must not attach to a new run"
+        );
+        let mut resumed = session.clone();
+        resumed.last_activity_at = 4;
+        assert_eq!(assign(&[fresh], &[resumed]).len(), 1);
         let result = assign(&[run, bound], &[session, other]);
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].0, "r2");

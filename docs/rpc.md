@@ -32,9 +32,10 @@ Response (empty): `{"jsonrpc":"2.0","id":2,"result":[]}`
 Response (one run):
 
 ```json
-{"jsonrpc":"2.0","id":2,"result":[{"id":"r1","server_start":1793800000,"pane_id":"%0","agent":"claude","agent_pid":1234,"agent_session_id":null,"cwd":"/work","project_root":null,"started_at":1793800000000,"ended_at":null,"state":"waiting","state_since":1793800000000,"state_source":"process","read_at":null,"last_assistant_text":"","transcript_path":null}]}
+{"jsonrpc":"2.0","id":2,"result":[{"id":"r1","server_start":1793800000,"pane_id":"%0","agent":"claude","agent_pid":1234,"agent_session_id":null,"cwd":"/work","project_root":null,"started_at":1793800000000,"ended_at":null,"state":"waiting","state_since":1793800000000,"state_source":"process","read_at":null,"last_assistant_text":"","transcript_path":null,"pane_name":null}]}
 ```
 
+`pane_name` is a nullable string attached to the pane and survives agent restarts.
 Lists active runs by default, newest id first. Optional `all: true` also includes
 ended history, capped by `limit` (default 100, unsigned 32-bit count). The limit
 applies after filtering; active-only results are not capped. Optional `state` filters
@@ -77,6 +78,7 @@ the database file is fatal immediately and logged with its path.
 ## attention
 
 Accepts omitted, null or empty object params. Returns an array of active unread runs
+with project roots resolved as for `list` and nullable `pane_name`. Runs are
 in blocked, error, waiting order, then `state_since` ascending (numeric rowid breaks ties).
 A read mark at or after `state_since` removes the run. Each state change clears `read_at`.
 Polling marks focused panes read only when pane_active, window_active and session_attached
@@ -111,10 +113,12 @@ while waiting for another state returns -32001. Subscription overflow fails with
 
 Params: `{"sel":"%2","text":"next prompt","force":false}`. `force` defaults
 to false. Returns `{}` after paste and Enter, and commits an optimistic working
-state with source `send` plus its state_changed history. The next hook confirms it.
-The daemon requires a live run in waiting at paste time, else -32003 with the
+state with source `send` plus its state_changed history. A subsequent hook confirms
+it; without confirmation within `send_confirm_secs`
+(default 30), the next poll restores the prior state.
+The daemon requires a live run in waiting or idle at paste time, else -32003 with the
 current state. `force` skips only the state guard; ended or missing runs return
--32005. Empty or NUL text returns -32602; terminal failures return -32603.
+-32005. Empty or NUL text returns -32602; terminal failures before paste return -32603.
 A per-run lock covers guard, paste and optimistic commit. Hook, transcript and
 poll state mutations acquire current send locks in stable order before committing.
 SQLite and read RPCs remain available during terminal work. Sends to distinct runs
@@ -123,7 +127,10 @@ Scan and process probes each have a one-second deadline and run before acquiring
 any run lock. The whole send has a three-second daemon deadline. Under the lock,
 the daemon re-reads state and probes pid liveness with signal 0 before pasting.
 Terminal calls each have a one-second cap bounded by the remaining send budget.
-A deadline before paste aborts without pasting (-32004); the daemon joins terminal
+A deadline before paste aborts without pasting (-32004, safe to retry, CLI exit 4).
+Once paste-buffer may have started, a terminal error or deadline returns -32007,
+"outcome unknown after paste" (CLI exit 1); retrying may duplicate the prompt.
+The same code covers Enter or state-commit failures after paste. The daemon joins terminal
 work before replying, and an expired blocking task cannot start a later paste.
 Terminal work runs off the RPC dispatcher and SQLite owner. Each paste uses a
 unique named buffer: load-buffer reads text from stdin, paste-buffer uses
@@ -184,11 +191,16 @@ attempt live delivery of the same invocation:
 {"jsonrpc":"2.0","method":"signal","params":{"server_start":1793800000,"pane_id":"%0","agent":"grok","agent_pid":1234,"at":1793800000000,"nonce":"8f221dfd42762f2bef936db976722638c","source":"hook:claude","event":"Notification","detail":"permission_prompt","agent_session_id":"fake-session","cwd":"/work","transcript_path":null,"payload":{"hook_event_name":"Notification","notification_type":"permission_prompt"}}}
 ```
 
-`agent` and `agent_pid` identify the nearest agent ancestor, independent of the
-payload parser named by `source` (`hook:claude`, `hook:codex`,
+`agent` and `agent_pid` identify the outermost agent ancestor within the pane's
+process tree, independent of the payload parser named by `source` (`hook:claude`, `hook:codex`,
 `hook:codex-notify`, `hook:grok`, `hook:opencode`). Linux ancestry reads `/proc`
 directly; macOS reads ppid and comm per pid with `proc_pidinfo`. Neither hook ancestor
-walk spawns a process. `server_start` is tmux's start
+walk spawns a process. Pane-root pids are cached by polling; a missing or stale
+cache uses a bounded tmux query. If ancestry does not reach that pane (including
+a deleted pane), hooks mark `payload._tmux_sidecar_orphaned` and log the reason.
+The daemon routes those signals only to an active run with the same agent session
+id; without an owner it drops them, without creating a run on the stale pane.
+`server_start` is tmux's start
 time in seconds; `at` is capture time in Unix milliseconds. `event` is the hook
 event name; optional `detail` holds notification type, tool matcher, reason or
 status type. Both are stored separately. OpenCode V2 execution.started maps to

@@ -1,4 +1,5 @@
 //! Hook input is drained and a whole durable frame is appended before live delivery.
+pub(crate) mod attribution;
 pub mod context;
 mod delivery;
 pub(crate) mod files;

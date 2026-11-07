@@ -38,6 +38,12 @@ pub struct Process {
 pub type ProcessSnapshot = BTreeMap<u32, Process>;
 
 pub trait ProcessTree {
+    fn cwd(&self, _pid: u32) -> io::Result<PathBuf> {
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "process cwd unavailable",
+        ))
+    }
     fn snapshot(&self) -> io::Result<ProcessSnapshot>;
     /// Nearest parent first; one snapshot, stopping at missing parents or cycles.
     fn ancestors(&self, pid: u32) -> io::Result<Vec<(u32, Process)>> {

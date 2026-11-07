@@ -41,3 +41,17 @@ pub async fn drain(
     connections.shutdown().await;
     result.unwrap_or(Ok(()))
 }
+
+pub(super) struct NotificationTask(pub(super) tokio::task::JoinHandle<()>);
+impl Drop for NotificationTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+pub(super) struct RuntimeGuard(pub(super) std::path::PathBuf);
+impl Drop for RuntimeGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(self.0.join("sock"));
+        let _ = std::fs::remove_file(self.0.join("daemon.pid"));
+    }
+}

@@ -12,7 +12,27 @@ impl Drop for ChildGuard {
         let _ = self.0.wait();
     }
 }
+#[derive(Debug)]
+pub(super) struct OutcomeUnknown(pub io::Error);
+impl std::fmt::Display for OutcomeUnknown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "outcome unknown after paste may have started: {}",
+            self.0
+        )
+    }
+}
+impl std::error::Error for OutcomeUnknown {}
 fn run(command: &mut Command, input: Option<&str>, whole: Instant) -> io::Result<()> {
+    run_command(command, input, whole, &mut false)
+}
+fn run_command(
+    command: &mut Command,
+    input: Option<&str>,
+    whole: Instant,
+    started: &mut bool,
+) -> io::Result<()> {
     let deadline = whole.min(Instant::now() + Duration::from_secs(1));
     if Instant::now() >= deadline {
         return Err(io::Error::new(
@@ -31,6 +51,7 @@ fn run(command: &mut Command, input: Option<&str>, whole: Instant) -> io::Result
             .stderr(Stdio::null())
             .spawn()?,
     );
+    *started = true;
     if let Some(input) = input {
         use std::os::fd::AsRawFd;
         let mut pipe = child.0.stdin.take().expect("piped load-buffer stdin");
@@ -101,12 +122,19 @@ pub fn paste_before(tmux: &RealTmux, pane: &str, text: &str, deadline: Instant) 
         deadline,
     )
     .and_then(|()| {
-        run(
+        let mut started = false;
+        let result = run_command(
             tmux.command()
                 .args(["paste-buffer", "-p", "-d", "-r", "-b", &buffer, "-t", pane]),
             None,
             deadline,
-        )
+            &mut started,
+        );
+        if started {
+            result.map_err(|e| io::Error::other(OutcomeUnknown(e)))
+        } else {
+            result
+        }
     });
     if result.is_err() {
         let _ = run(

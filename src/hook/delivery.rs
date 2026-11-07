@@ -83,11 +83,12 @@ async fn record(
     paths: &paths::Paths,
     started: Instant,
 ) -> io::Result<()> {
-    let Some((pid, agent)) = proc::hook_ancestors()?
-        .into_iter()
-        .find_map(|(pid, p)| proc::agent_kind(&p.comm).map(|a| (pid, a)))
+    let chain = proc::hook_ancestors()?;
+    let Some((mut pid, mut agent)) = chain
+        .iter()
+        .find_map(|(pid, p)| proc::agent_kind(&p.comm).map(|a| (*pid, a)))
     else {
-        return Ok(());
+        return Err(io::Error::other("hook dropped: no agent ancestor"));
     };
     paths::prepare(paths)?;
     let payload: serde_json::Value = serde_json::from_slice(raw)?;
@@ -107,6 +108,26 @@ async fn record(
         transcript_path: parsed.transcript_path,
         payload: input::compact(payload)?,
     };
+    let mut pane_pid =
+        super::attribution::pane_pid(&paths.runtime, socket, &signal.pane_id, signal.server_start)
+            .await
+            .ok();
+    if pane_pid.is_some_and(|root| !chain.iter().any(|(pid, _)| *pid == root))
+        && let Ok(current) = crate::tmux::hook_pane_pid(socket, &signal.pane_id).await
+    {
+        pane_pid = Some(current);
+    }
+    if let Some(identity) = pane_pid.and_then(|root| super::attribution::ancestor(&chain, root)) {
+        (pid, agent) = identity;
+        signal.agent_pid = pid;
+        signal.agent = agent;
+    } else {
+        signal.payload["_tmux_sidecar_orphaned"] = true.into();
+        let _ = super::log(
+            &paths.state,
+            &"hook ancestry does not reach pane; use session owner if known, otherwise drop signal",
+        );
+    }
     signal.validate_frame()?;
     let frame = |signal: &Signal| -> io::Result<Vec<u8>> {
         let mut line = serde_json::to_vec(
@@ -115,9 +136,14 @@ async fn record(
         line.push(b'\n');
         Ok(line)
     };
-    // Exactly one O_APPEND write precedes slow tmux, socket, and spawn operations.
-    spool::append(paths, &frame(&signal)?)
-        .map_err(|e| io::Error::other(format!("signal lost: spool append: {e}")))?;
+    // Exactly one O_APPEND write precedes live delivery and daemon spawning.
+    let spooled = spool::append(paths, &frame(&signal)?);
+    if let Err(error) = &spooled {
+        let _ = super::log(
+            &paths.state,
+            &format!("spool append failed; attempting live delivery: {error}"),
+        );
+    }
     if signal.server_start == 0
         && let Ok(start) = crate::tmux::hook_server_start(socket).await
     {
@@ -137,6 +163,9 @@ async fn record(
             return Ok(());
         }
     }
+    spooled.map_err(|e| {
+        io::Error::other(format!("signal lost: spool and live delivery failed: {e}"))
+    })?;
     let _ = super::log(
         &paths.state,
         &"daemon unavailable; durable signal awaits replay",

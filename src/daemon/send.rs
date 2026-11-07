@@ -17,8 +17,11 @@ pub(super) struct Send {
     #[serde(default)]
     force: bool,
 }
+const OUTCOME_UNKNOWN: i32 = -32007;
 fn failure(error: std::io::Error) -> (i32, String) {
-    if error.kind() == std::io::ErrorKind::TimedOut {
+    if crate::tmux::paste_outcome_unknown(&error) {
+        (OUTCOME_UNKNOWN, error.to_string())
+    } else if error.kind() == std::io::ErrorKind::TimedOut {
         (rpc::TIMEOUT, error.to_string())
     } else {
         internal(error)
@@ -65,11 +68,11 @@ pub(super) async fn send(
         if run.ended_at.is_some() {
             return Err((rpc::NOT_FOUND, format!("run {} has ended", run.id)));
         }
-        if !params.force && run.state != AgentState::Waiting {
+        if !params.force && !matches!(run.state, AgentState::Waiting | AgentState::Idle) {
             return Err((
                 rpc::REFUSED,
                 format!(
-                    "run {} is {} (requires waiting)",
+                    "run {} is {} (requires waiting or idle)",
                     run.id,
                     format!("{:?}", run.state).to_ascii_lowercase()
                 ),
@@ -93,7 +96,7 @@ pub(super) async fn send(
         tmux.paste_before(&live.pane_id, &params.text, deadline.into_std())
             .map_err(failure)?;
         tmux.enter_before(&live.pane_id, deadline.into_std())
-            .map_err(failure)?;
+            .map_err(|e| (OUTCOME_UNKNOWN, format!("outcome unknown after paste: {e}")))?;
         Ok(guard)
     })
     .await
@@ -103,8 +106,13 @@ pub(super) async fn send(
         worker.read(move |s| s.sent(&run, super::super::now())),
     )
     .await
-    .map_err(|_| (rpc::TIMEOUT, "send deadline exceeded after paste".into()))?
-    .map_err(internal)?
-    .map_err(internal)?;
+    .map_err(|_| {
+        (
+            OUTCOME_UNKNOWN,
+            "outcome unknown after paste: send deadline exceeded".into(),
+        )
+    })?
+    .map_err(|e| (OUTCOME_UNKNOWN, format!("outcome unknown after paste: {e}")))?
+    .map_err(|e| (OUTCOME_UNKNOWN, format!("outcome unknown after paste: {e}")))?;
     Ok(json!({}))
 }

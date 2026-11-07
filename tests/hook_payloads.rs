@@ -13,7 +13,7 @@ fn fixture_metadata_and_event_kinds_parse_without_losing_raw_fields() {
             let file = file.unwrap().path();
             let payload: serde_json::Value =
                 serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-            let format = if file.file_stem().unwrap() == "notify" {
+            let format = if payload["type"] == "agent-turn-complete" {
                 "codex-notify"
             } else {
                 agent

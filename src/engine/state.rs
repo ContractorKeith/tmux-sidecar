@@ -21,7 +21,8 @@ pub enum Evidence<'a> {
     Exit,
 }
 pub fn transition(run: &AgentRun, evidence: Evidence<'_>, now: u64) -> (AgentState, bool) {
-    let next = if matches!(evidence, Evidence::Exit) || run.ended_at.is_some() {
+    let next = if matches!(evidence, Evidence::Exit) || run.ended_at.is_some() || run.state == Done
+    {
         Done
     } else {
         match evidence {

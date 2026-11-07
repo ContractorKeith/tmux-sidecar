@@ -20,7 +20,11 @@ impl From<io::Error> for Failure {
 }
 
 enum Snapshot {
-    Alive(crate::tmux::PaneScan, crate::seams::ProcessSnapshot),
+    Alive(
+        crate::tmux::PaneScan,
+        crate::seams::ProcessSnapshot,
+        std::collections::BTreeMap<u32, PathBuf>,
+    ),
     Gone,
 }
 pub async fn tick(
@@ -28,6 +32,7 @@ pub async fn tick(
     worker: &StoreWorker,
     runtime: PathBuf,
     idle_after_ms: u64,
+    send_confirm_ms: u64,
 ) -> Result<bool, Failure> {
     worker
         .with(|store| store.verify_identity())
@@ -46,7 +51,14 @@ pub async fn tick(
         if let Some(pane) = scan.panes.first() {
             crate::hook::context::write(&runtime, pane.server_start, &socket)?;
         }
-        Ok(Snapshot::Alive(scan, PsProcessTree.snapshot()?))
+        crate::hook::attribution::cache(&runtime, &scan.panes)?;
+        let processes = PsProcessTree.snapshot()?;
+        let cwds = processes
+            .iter()
+            .filter(|(_, p)| crate::proc::agent_kind(&p.comm).is_some())
+            .filter_map(|(&pid, _)| PsProcessTree.cwd(pid).ok().map(|cwd| (pid, cwd)))
+            .collect();
+        Ok(Snapshot::Alive(scan, processes, cwds))
     })
     .await
     .map_err(|error| Failure::from(io::Error::other(error)))??;
@@ -60,17 +72,28 @@ pub async fn tick(
                     store.end_all(super::now())?;
                     Ok(false)
                 }
-                Snapshot::Alive(scan, processes) => {
+                Snapshot::Alive(scan, processes, cwds) => {
                     let now = super::now();
-                    let changes = engine::detect_scan(
+                    let mut changes = engine::detect_scan(
                         &scan.panes,
                         &scan.skipped,
                         &processes,
                         &store.active()?,
                         now,
                     );
+                    for run in &mut changes.start {
+                        if let Some(cwd) = cwds.get(&run.agent_pid) {
+                            run.cwd = cwd.to_string_lossy().into_owned();
+                        }
+                    }
                     store.apply(&scan.panes, &changes, now)?;
-                    store.maintain(&scan.panes, now, idle_after_ms)?;
+                    store.process_cwds(&cwds)?;
+                    store.maintain_with_confirmation(
+                        &scan.panes,
+                        now,
+                        idle_after_ms,
+                        send_confirm_ms,
+                    )?;
                     Ok(true)
                 }
             }

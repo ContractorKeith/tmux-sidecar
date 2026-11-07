@@ -42,19 +42,7 @@ fn other(e: impl std::error::Error + Send + Sync + 'static) -> io::Error {
     io::Error::other(e)
 }
 
-struct NotificationTask(tokio::task::JoinHandle<()>);
-impl Drop for NotificationTask {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-struct RuntimeGuard(PathBuf);
-impl Drop for RuntimeGuard {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(self.0.join("sock"));
-        let _ = fs::remove_file(self.0.join("daemon.pid"));
-    }
-}
+use shutdown::{NotificationTask, RuntimeGuard};
 
 pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
     let result = run_inner(socket, &paths).await;
@@ -93,9 +81,17 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     let _notifications = NotificationTask(notifications);
     let poll_ms = config::poll_ms(paths)?;
     let idle_after_ms = config::idle_after_ms(paths)?;
+    let send_confirm_ms = config::send_confirm_ms(paths)?;
     let mut transcripts = transcripts::Reader::default();
     let mut health = poll::Health::default();
-    let initial = poll::tick(socket.clone(), &store, paths.runtime.clone(), idle_after_ms).await;
+    let initial = poll::tick(
+        socket.clone(),
+        &store,
+        paths.runtime.clone(),
+        idle_after_ms,
+        send_confirm_ms,
+    )
+    .await;
     health.record(&initial);
     match initial {
         Ok(false) => return Err(io::Error::other("tmux server is not running")),
@@ -143,7 +139,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 let runtime = paths.runtime.clone();
                 polling = Some(Box::pin(async move {
                     replay::replay(state, runtime.clone(),socket.clone(), worker).await;
-                    let alive = poll::tick(socket, worker, runtime, idle_after_ms).await?;
+                    let alive = poll::tick(socket, worker, runtime, idle_after_ms, send_confirm_ms).await?;
                     Ok(alive)
                 }));
             },
@@ -172,7 +168,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
             },
             Some(mut call) = receiver.recv() => {
                 if call.request.method=="signal" && let Some(params)=&mut call.request.params {crate::hook::context::resolve(params,&paths.runtime,&socket);}
-                if call.request.method == "list" {
+                if matches!(call.request.method.as_str(), "list" | "attention") {
                     let worker=store.clone();
                     connections.spawn(async move {list::serve(call,worker).await;Ok(())});
                     continue;

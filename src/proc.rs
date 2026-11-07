@@ -1,6 +1,7 @@
 //! M0: process snapshot adapter for Linux and macOS.
 mod ancestors;
 pub(crate) mod bounded;
+mod cwd;
 mod liveness;
 use crate::seams::{Process, ProcessSnapshot, ProcessTree};
 pub use ancestors::hook_ancestors;
@@ -18,6 +19,9 @@ pub fn agent_kind(comm: &str) -> Option<crate::model::AgentKind> {
 }
 pub struct PsProcessTree;
 impl ProcessTree for PsProcessTree {
+    fn cwd(&self, pid: u32) -> io::Result<std::path::PathBuf> {
+        cwd::read(pid)
+    }
     fn snapshot(&self) -> io::Result<ProcessSnapshot> {
         let output = Command::new("ps")
             .args(["-A", "-o", "pid=,ppid=,comm="])

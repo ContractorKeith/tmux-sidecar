@@ -135,3 +135,6 @@ mod mcp_rpc;
 mod ui;
 #[path = "support/ui_lifecycle.rs"]
 mod ui_lifecycle;
+
+#[path = "support/skeptic_state.rs"]
+mod skeptic_state;

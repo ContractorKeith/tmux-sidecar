@@ -5,15 +5,6 @@ use crate::{
 };
 use serde_json::{Value, json};
 impl Store {
-    pub fn sent(&self, run: &AgentRun, at: u64) -> io::Result<()> {
-        let tx = self
-            .connection
-            .unchecked_transaction()
-            .map_err(io::Error::other)?;
-        self.change(run, AgentState::Working, at, "send", None)
-            .map_err(io::Error::other)?;
-        tx.commit().map_err(io::Error::other)
-    }
     pub fn latest_hook_at(&self, id: &str) -> io::Result<Option<u64>> {
         self.connection
             .query_row(
@@ -59,10 +50,20 @@ impl Store {
         now: u64,
         idle_after_ms: u64,
     ) -> io::Result<()> {
+        self.maintain_with_confirmation(panes, now, idle_after_ms, 30_000)
+    }
+    pub fn maintain_with_confirmation(
+        &self,
+        panes: &[crate::seams::PaneSnapshot],
+        now: u64,
+        idle_after_ms: u64,
+        send_confirm_ms: u64,
+    ) -> io::Result<()> {
         let tx = self
             .connection
             .unchecked_transaction()
             .map_err(io::Error::other)?;
+        self.expire_sends(now, send_confirm_ms)?;
         for mut run in self.active()? {
             if panes.iter().any(|p| {
                 run.read_at.is_none_or(|at| at < run.state_since)
@@ -94,6 +95,14 @@ impl Store {
         if self.has_hooks(id)? {
             return Ok(());
         }
+        let payload = serde_json::to_string(reading)?;
+        let previous: Option<String> = self.connection.query_row(
+            "SELECT payload_json FROM signals WHERE run_id=?1 AND source='transcript' ORDER BY id DESC LIMIT 1",
+            [run_id(id).map_err(io::Error::other)?], |r| r.get(0),
+        ).optional().map_err(io::Error::other)?;
+        if previous.as_deref() == Some(&payload) {
+            return Ok(());
+        }
         if let Some(run) = self.get(id.parse().map_err(io::Error::other)?, 0)? {
             use session_board::model::Status;
             let state = match reading.status {
@@ -115,7 +124,7 @@ impl Store {
                 now,
             );
             self.connection.execute("INSERT INTO signals(run_id,at,source,event,payload_json) VALUES (?1,?2,'transcript','transcript_reading',?3)",
-                params![run_id(id).map_err(io::Error::other)?,number(now).map_err(io::Error::other)?,serde_json::to_string(reading)?]).map_err(io::Error::other)?;
+                params![run_id(id).map_err(io::Error::other)?,number(now).map_err(io::Error::other)?,payload]).map_err(io::Error::other)?;
             let cause = self.connection.last_insert_rowid();
             self.change(&run, state, now, "transcript", Some(cause))
                 .map_err(io::Error::other)?;
