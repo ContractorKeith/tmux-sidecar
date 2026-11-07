@@ -20,7 +20,7 @@ fn installed(home: &Path, agent: AgentKind) -> io::Result<bool> {
         ],
     };
     for file in files {
-        match fs::read_to_string(home.join(file)) {
+        match fs::read_to_string(crate::install::locations::config(home, file)) {
             Ok(text)
                 if text.contains("# tmux-sidecar")
                     || text.contains("\"_tmux_sidecar\"")

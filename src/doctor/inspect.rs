@@ -31,6 +31,9 @@ pub(super) fn tmux_version(text: &str) -> io::Result<String> {
 pub(super) fn permissions(path: &Path, uid: u32) -> io::Result<String> {
     let meta = fs::symlink_metadata(path)
         .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+    if meta.file_type().is_symlink() {
+        return Err(io::Error::other(format!("{} is a symlink", path.display())));
+    }
     if !meta.is_dir() || meta.uid() != uid || meta.mode() & 0o7777 != 0o700 {
         return Err(io::Error::other(format!(
             "{} must be owned by uid {uid} with mode 0700",

@@ -19,10 +19,13 @@ mod state;
 mod view;
 use row::{enum_name, number, row, run_id};
 fn db_error(path: &Path, error: impl std::fmt::Display) -> io::Error {
-    io::Error::other(format!(
-        "database {}: {error}; move it aside to start fresh",
-        path.display()
-    ))
+    let error = error.to_string();
+    let hint = if error.contains("newer than this binary") {
+        ""
+    } else {
+        "; move it aside to start fresh"
+    };
+    io::Error::other(format!("database {}: {error}{hint}", path.display()))
 }
 pub struct Store {
     connection: Connection,
@@ -45,7 +48,11 @@ impl Store {
         )?;
         let version: u32 = tx.query_row("SELECT schema_version FROM meta", [], |r| r.get(0))?;
         if version > 3 {
-            return Err(rusqlite::Error::InvalidQuery);
+            return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
+                io::Error::other(format!(
+                    "database schema {version} is newer than this binary (3); upgrade tmux-sidecar"
+                )),
+            )));
         }
         if version == 0 {
             tx.execute_batch("CREATE TABLE runs(

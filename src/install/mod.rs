@@ -2,8 +2,10 @@
 pub mod claude;
 pub mod codex;
 mod codex_groups;
+mod diff;
 mod files;
 pub mod grok;
+pub mod locations;
 pub mod opencode;
 use crate::model::AgentKind;
 use std::{
@@ -29,12 +31,14 @@ pub fn run(
     let mut plans: Vec<(PathBuf, String, Option<String>)> = Vec::new();
     let mut prepare =
         |relative: &str, editor: &dyn Fn(&str, bool) -> io::Result<String>| -> io::Result<()> {
-            let path = files::target(&home.join(relative))?;
+            let path = files::target(&locations::config(home, relative))?;
             let before = files::read(&path)?;
             if !install && !path.exists() {
+                plans.push((path, before, None));
                 return Ok(());
             }
-            let mut after = editor(&before, install)?;
+            let mut after = editor(&before, install)
+                .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", path.display())))?;
             if files::equivalent(&path, &before, &after) {
                 after = before.clone();
             }
@@ -80,10 +84,7 @@ pub fn run(
             opencode::edit(s, mode, binary)
         })?;
         // Remove the marked pre-v2 integration at the old path during upgrades.
-        if home
-            .join(".config/opencode/plugin/tmux-sidecar.js")
-            .exists()
-        {
+        if locations::config(home, ".config/opencode/plugin/tmux-sidecar.js").exists() {
             prepare(".config/opencode/plugin/tmux-sidecar.js", &|s, _| {
                 opencode::edit(s, false, binary)
             })?;
@@ -93,13 +94,17 @@ pub fn run(
         files::apply(&path, &before, after.as_deref(), dry_run, install)?;
     }
     if install {
-        println!(
-            "Live-proven: Claude Code 2.1.309 command entries, Grok 1.0.70 payload captures, OpenCode 2.2.5 v2 plugin forwarding, Codex 0.166.0 notify. Codex inline hooks remain unproven: the trusted scratch run produced no captures. See tests/fixtures/hooks/README.md."
-        );
-        println!(
+        use std::io::Write;
+        let mut out = io::stdout().lock();
+        writeln!(
+            out,
+            "Live-proven: Claude Code 2.1.311 command entries, Grok 1.0.77 payload captures, Codex 0.166.0 notify and inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, SessionEnd hooks. OpenCode fails on 2.2.6 until #19 lands. See tests/fixtures/hooks/README.md."
+        )?;
+        writeln!(
+            out,
             "tmux popup binding: bind-key a display-popup -E -w 80% -h 80% {} ui",
             quote(binary)
-        );
+        )?;
     }
     Ok(())
 }

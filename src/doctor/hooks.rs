@@ -51,8 +51,23 @@ fn events(
     Ok(())
 }
 fn claude(home: &Path, file: &str, binary: &str, agent: &str, required: &[&str]) -> io::Result<()> {
-    let text = std::fs::read_to_string(home.join(file))?;
-    events(&serde_json::from_str(&text)?, agent, binary, required)
+    let text = std::fs::read_to_string(install::locations::config(home, file)).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("{}: {e}", install::locations::config(home, file).display()),
+        )
+    })?;
+    events(
+        &serde_json::from_str(&text).map_err(|e| {
+            io::Error::other(format!(
+                "{}: {e}",
+                install::locations::config(home, file).display()
+            ))
+        })?,
+        agent,
+        binary,
+        required,
+    )
 }
 pub(super) fn check(home: &Path, binary: &Path, agent: &str) -> io::Result<String> {
     let binary = binary
@@ -93,12 +108,20 @@ pub(super) fn check(home: &Path, binary: &Path, agent: &str) -> io::Result<Strin
             }
         }
         "codex" => codex(
-            &std::fs::read_to_string(home.join(".codex/config.toml"))?,
+            &std::fs::read_to_string(install::locations::config(home, ".codex/config.toml"))?,
             binary,
-        )?,
+        )
+        .map_err(|e| {
+            io::Error::other(format!(
+                "{}: {e}",
+                install::locations::config(home, ".codex/config.toml").display()
+            ))
+        })?,
         "opencode" => {
-            let before =
-                std::fs::read_to_string(home.join(".config/opencode/plugins/tmux-sidecar.js"))?;
+            let before = std::fs::read_to_string(install::locations::config(
+                home,
+                ".config/opencode/plugins/tmux-sidecar.js",
+            ))?;
             if before != install::opencode::edit(&before, true, binary)? {
                 return Err(io::Error::other("plugin missing or drifted"));
             }

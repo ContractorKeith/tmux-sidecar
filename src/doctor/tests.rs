@@ -28,12 +28,13 @@ fn daemon_unreachable_skew_and_matching() {
         daemon_check(Err(io::Error::other("unreachable"))).status,
         Status::Fail
     );
+    assert_eq!(daemon_check(Ok(serde_json::json!({"daemon_version":env!("CARGO_PKG_VERSION"), "build_id":"another-commit"}))).status, Status::Fail);
     let skew = daemon_check(Ok(serde_json::json!({"daemon_version":"older"})));
     assert_eq!(skew.status, Status::Fail);
     assert!(skew.fix.contains("daemon stop"));
     assert_eq!(
         daemon_check(Ok(
-            serde_json::json!({"daemon_version": env!("CARGO_PKG_VERSION")})
+            serde_json::json!({"daemon_version": env!("CARGO_PKG_VERSION"), "build_id": env!("TMUX_SIDECAR_BUILD_ID")})
         ))
         .status,
         Status::Ok
@@ -57,7 +58,12 @@ fn readable_stores_notifier_and_private_directories() {
     assert!(inspect::permissions(root.path(), paths::uid().wrapping_add(1)).is_err());
     let alias = root.path().join("link");
     symlink(root.path(), &alias).unwrap();
-    assert!(inspect::permissions(&alias, paths::uid()).is_err());
+    assert!(
+        inspect::permissions(&alias, paths::uid())
+            .unwrap_err()
+            .to_string()
+            .contains("is a symlink")
+    );
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
     assert!(inspect::permissions(root.path(), paths::uid()).is_err());
 }

@@ -19,7 +19,7 @@ pub async fn run(socket: &Path, paths: &Paths, json: bool, quiet: bool) -> Resul
         if count == 0 {
             return Err((1, "daemon exited".into()));
         }
-        if count > 1024 * 1024 {
+        if count - usize::from(bytes.last() == Some(&b'\n')) > 1024 * 1024 {
             return Err((1, "subscription frame exceeds 1 MiB".into()));
         }
         let frame: crate::rpc::Notification =
@@ -29,7 +29,7 @@ pub async fn run(socket: &Path, paths: &Paths, json: bool, quiet: bool) -> Resul
         }
         if !quiet {
             super::output::print("state_changed", &frame.params.unwrap_or_default(), json)
-                .map_err(|e| (1, e.to_string()))?;
+                .map_err(super::execute::output_error)?;
         }
     }
 }

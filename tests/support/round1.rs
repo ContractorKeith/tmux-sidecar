@@ -130,6 +130,18 @@ e2e_test!(oversized_frame_gets_error_before_close, {
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(2)))
         .unwrap();
+    for size in [1024 * 1024 - 1, 1024 * 1024] {
+        let mut frame = br#"{"jsonrpc":"2.0","id":1,"method":"hello"}"#.to_vec();
+        frame.resize(size, b' ');
+        frame.push(b'\n');
+        stream.write_all(&frame).unwrap();
+        let mut response = String::new();
+        BufReader::new(&mut stream)
+            .read_line(&mut response)
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert!(value.get("result").is_some(), "payload {size}: {value}");
+    }
     // Keep writing bounded: daemon closes after reading the first byte over the limit.
     let _ = stream.write_all(&vec![b'x'; 1024 * 1024 + 1]);
     let mut response = String::new();

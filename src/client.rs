@@ -93,6 +93,14 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
                 })??;
             connect(paths).await?
         }
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+            ) =>
+        {
+            return Err(io::Error::new(error.kind(), "daemon not running"));
+        }
         Err(error) => return Err(error),
     };
     let mut stream = BufReader::new(stream);
@@ -167,12 +175,15 @@ fn warn_version(hello: &Value) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static WARNED: AtomicBool = AtomicBool::new(false);
     if let Some(version) = hello["daemon_version"].as_str()
-        && version != env!("CARGO_PKG_VERSION")
+        && (version != env!("CARGO_PKG_VERSION")
+            || hello["build_id"].as_str() != Some(env!("TMUX_SIDECAR_BUILD_ID")))
         && !WARNED.swap(true, Ordering::Relaxed)
     {
         eprintln!(
-            "tmux-sidecar: daemon version {version} differs from client {}; run `tmux-sidecar daemon stop` to restart",
-            env!("CARGO_PKG_VERSION")
+            "tmux-sidecar: daemon version {version} ({}) differs from client {} ({}); run `tmux-sidecar daemon stop` to restart",
+            hello["build_id"].as_str().unwrap_or("unknown build"),
+            env!("CARGO_PKG_VERSION"),
+            env!("TMUX_SIDECAR_BUILD_ID")
         );
     }
 }

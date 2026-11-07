@@ -2,7 +2,7 @@
 
 The per-tmux-server `<runtime>/sock` is a Unix socket, mode 0600 inside a directory
 owned by the daemon uid with mode 0700. Connections from other uids are dropped.
-Each UTF-8 JSON object occupies one newline-terminated frame (maximum 1 MiB).
+Each UTF-8 JSON object occupies one newline-terminated frame (maximum 1 MiB excluding the terminating newline).
 An oversized frame receives -32600, "frame exceeds 1 MiB", with id null; the
 daemon then closes that connection.
 Requests require `jsonrpc: "2.0"`, a string or integer `id`, and `method`.

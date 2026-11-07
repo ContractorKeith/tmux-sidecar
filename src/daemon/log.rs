@@ -26,6 +26,15 @@ fn rotate(state: &Path, incoming: u64) -> io::Result<()> {
     }
 }
 pub fn write(state: &Path, message: &str) -> io::Result<()> {
+    let message = format!(
+        "{} {}",
+        timestamp(),
+        message
+            .trim()
+            .lines()
+            .next()
+            .unwrap_or("unknown daemon failure")
+    );
     let mut bytes = message.as_bytes();
     if bytes.len() >= LIMIT as usize {
         bytes = &bytes[..LIMIT as usize - 1];
@@ -35,6 +44,30 @@ pub fn write(state: &Path, message: &str) -> io::Result<()> {
     file.write_all(bytes)?;
     file.write_all(b"\n")
 }
+/// UTC RFC 3339, shared with hook diagnostics without a formatting dependency.
+pub fn timestamp() -> String {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as libc::time_t;
+    let mut output = std::mem::MaybeUninit::<libc::tm>::uninit();
+    // SAFETY: gmtime_r writes one tm to valid storage and reads a valid time_t.
+    if unsafe { libc::gmtime_r(&seconds, output.as_mut_ptr()) }.is_null() {
+        return "1970-01-01T00:00:00Z".into();
+    }
+    // SAFETY: a successful gmtime_r initialized output.
+    let date = unsafe { output.assume_init() };
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        date.tm_year + 1900,
+        date.tm_mon + 1,
+        date.tm_mday,
+        date.tm_hour,
+        date.tm_min,
+        date.tm_sec
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
