@@ -17,7 +17,7 @@ State comes from the agents' own hooks (`tmux-sidecar hooks install`), with tran
 from [session-board](https://github.com/ContractorKeith/session-board) as a fallback. Nothing
 reads your screen.
 
-**Status:** M0–M4 and the MCP server implemented; UI and release work continues. See `docs/PLAN.md`. Linux and macOS, tmux ≥ 3.3.
+**Status:** M0–M6 implemented; release work continues. See `docs/PLAN.md`. Linux and macOS, tmux ≥ 3.3.
 
 ## MCP
 
@@ -92,3 +92,30 @@ MCP cancellation releases the pending daemon call; closing stdin cancels in-flig
 calls and exits. rmcp 3.8 ignores syntactically malformed JSON lines instead of
 replying with a parse error (official SDK behavior, rust-sdk#938). Well-formed
 unknown tool calls return the protocol error `invalid_params`.
+
+## Terminal UI
+
+Run `tmux-sidecar ui` inside tmux. The attention queue appears first, followed by
+agent runs grouped by project. Use `j/k` or arrows to move, `Enter` to switch to the
+selected pane and close the UI, `a` to acknowledge, `g` to toggle manual groups,
+`/` to filter (Enter/Esc finishes editing, Backspace clears characters), and `q` to
+quit. `NO_COLOR=1` keeps terminal-default colors. The UI reconnects automatically
+when the daemon restarts.
+
+`hooks install` prints a binding you can add to your tmux config:
+
+```tmux
+bind-key a display-popup -E -w 80% -h 80% tmux-sidecar ui
+```
+
+The daemon sends desktop notifications on transitions into blocked or error using
+`notify-send` on Linux or `osascript` on macOS. It limits delivery to once per run
+per 10 seconds and globally once every 2 seconds. Waiting transitions display a
+tmux message to attached clients in the run's tmux session. Configure desktop
+notifications in tmux-sidecar's `config.toml`:
+
+```toml
+[notify]
+desktop = true
+debounce_secs = 10
+```

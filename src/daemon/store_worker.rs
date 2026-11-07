@@ -12,6 +12,7 @@ pub struct StoreWorker {
         >,
     >,
     pub events: broadcast::Sender<serde_json::Value>,
+    pub views: tokio::sync::watch::Sender<u64>,
     done: Option<oneshot::Receiver<()>>,
 }
 impl StoreWorker {
@@ -21,6 +22,8 @@ impl StoreWorker {
         let (closed, done) = oneshot::channel();
         let (events, _) = broadcast::channel(256);
         let publish = events.clone();
+        let (views, _) = tokio::sync::watch::channel(0u64);
+        let invalidate = views.clone();
         tokio::task::spawn_blocking(move || {
             let store = match Store::open(&path) {
                 Ok(store) => store,
@@ -37,8 +40,17 @@ impl StoreWorker {
                 .ok()
                 .and_then(|rows| rows.last().map(|r| r.0))
                 .unwrap_or(0);
+            let mut view = store.view().ok();
             while let Ok(job) = receiver.recv() {
+                let before = store.total_changes();
                 job(&store);
+                if store.total_changes() != before {
+                    let next = store.view().ok();
+                    if next != view {
+                        view = next;
+                        invalidate.send_modify(|revision| *revision = revision.wrapping_add(1));
+                    }
+                }
                 if let Ok(changes) = store.changes_since(cursor) {
                     for (id, payload) in changes {
                         cursor = id;
@@ -56,6 +68,7 @@ impl StoreWorker {
             locks: Default::default(),
             done: Some(done),
             events,
+            views,
         })
     }
     pub async fn with<T: Send + 'static>(
@@ -121,6 +134,7 @@ impl Clone for StoreWorker {
             mutation: self.mutation.clone(),
             locks: self.locks.clone(),
             events: self.events.clone(),
+            views: self.views.clone(),
             done: None,
         }
     }

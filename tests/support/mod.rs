@@ -1,6 +1,7 @@
 mod copy_fixture;
 mod fake_binary;
 pub mod load;
+mod notify_config;
 mod process;
 pub mod socket;
 pub mod watchdog;
@@ -53,6 +54,8 @@ impl TmuxGuard {
         if capture {
             fs::write(guard.scratch.path().join("state/capture-input"), b"").unwrap();
         }
+
+        notify_config::disable(guard.scratch.path());
         use std::os::unix::fs::PermissionsExt;
         for dir in ["run", "state"] {
             fs::set_permissions(

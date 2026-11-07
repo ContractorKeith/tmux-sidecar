@@ -1,0 +1,17 @@
+tmux-sidecar
+┌Projects──────────────────────────────┐
+│  Attention (3)                       │
+│› blocked claude   build · 1m · Latest│
+│  error   codex    %1 · 1m · Latest an│
+│  waiting grok     %2 · 1m · Latest an│
+│  /work/alpha                         │
+│  blocked claude   build · 1m · Latest│
+│  error   codex    %1 · 1m · Latest an│
+│  waiting grok     %2 · 1m · Latest an│
+│  /work/beta                          │
+│  working opencode %3 · 1m · Latest an│
+│  idle    claude   %4 · 1m · Latest an│
+│  done    codex    %5 · 1m · Latest an│
+└──────────────────────────────────────┘
+j/k move · Enter open · a ack
+g group · / filter · q quit

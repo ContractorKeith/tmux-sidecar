@@ -290,3 +290,15 @@ A connection lost during an established wait returns exit 1, "daemon stopped whi
 waiting". Exit 6 covers failure to reach the daemon after auto-spawn.
 CLI errors map to 1 general, 2 usage, 3 refused, 4 timeout, 5 selector not found,
 6 unreachable after auto-spawn. Mutation commands report a brief success message.
+
+### UI view invalidation (M5)
+
+`list` results additionally include nullable `pane_name`, attached to the run's pane
+key. `subscribe` accepts optional `views: true` (boolean). These subscribers also
+receive `{"jsonrpc":"2.0","method":"view_changed","params":{}}` when committed
+run data, read marks, pane names or manual groups change. Invalidation coalesces to
+one pending event per connection; reload `list` and `group.ls` after receiving it.
+Subscribe before the initial load to avoid missing concurrent mutations. Empty
+subscribe params preserve the state-change-only stream. The UI reloads only after
+pushes and never reads the database. Disconnects require a fresh hello, subscribe
+and initial load.

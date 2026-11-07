@@ -11,7 +11,6 @@ impl Command {
     pub fn pending(&self) -> (&'static str, u8) {
         match self {
             Self::Doctor { .. } => ("doctor", 7),
-            Self::Ui => ("ui", 5),
             _ => unreachable!("implemented commands do not call pending"),
         }
     }

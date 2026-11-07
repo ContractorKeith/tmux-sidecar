@@ -11,7 +11,12 @@ async fn lagged_subscriber_receives_final_error_and_disconnects() {
     let (server, client) = UnixStream::pair().unwrap();
     let (calls, mut receive) = mpsc::channel::<Call>(1);
     let (events, _) = broadcast::channel(256);
-    let listener = tokio::spawn(transport::serve(server, calls, events.subscribe()));
+    let listener = tokio::spawn(transport::serve(
+        server,
+        calls,
+        events.subscribe(),
+        tokio::sync::watch::channel(0).1,
+    ));
     let (reader, mut writer) = client.into_split();
     writer
         .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"subscribe\"}\n")
@@ -65,7 +70,12 @@ async fn half_closed_request_still_gets_its_reply() {
     let (server, mut client) = UnixStream::pair().unwrap();
     let (calls, mut receive) = mpsc::channel::<Call>(1);
     let (events, _) = broadcast::channel(256);
-    let listener = tokio::spawn(transport::serve(server, calls, events.subscribe()));
+    let listener = tokio::spawn(transport::serve(
+        server,
+        calls,
+        events.subscribe(),
+        tokio::sync::watch::channel(0).1,
+    ));
     client
         .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"hello\"}\n")
         .await
@@ -109,7 +119,12 @@ async fn disconnected_client_cancels_an_unfinished_reply() {
     let (server, mut client) = UnixStream::pair().unwrap();
     let (calls, mut receive) = mpsc::channel::<Call>(1);
     let (events, _) = broadcast::channel(256);
-    let listener = tokio::spawn(transport::serve(server, calls, events.subscribe()));
+    let listener = tokio::spawn(transport::serve(
+        server,
+        calls,
+        events.subscribe(),
+        tokio::sync::watch::channel(0).1,
+    ));
     client
         .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"wait\"}\n")
         .await

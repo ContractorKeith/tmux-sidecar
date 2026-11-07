@@ -60,7 +60,7 @@ pub async fn execute(mut cli: Cli) -> Result<(), Failure> {
             .map_err(|e| (1, e.to_string()));
     }
     super::input::prepare(&mut cli)?;
-    if matches!(cli.command, Command::Doctor { .. } | Command::Ui) {
+    if matches!(cli.command, Command::Doctor { .. }) {
         let (verb, milestone) = cli.command.pending();
         return Err((2, format!("{verb} is not implemented yet (M{milestone})")));
     }
@@ -71,6 +71,11 @@ pub async fn execute(mut cli: Cli) -> Result<(), Failure> {
     } = cli.command
     {
         return daemon::run(socket, paths)
+            .await
+            .map_err(|e| (1, e.to_string()));
+    }
+    if matches!(cli.command, Command::Ui) {
+        return crate::ui::run(socket, paths)
             .await
             .map_err(|e| (1, e.to_string()));
     }
