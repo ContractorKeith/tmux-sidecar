@@ -155,4 +155,20 @@ PYMCP
 echo "== ui live checks"
 "$bin" ui --help | grep -q "Open the terminal interface"
 grep -q "display-popup.*ui" "$scratch/hooks.diff"
+# M7: missing hooks fail, installed hooks pass even when unused stores are absent.
+echo "== doctor live checks"
+status=0
+"$bin" --tmux-socket "$socket" doctor --json > "$scratch/doctor-before.json" || status=$?
+test "$status" -eq 1
+"$bin" hooks install
+status=0
+"$bin" --tmux-socket "$socket" doctor --json > "$scratch/doctor-after.json" || status=$?
+python3 - "$scratch/doctor-before.json" "$scratch/doctor-after.json" <<'PYDOCTOR'
+import json, sys
+before, after = [json.load(open(p)) for p in sys.argv[1:]]
+assert all(not c['ok'] for c in before if c['name'].startswith('hooks '))
+assert len([c for c in after if c['name'].startswith('hooks ') and c['ok']]) == 4
+PYDOCTOR
+# Execute the README's safe bash blocks verbatim, including the UI under a PTY.
+python3 tests/support/readme_commands.py "$bin" "$socket" "$scratch"
 echo "accept: ok"

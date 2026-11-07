@@ -1,16 +1,21 @@
 use std::process::Command;
 #[test]
-fn future_verbs_remain_explicit_stubs() {
+fn doctor_quiet_still_reports_failure_exit_code() {
+    let root = tempfile::tempdir().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+        .env("HOME", root.path())
+        .env("CLAUDE_CONFIG_DIR", root.path().join(".claude"))
+        .env("CODEX_HOME", root.path().join(".codex"))
+        .env("GROK_HOME", root.path().join(".grok"))
+        .env("OPENCODE_DB", root.path().join("opencode.db"))
+        .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
+        .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"))
         .args(["--tmux-socket", "/tmp/unused", "-q", "doctor", "--json"])
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8(output.stderr).unwrap(),
-        "tmux-sidecar: doctor is not implemented yet (M7)\n"
-    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("doctor found"));
 }
 #[test]
 fn help_and_version_work() {

@@ -17,7 +17,68 @@ State comes from the agents' own hooks (`tmux-sidecar hooks install`), with tran
 from [session-board](https://github.com/ContractorKeith/session-board) as a fallback. Nothing
 reads your screen.
 
-**Status:** M0–M6 implemented; release work continues. See `docs/PLAN.md`. Linux and macOS, tmux ≥ 3.3.
+**Status:** v1 feature-complete, untagged, pending skeptic review. See `docs/PLAN.md`. Linux and macOS, tmux ≥ 3.3.
+
+## Install
+
+Requires tmux ≥ 3.3. Release archives support Linux x86_64 and aarch64, and macOS
+arm64. Once v1 is tagged, download the archive for your platform and SHA256SUMS
+from [Releases](https://github.com/ContractorKeith/tmux-sidecar/releases).
+There is no published v1 release yet. In the download directory, verify the archive
+against its SHA256SUMS entry (`shasum -a 256` on macOS, `sha256sum` on Linux), then:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+tar -xzf tmux-sidecar-v*-*.tar.gz tmux-sidecar LICENSE README.md
+install -m 755 tmux-sidecar "$HOME/.local/bin/tmux-sidecar"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Keep only the selected platform's archive in that directory. To build from source,
+install stable Rust and tmux, then run from a clone of this repository:
+
+```bash
+cargo build --release --locked
+mkdir -p "$HOME/.local/bin"
+install -m 755 target/release/tmux-sidecar "$HOME/.local/bin/tmux-sidecar"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+## Quick start
+
+Run inside your tmux server. Review the hook edits, install them, and open the UI:
+
+```bash
+tmux-sidecar hooks install --dry-run
+tmux-sidecar hooks install
+tmux-sidecar ui
+```
+
+Restart agent CLIs after installing hooks. If Codex already has a notify command,
+use `tmux-sidecar hooks install --agent codex --chain` to preserve and call it.
+Claude Code and OpenCode hooks are proven live; Codex `notify` is proven, while
+Codex inline hooks remain unproven. Grok uses the Claude entry by default, plus a
+Grok-only StopCancelled hook. Disabling Claude compatibility in Grok moves its
+common events into a separate Grok hook file. See the
+[recorded payload evidence](tests/fixtures/hooks/README.md).
+
+## Doctor
+
+```bash
+tmux-sidecar doctor
+tmux-sidecar doctor --json
+```
+
+Doctor reports tmux version, daemon connectivity and version, hooks for each agent,
+notifier availability, session-board store readability, and runtime/state directory
+permissions. Each check includes a fix hint. Exit 0 means all checks pass; exit 1
+means something is missing or drifted, including stores for agents you have never
+run. It never starts the daemon. Run `tmux-sidecar list` to start it. Version skew
+also warns once per client process; `tmux-sidecar daemon stop` lets the next call
+start the current binary. Hook checks inspect the same HOME-relative configs that
+`hooks install` manages; store checks honor session-board's agent home overrides.
+
+The local socket contract is [JSON-RPC version 1](docs/rpc.md).
 
 ## MCP
 
@@ -122,3 +183,23 @@ desktop = true
 tmux = true
 debounce_secs = 10
 ```
+
+## Uninstall
+
+Inside the tmux server being removed:
+
+```bash
+tmux-sidecar hooks uninstall
+tmux-sidecar daemon stop
+```
+
+Repeat daemon stop for each server (`--tmux-socket PATH` before `daemon stop`).
+Remove the popup binding and MCP registration from your configs, then delete the
+installed binary. Remove the per-server runtime and state dirs after stopping all
+daemons. Linux: `$XDG_RUNTIME_DIR/tmux-sidecar` (fallback
+`/tmp/tmux-sidecar-<uid>`), `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-sidecar`,
+and `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-sidecar`. macOS:
+`$TMPDIR/tmux-sidecar-<uid>` and `$HOME/Library/Application Support/tmux-sidecar`.
+If set, `TMUX_SIDECAR_RUNTIME_DIR` and `TMUX_SIDECAR_STATE_DIR` replace the default
+per-server directories. State deletion permanently removes agent run history.
+Hook uninstall preserves unrelated entries and restores a chained Codex notify.
