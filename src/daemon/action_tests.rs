@@ -140,3 +140,38 @@ async fn ended_wait_reports_the_stored_state() {
     assert!(error.1.contains("ended in error"));
     worker.close().await.unwrap();
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn pending_wait_fails_on_poll_health_loss() {
+    let (_root, worker) = worker().await;
+    let (reply, receive) = tokio::sync::oneshot::channel();
+    let call = Call {
+        request: rpc::Request {
+            jsonrpc: rpc::Version::V2,
+            id: rpc::Id::Number(1),
+            method: "wait".into(),
+            params: Some(json!({"sel":"r1","until":"waiting"})),
+        },
+        reply,
+    };
+    let task = tokio::spawn(serve(call, worker.clone(), PathBuf::new(), 1));
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while worker.events.receiver_count() == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    worker.poll_error.send_replace(Some("probe-broken".into()));
+    let response = tokio::time::timeout(Duration::from_secs(1), receive)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        serde_json::to_string(&response)
+            .unwrap()
+            .contains("daemon can't reach tmux: probe-broken")
+    );
+    task.await.unwrap();
+    worker.close().await.unwrap();
+}

@@ -77,7 +77,7 @@ pub(crate) fn connected_error(method: &str, error: io::Error) -> io::Error {
 }
 
 pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufReader<UnixStream>> {
-    let stream = match connect(paths).await {
+    let (stream, endpoint, source) = match discovery::connect_identified(paths).await {
         Ok(stream) => stream,
         Err(_) if spawn => {
             tokio::time::timeout(Duration::from_secs(2), spawn::ensure(socket, paths))
@@ -91,7 +91,7 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
                         ),
                     )
                 })??;
-            connect(paths).await?
+            discovery::connect_identified(paths).await?
         }
         Err(error)
             if matches!(
@@ -99,7 +99,10 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
                 io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
             ) =>
         {
-            return Err(io::Error::new(error.kind(), "daemon not running"));
+            return Err(io::Error::new(
+                error.kind(),
+                format!("daemon not running ({error})"),
+            ));
         }
         Err(error) => return Err(error),
     };
@@ -114,8 +117,8 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
     let key = paths::server_key(socket)?;
     if hello["server_key"].as_str() != Some(&key) {
         return Err(io::Error::other(format!(
-            "wrong tmux server at TMUX_SIDECAR_RUNTIME_DIR {}; expected {key}, received {}",
-            paths.runtime.display(),
+            "wrong tmux server at {source} socket {}; expected {key}, received {}",
+            endpoint.display(),
             hello["server_key"]
         )));
     }
@@ -126,29 +129,8 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
     Ok(stream)
 }
 
-pub(crate) async fn connect(paths: &Paths) -> io::Result<UnixStream> {
-    let local = paths.runtime.join("sock");
-    let recorded = std::fs::read(paths.state.join("daemon.socket"))
-        .ok()
-        .map(|bytes| {
-            use std::os::unix::ffi::OsStringExt;
-            PathBuf::from(std::ffi::OsString::from_vec(bytes))
-        });
-    let mut error = io::Error::new(io::ErrorKind::NotFound, "daemon not running");
-    for path in std::iter::once(local).chain(recorded) {
-        match tokio::time::timeout(Duration::from_millis(250), UnixStream::connect(&path)).await {
-            Ok(Ok(stream)) => return Ok(stream),
-            Ok(Err(e)) => error = e,
-            Err(_) => {
-                error = io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    format!("connect to {} exceeded 250 ms", path.display()),
-                )
-            }
-        }
-    }
-    Err(error)
-}
+mod discovery;
+pub(crate) use discovery::connect;
 
 pub(crate) async fn verify(stream: &mut UnixStream, socket: &Path) -> io::Result<()> {
     let hello = exchange(&mut BufReader::new(stream), "hello", serde_json::json!({})).await?;

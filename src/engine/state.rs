@@ -79,7 +79,7 @@ fn hook(agent: AgentKind, event: &str, detail: Option<&str>) -> Option<AgentStat
         }
         (Claude | Grok, "Notification", Some("permission_prompt"))
         | (Claude | Grok | Codex, "PermissionRequest", _) => Some(Blocked),
-        (Claude | Grok | Codex, "Stop", _)
+        (Claude | Grok, "Stop", _)
         | (Grok, "StopCancelled", _)
         | (Claude | Grok, "Notification", Some("idle_prompt"))
         | (Codex, "agent-turn-complete", _)

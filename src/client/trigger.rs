@@ -15,10 +15,17 @@ pub fn trigger_spawn(socket: &Path, paths: &Paths) -> io::Result<()> {
         .arg(socket)
         .args(["daemon", "run"])
         .env("TMUX_SIDECAR_DETACHED", "1")
-        .env("TMUX_SIDECAR_TMUX", crate::tmux::resolve_binary()?)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
+    match crate::tmux::for_spawn(paths) {
+        Ok(binary) => {
+            command.env("TMUX_SIDECAR_TMUX", binary);
+        }
+        Err(_) => {
+            command.env_remove("TMUX_SIDECAR_TMUX");
+        }
+    }
     // SAFETY: setsid is async-signal-safe and receives no pointers.
     unsafe {
         command.pre_exec(|| {

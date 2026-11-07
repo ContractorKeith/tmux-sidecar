@@ -103,3 +103,24 @@ fn every_plan_hook_row_from_real_and_synthesized_fixtures() {
 }
 #[path = "support/state_precedence.rs"]
 mod precedence;
+
+#[test]
+fn codex_stop_is_unsupported_and_does_not_clear_blocked() {
+    let mut agent = run(AgentKind::Codex);
+    agent.state = Blocked;
+    assert_eq!(
+        transition(
+            &agent,
+            Evidence::Hook {
+                session_id: None,
+                event: "Stop",
+                detail: None,
+                at: 200,
+                last_signal_at: None
+            },
+            200
+        )
+        .0,
+        Blocked
+    );
+}

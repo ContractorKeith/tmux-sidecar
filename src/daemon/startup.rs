@@ -47,3 +47,27 @@ pub async fn run(socket: std::path::PathBuf, paths: Paths) -> io::Result<()> {
     }
     result
 }
+
+// Keep the legacy lock for this lifetime too, so an old binary cannot start later.
+pub(super) fn legacy_lock(paths: &Paths) -> io::Result<crate::client::FileLock> {
+    crate::client::FileLock::try_acquire(&paths.runtime.join("daemon.lock")).map_err(|error| {
+        if error.kind()!=io::ErrorKind::WouldBlock {return error;}
+        let pid=fs::read_to_string(paths.runtime.join("daemon.pid")).unwrap_or_else(|_| "unknown".into());
+        let pid=pid.trim();
+        io::Error::other(format!("an older tmux-sidecar daemon (pid {pid}) is running; run `tmux-sidecar daemon stop` with the old binary or kill {pid}"))
+    })
+}
+
+pub(super) fn notifications(
+    socket: &std::path::Path,
+    paths: &Paths,
+    store: &StoreWorker,
+) -> io::Result<super::shutdown::NotificationTask> {
+    let config = crate::notify::Config::read(&paths.config)?;
+    Ok(super::shutdown::NotificationTask(crate::notify::start(
+        socket.to_owned(),
+        paths.state.clone(),
+        config,
+        store.notifications.subscribe(),
+    )))
+}

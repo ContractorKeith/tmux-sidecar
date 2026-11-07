@@ -38,6 +38,9 @@ pub(super) async fn send(
     if params.text.contains('\0') {
         return Err((rpc::INVALID_PARAMS, "text contains NUL".into()));
     }
+    if let Some(error) = super::super::freshness::error(worker) {
+        return Err(error);
+    }
     let deadline = Instant::now() + Duration::from_secs(rpc::SEND_TIMEOUT_SECS);
     let tmux = RealTmux {
         socket: Socket::Path(socket),
@@ -64,6 +67,9 @@ pub(super) async fn send(
         }
         let guard = worker.lock_run(&selected.id).await;
         let run = select(worker, &selected.id, start).await?;
+        if let Some(error) = super::super::freshness::error(worker) {
+            return Err(error);
+        }
         if run.ended_at.is_some() {
             return Err((rpc::NOT_FOUND, format!("run {} has ended", run.id)));
         }
@@ -96,6 +102,7 @@ pub(super) async fn send(
         .await
         .map_err(|_| (rpc::TIMEOUT, "send exceeded 3 s before paste".into()))??;
     let live = run.clone();
+    let health = worker.poll_error.clone();
     // Always join terminal work before replying. Its absolute deadline is checked
     // before every command, so even a delayed blocking task cannot paste after timeout.
     let _guard = tokio::task::spawn_blocking(move || {
@@ -104,6 +111,9 @@ pub(super) async fn send(
         }
         if !i32::try_from(live.agent_pid).is_ok_and(crate::proc::alive) {
             return Err((rpc::NOT_FOUND, "agent run is no longer live".into()));
+        }
+        if let Some(reason) = health.borrow().as_ref() {
+            return Err((rpc::ERROR, format!("daemon can't reach tmux: {reason}")));
         }
         tmux.paste_before(&live.pane_id, &params.text, deadline.into_std())
             .map_err(failure)?;

@@ -38,9 +38,13 @@ async fn select(worker: &StoreWorker, sel: &str, start: u64) -> Result<AgentRun>
 }
 pub async fn serve(mut call: Call, worker: StoreWorker, socket: PathBuf, start: u64) {
     let id = Some(call.request.id);
-    let result = if call.request.method == "wait" {
+    let result = if let Some(error) = super::freshness::error(&worker) {
+        Err(error)
+    } else if call.request.method == "wait" {
         match parse(call.request.params) {
             Ok(params) => tokio::select! {
+                biased;
+                error=super::freshness::failed(&worker) => Err(error),
                 result = wait(&worker,params,start) => result,
                 _ = call.reply.closed() => return,
             },
@@ -134,6 +138,9 @@ async fn wait(worker: &StoreWorker, params: Wait, start: u64) -> Result<Value> {
 #[path = "send.rs"]
 mod sending;
 
+#[cfg(test)]
+#[path = "action_health_tests.rs"]
+mod health_tests;
 #[cfg(test)]
 #[path = "action_tests.rs"]
 mod tests;

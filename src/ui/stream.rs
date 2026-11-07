@@ -29,11 +29,15 @@ async fn snapshot(socket: &Path, paths: &Paths) -> io::Result<Snapshot> {
     let groups: Vec<Group> = serde_json::from_value(
         client::request(socket, paths, "group.ls", json!({}), false).await?,
     )?;
+    let health = client::request(socket, paths, "daemon.status", json!({}), false).await?;
     Ok(Snapshot {
         runs,
         groups,
         connected: true,
-        error: String::new(),
+        error: health["poll_error"]
+            .as_str()
+            .map(|reason| format!("daemon can't reach tmux: {reason}"))
+            .unwrap_or_default(),
     })
 }
 async fn connected(socket: &Path, paths: &Paths, send: &watch::Sender<Snapshot>) -> io::Result<()> {

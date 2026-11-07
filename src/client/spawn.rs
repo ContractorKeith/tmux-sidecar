@@ -87,23 +87,13 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
     if connect(paths).await.is_ok() {
         return Ok(());
     }
-    let pid = fs::read_to_string(paths.runtime.join("daemon.pid"))
-        .ok()
-        .and_then(|p| p.trim().parse().ok());
-    if !pid.is_some_and(crate::proc::alive) {
-        match fs::remove_file(paths.runtime.join("sock")) {
-            Ok(()) => (),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => (),
-            Err(e) => return Err(e),
-        }
-    }
     let log = crate::daemon::log::open(&paths.state)?;
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("--tmux-socket")
         .arg(socket)
         .env("TMUX_SIDECAR_DETACHED", "1")
-        .env("TMUX_SIDECAR_TMUX", crate::tmux::resolve_binary()?)
+        .env("TMUX_SIDECAR_TMUX", crate::tmux::for_spawn(paths)?)
         .args(["daemon", "run"])
         .kill_on_drop(false)
         .stdin(Stdio::null())

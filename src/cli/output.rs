@@ -22,7 +22,7 @@ pub fn print(method: &str, value: &Value, json: bool) -> io::Result<()> {
         .map(Vec::as_slice)
         .unwrap_or(std::slice::from_ref(value));
     for row in rows {
-        let cells: Vec<_> = columns
+        let mut cells: Vec<_> = columns
             .iter()
             .map(|key| match &row[*key] {
                 Value::Null => String::new(),
@@ -39,7 +39,49 @@ pub fn print(method: &str, value: &Value, json: bool) -> io::Result<()> {
                 other => other.to_string(),
             })
             .collect();
+        if row["stale"] == true
+            && let Some(index) = columns.iter().position(|key| *key == "state")
+        {
+            cells[index].push_str(" STALE");
+        }
         writeln!(out, "{}", cells.join("\t"))?;
+    }
+    if let Some(reason) = rows
+        .iter()
+        .find(|r| r["stale"] == true)
+        .and_then(|r| r["stale_reason"].as_str())
+    {
+        writeln!(out, "daemon can't reach tmux: {}", reason.escape_debug())?;
+    }
+    Ok(())
+}
+
+// Empty queues carry no row diagnostics; consult daemon health for human output.
+pub async fn print_read(
+    socket: &std::path::Path,
+    paths: &crate::paths::Paths,
+    method: &str,
+    value: &Value,
+    json: bool,
+) -> io::Result<()> {
+    let reason = if !json
+        && matches!(method, "list" | "attention")
+        && value.as_array().is_some_and(Vec::is_empty)
+    {
+        let health =
+            crate::client::request(socket, paths, "daemon.status", serde_json::json!({}), false)
+                .await?;
+        health["poll_error"].as_str().map(str::to_owned)
+    } else {
+        None
+    };
+    print(method, value, json)?;
+    if let Some(reason) = reason {
+        writeln!(
+            io::stdout().lock(),
+            "daemon can't reach tmux: {}",
+            reason.escape_debug()
+        )?;
     }
     Ok(())
 }

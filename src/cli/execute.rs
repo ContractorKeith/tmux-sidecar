@@ -197,7 +197,9 @@ async fn execute_inner(mut cli: Cli) -> Result<(), Failure> {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     } else if !cli.quiet {
-        super::output::print(method, &result, json_output).map_err(output_error)?;
+        super::output::print_read(&socket, &paths, method, &result, json_output)
+            .await
+            .map_err(output_error)?;
     }
     Ok(())
 }

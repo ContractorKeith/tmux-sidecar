@@ -25,30 +25,14 @@ e2e_test!(
             .parse()
             .unwrap();
         assert_ne!(run["agent_pid"].as_u64().unwrap(), child);
-        // Stop is a compatibility payload; current Codex installations use Interrupt/notify.
-        let stop = g.scratch.path().join("codex-stop.json");
-        let mut payload: serde_json::Value = serde_json::from_slice(
-            &fs::read(
-                Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("tests/fixtures/hooks/codex/PermissionRequest.json"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        payload["hook_event_name"] = "Stop".into();
-        fs::write(&stop, serde_json::to_vec(&payload).unwrap()).unwrap();
         for (format, fixture, state) in [
             ("codex", "codex/PermissionRequest", "blocked"),
-            ("codex", "codex/Stop", "waiting"),
+            ("codex", "codex/Interrupt", "waiting"),
             ("codex", "codex/PermissionRequest", "blocked"),
             ("codex-notify", "codex/notify", "waiting"),
         ] {
-            let path = if fixture == "codex/Stop" {
-                stop.clone()
-            } else {
-                Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join(format!("tests/fixtures/hooks/{fixture}.json"))
-            };
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("tests/fixtures/hooks/{fixture}.json"));
             super::hooks::fire(&g, child, format, &path);
             until!(|| list(&g)[0]["state"] == state);
             if state == "blocked" {

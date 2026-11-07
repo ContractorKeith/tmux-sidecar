@@ -47,9 +47,7 @@ impl Acceptor {
                 });
             }
             Err(_) => {
-                if let Ok(mut stream) = stream.into_std() {
-                    let _=std::io::Write::write_all(&mut stream,b"{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"connection limit exceeded\"}}\n");
-                }
+                tasks.spawn(reject(stream));
             }
         }
     }
@@ -60,5 +58,40 @@ impl Acceptor {
         self.spare = File::open("/dev/null").ok();
         self.after = Instant::now() + Duration::from_millis(self.delay);
         self.delay = (self.delay * 2).min(500);
+    }
+}
+
+async fn reject(mut stream: UnixStream) -> io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let frame=b"{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"connection limit exceeded\"}}\n";
+    let _ = tokio::time::timeout(Duration::from_millis(50), stream.write_all(frame)).await;
+    Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncReadExt;
+    #[tokio::test]
+    async fn rejected_peer_gets_frame_after_write_backpressure() {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let (server, mut client) = UnixStream::pair().unwrap();
+            server.writable().await.unwrap();
+            let padding = [b'x'; 4096];
+            let mut count = 0;
+            while let Ok(n) = server.try_write(&padding) {
+                count += n;
+            }
+            assert!(count > 0);
+            // The old immediate nonblocking write loses the frame before the reader drains.
+            let rejecting = tokio::spawn(reject(server));
+            tokio::task::yield_now().await;
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).await.unwrap();
+            rejecting.await.unwrap().unwrap();
+            let frame: serde_json::Value = serde_json::from_slice(&bytes[count..]).unwrap();
+            assert_eq!(frame["error"]["code"], -32600);
+        })
+        .await
+        .unwrap();
     }
 }

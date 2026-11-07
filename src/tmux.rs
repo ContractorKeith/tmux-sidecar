@@ -144,7 +144,7 @@ pub(crate) fn paste_outcome_unknown(error: &io::Error) -> bool {
 pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64> {
     let output = tokio::time::timeout(
         std::time::Duration::from_millis(30),
-        tokio::process::Command::new(binary())
+        tokio::process::Command::new(binary::quiet_binary())
             .arg("-S")
             .arg(socket)
             .args(["display-message", "-p", "#{start_time}"])
@@ -164,7 +164,7 @@ pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64>
 pub async fn hook_pane_pid(socket: &std::path::Path, pane: &str) -> std::io::Result<u32> {
     let output = tokio::time::timeout(
         std::time::Duration::from_millis(30),
-        tokio::process::Command::new(binary())
+        tokio::process::Command::new(binary::quiet_binary())
             .arg("-S")
             .arg(socket)
             .args(["display-message", "-p", "-t", pane, "#{pane_pid}"])
@@ -192,3 +192,4 @@ pub(crate) use actions::waiting;
 mod binary;
 use binary::binary;
 pub use binary::resolve_binary;
+pub(crate) use binary::{for_spawn, retry_path};

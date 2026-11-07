@@ -2,6 +2,7 @@
 mod accept;
 mod actions;
 mod config;
+mod freshness;
 mod labels;
 mod list;
 pub mod log;
@@ -45,13 +46,14 @@ fn other(e: impl std::error::Error + Send + Sync + 'static) -> io::Error {
     io::Error::other(e)
 }
 
-use shutdown::{NotificationTask, RuntimeGuard};
+use shutdown::RuntimeGuard;
 
 pub use startup::run;
 async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     paths::prepare(paths)?;
     // Also protects foreground starts; never unlink a live daemon's socket.
     let _lock = FileLock::try_acquire(&paths.state.join("daemon.lock"))?;
+    let _legacy = startup::legacy_lock(paths)?;
     let _guard = RuntimeGuard(paths.runtime.clone());
     match fs::remove_file(paths.runtime.join("sock")) {
         Ok(()) => (),
@@ -59,14 +61,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         Err(e) => return Err(e),
     }
     let store = startup::store(paths).await?;
-    let notify_config = crate::notify::Config::read(&paths.config)?;
-    let notifications = crate::notify::start(
-        socket.clone(),
-        paths.state.clone(),
-        notify_config,
-        store.notifications.subscribe(),
-    );
-    let _notifications = NotificationTask(notifications);
+    let _notifications = startup::notifications(&socket, paths, &store)?;
     let poll_ms = config::poll_ms(paths)?;
     let idle_after_ms = config::idle_after_ms(paths)?;
     let send_confirm_ms = config::send_confirm_ms(paths)?;
@@ -81,6 +76,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     )
     .await;
     health.record(&initial);
+    poll::publish(&store, &initial);
     match initial {
         Ok(false) => return Err(io::Error::other("tmux server is not running")),
         Err(f) if f.fatal => return Err(f.error),
@@ -132,12 +128,13 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
             } => {
                 polling = None;
                 let stop = health.record(&result);
+                poll::publish(&store, &result);
                 match result {
                     Ok(true) => (), Ok(false) => break Ok(()), Err(failure) => {
                         let message = format!("poll failure {}: {}", health.failures(), failure.error);
                         let _ = log::write(&paths.state, &message);
                         if stop {
-                            let _ = log::write(&paths.state, "daemon exiting after fatal database loss or 5 consecutive poll failures");
+                            let _ = log::write(&paths.state, "daemon exiting after fatal database loss, 5 consecutive poll failures, or 60 consecutive descriptor failures");
                             break Err(failure.error);
                         }
                     }
@@ -151,7 +148,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 if call.request.method=="signal" && let Some(params)=&mut call.request.params {crate::hook::context::resolve(params,&paths.runtime,&socket);}
                 if matches!(call.request.method.as_str(), "list" | "attention") {
                     let worker=store.clone();
-                    let stale=health.failures()>0;
+                    let stale=store.poll_error.borrow().clone();
                     connections.spawn(async move {list::serve(call,worker,stale).await;Ok(())});
                     continue;
                 }
@@ -177,9 +174,13 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                     let _ = call.reply.send(response);
                 } else {
                     let worker = store.clone();
+                    let status=call.request.method=="daemon.status";
                     connections.spawn(async move {
                         let job = move |store: &crate::store::Store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared,server_start);
-                        let response = worker.read(job).await?;
+                        let mut response = worker.read(job).await?;
+                        if status && let crate::rpc::Outcome::Success{result}=&mut response.outcome {
+                            result["poll_error"]=serde_json::json!(worker.poll_error.borrow().clone());
+                        }
                         let _ = call.reply.send(response);
                         Ok(())
                     });

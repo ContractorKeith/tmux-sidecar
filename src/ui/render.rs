@@ -82,8 +82,10 @@ pub fn draw(app: &App, frame: &mut Frame, now: u64) {
         .highlight_symbol("› ")
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
     frame.render_stateful_widget(list, areas[1], &mut state);
-    let status = if !app.data.connected && !app.data.error.is_empty() {
+    let status = if !app.data.error.is_empty() {
         app.data.error.clone()
+    } else if let Some(reason) = app.data.runs.iter().find_map(|r| r.stale_reason.as_deref()) {
+        format!("daemon can't reach tmux: {reason}")
     } else if !app.message.is_empty() {
         app.message.clone()
     } else if app.filtering {
