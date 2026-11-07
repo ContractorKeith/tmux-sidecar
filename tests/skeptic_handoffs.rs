@@ -25,7 +25,12 @@ fn state_change_carries_agent_project_and_current_pane_name() {
 
 #[test]
 fn state_and_runtime_symlinks_explain_the_rejection() {
-    for field in ["state", "runtime"] {
+    for (field, dangling) in [
+        ("state", false),
+        ("runtime", false),
+        ("state", true),
+        ("runtime", true),
+    ] {
         let root = tempfile::tempdir().unwrap();
         let mut paths = Paths {
             runtime: root.path().join("run"),
@@ -33,7 +38,9 @@ fn state_and_runtime_symlinks_explain_the_rejection() {
             config: root.path().join("config"),
         };
         let target = root.path().join("target");
-        fs::create_dir(&target).unwrap();
+        if !dangling {
+            fs::create_dir(&target).unwrap();
+        }
         let alias = root.path().join("alias");
         symlink(&target, &alias).unwrap();
         if field == "state" {
