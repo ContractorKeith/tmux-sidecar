@@ -107,6 +107,7 @@ pub async fn serve(
                     ),
                     Ok(request) => {
                         let subscribing = request.method == "subscribe";
+                        let waiting = request.method == "wait";
                         if subscribing && !subscribed {
                             events = events.resubscribe();
                         }
@@ -115,14 +116,20 @@ pub async fn serve(
                             return Ok(());
                         }
                         let mut receive = receive;
-                        let response = tokio::select! {
-                            biased;
-                            response = &mut receive => response,
-                            buffered = reader.fill_buf() => {
-                                if buffered?.is_empty() && super::peer::disconnected(writer.as_ref()) { return Ok(()); }
-                                // Preserve pipelined requests; process them after this reply.
-                                receive.await
+                        // Ordinary RPCs own their reply before the next read. Only a
+                        // long-lived wait needs a concurrent disconnect monitor.
+                        let response = if waiting {
+                            tokio::select! {
+                                biased;
+                                response = &mut receive => response,
+                                buffered = reader.fill_buf() => {
+                                    if buffered?.is_empty() && super::peer::disconnected(writer.as_ref()) { return Ok(()); }
+                                    // Preserve pipelined requests; process them after this reply.
+                                    receive.await
+                                }
                             }
+                        } else {
+                            receive.await
                         };
                         let Ok(response) = response else {
                             return Ok(());
