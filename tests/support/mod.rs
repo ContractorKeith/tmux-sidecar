@@ -33,22 +33,21 @@ impl TmuxGuard {
     }
     fn start_with_input(capture: bool) -> Self {
         let scratch = Scratch::new();
-        let name = scratch
-            .path()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
+        let socket = scratch.path().join("tmux.sock");
         // Construct the guard before any operation that could start a server.
         let mut guard = Self {
             adapter: RealTmux {
-                socket: Socket::Name(name),
+                socket: Socket::Path(socket.clone()),
             },
             scratch,
             path: OsString::new(),
-            server_socket: PathBuf::new(),
+            server_socket: socket,
         };
+        fs::write(
+            guard.scratch.path().join("tmux.socket"),
+            guard.server_socket.as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
         for dir in ["home", "run", "state", "config", "bin"] {
             fs::create_dir(guard.scratch.path().join(dir)).unwrap();
         }

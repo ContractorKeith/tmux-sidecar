@@ -41,6 +41,11 @@ e2e_test!(panic_removes_scratch_socket_and_daemon, {
     assert!(result.is_err());
     let (root, server, daemon) = saved.lock().unwrap().clone().unwrap();
     assert!(!root.exists());
+    crate::support::cleanup::fixture(&root, Some(server), false);
+    assert!(
+        !root.exists(),
+        "repeated cleanup resurrected the scratch tree"
+    );
     assert!(!tmux_sidecar::proc::running(server as i32).unwrap());
     assert!(!tmux_sidecar::proc::running(daemon).unwrap());
 });

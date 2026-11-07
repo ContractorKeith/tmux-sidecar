@@ -52,6 +52,10 @@ pub fn children(root: &Path, children: &[u32]) {
     terminate(&owned.into_iter().collect::<Vec<_>>());
 }
 pub fn fixture(root: &Path, server: Option<u32>, diagnose: bool) {
+    // A second Drop after watchdog cleanup must not invoke tmux with a deleted TMPDIR.
+    if !root.exists() {
+        return;
+    }
     let daemon = std::fs::read_to_string(root.join("run/daemon.pid"))
         .ok()
         .and_then(|s| s.parse().ok());
@@ -77,8 +81,8 @@ pub fn fixture(root: &Path, server: Option<u32>, diagnose: bool) {
     let mut stop = isolated("tmux", root);
     if let Ok(socket) = std::fs::read_to_string(root.join("tmux.socket")) {
         stop.args(["-S", socket.trim()]);
-    } else if let Some(name) = root.file_name() {
-        stop.arg("-L").arg(name);
+    } else {
+        stop.arg("-S").arg(root.join("tmux.sock"));
     }
     let _ = process::try_output(stop.arg("kill-server"));
     // A daemon needs the original server key to accept stop; use the recorded socket when available.
