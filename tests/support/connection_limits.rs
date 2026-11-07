@@ -22,23 +22,9 @@ e2e_test!(connection_cap_rejects_extras_and_recovers, {
             use tokio::io::AsyncBufReadExt;
             let mut clients = Vec::new();
             for _ in 0..256 {
-                clients.push(
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(2),
-                        tokio::net::UnixStream::connect(&socket),
-                    )
-                    .await
-                    .unwrap()
-                    .unwrap(),
-                );
+                clients.push(capacity_peer(&socket).await);
             }
-            let extra = tokio::time::timeout(
-                std::time::Duration::from_secs(2),
-                tokio::net::UnixStream::connect(&socket),
-            )
-            .await
-            .unwrap()
-            .unwrap();
+            let extra = capacity_peer(&socket).await;
             let mut frame = String::new();
             tokio::time::timeout(
                 std::time::Duration::from_secs(2),
@@ -122,3 +108,26 @@ e2e_test!(emfile_accept_error_keeps_daemon_alive_and_recovers, {
     assert!(daemon.0.try_wait().unwrap().is_none());
     stop(&g);
 });
+
+async fn capacity_peer(socket: &std::path::Path) -> tokio::net::UnixStream {
+    use std::{io::ErrorKind, time::Duration};
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            match tokio::net::UnixStream::connect(socket).await {
+                Ok(stream) => return stream,
+                // Darwin refuses a full backlog rather than waiting for accept.
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        ErrorKind::ConnectionRefused | ErrorKind::WouldBlock
+                    ) =>
+                {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                Err(error) => panic!("capacity peer connect: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("capacity peer must connect within 2 s")
+}
