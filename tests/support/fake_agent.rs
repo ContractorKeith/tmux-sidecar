@@ -23,6 +23,27 @@ fn main() {
     let executable = std::env::current_exe().unwrap();
     let name = executable.file_name().unwrap().to_str().unwrap();
     fs::write(root.join(format!("ready-{name}")), b"").unwrap();
+    if root.join("capture-input").exists() {
+        let mut terminal = ChildGuard(Command::new("stty").args(["raw", "-echo"]).spawn().unwrap());
+        terminal.0.wait().unwrap();
+        use std::io::Write;
+        std::io::stdout().write_all(b"\x1b[?2004h").unwrap();
+        std::io::stdout().flush().unwrap();
+        let input_root = root.clone();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let mut input = std::io::stdin().lock();
+            let mut file = fs::File::create(input_root.join(format!("input-{pid}"))).unwrap();
+            let mut bytes = [0; 4096];
+            while let Ok(count) = input.read(&mut bytes) {
+                if count == 0 {
+                    break;
+                }
+                file.write_all(&bytes[..count]).unwrap();
+                file.flush().unwrap();
+            }
+        });
+    }
     loop {
         let request = root.join(format!("fire-{pid}"));
         if let Ok(text) = fs::read_to_string(&request) {

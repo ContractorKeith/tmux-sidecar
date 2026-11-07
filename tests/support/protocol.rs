@@ -67,7 +67,18 @@ e2e_test!(separate_servers_and_rpc_contract, {
             assert!(response["result"].is_object());
         } else if ["attention", "group.ls"].contains(method) {
             assert!(response["result"].is_array());
-        } else if ["signal", "ack", "history", "name", "group.add", "group.rm"].contains(method) {
+        } else if [
+            "signal",
+            "ack",
+            "history",
+            "name",
+            "group.add",
+            "group.rm",
+            "wait",
+            "send",
+        ]
+        .contains(method)
+        {
             assert_eq!(response["error"]["code"], -32602);
         } else {
             assert_eq!(response["error"]["code"], -32601);

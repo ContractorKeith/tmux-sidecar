@@ -48,9 +48,11 @@ pub enum Command {
         json: bool,
     },
     /// Paste a prompt into an agent run.
+    #[command(
+        after_help = "Use - to read text from stdin. For text starting with a hyphen, use --: send %0 -- -text"
+    )]
     Send {
         sel: RunSelector,
-        #[arg(allow_hyphen_values = true)]
         text: String,
         #[arg(long)]
         force: bool,
@@ -64,7 +66,7 @@ pub enum Command {
     History {
         sel: RunSelector,
         #[arg(long)]
-        limit: Option<u64>,
+        limit: Option<u32>,
         #[arg(long)]
         json: bool,
     },

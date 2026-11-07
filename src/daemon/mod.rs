@@ -1,4 +1,5 @@
 //! One socket owner and one poller per tmux server.
+mod actions;
 mod config;
 mod labels;
 mod list;
@@ -166,8 +167,26 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 let key = key.clone();
                 let prepared = methods::prepare(&call.request);
                 let server_start=crate::hook::context::read(&paths.runtime,&socket).unwrap_or(0);
-                let response = store.with(move |store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared,server_start)).await?;
-                let _ = call.reply.send(response);
+                if matches!(call.request.method.as_str(), "wait" | "send") {
+                    let worker = store.clone();
+                    let socket = socket.clone();
+                    connections.spawn(async move { actions::serve(call, worker, socket, server_start).await; Ok(()) });
+                    continue;
+                }
+                if stop {
+                    let response = store.read(move |store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared,server_start)).await?;
+                    let _ = call.reply.send(response);
+                } else {
+                    let worker = store.clone();
+                    connections.spawn(async move {
+                        // Every method committing state changes must go through with(), never read().
+                        let mutation = call.request.method == "signal";
+                        let job = move |store: &crate::store::Store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared,server_start);
+                        let response = if mutation { worker.with(job).await } else { worker.read(job).await }?;
+                        let _ = call.reply.send(response);
+                        Ok(())
+                    });
+                }
                 if stop { break Ok(()); }
             },
             Some(_) = connections.join_next(), if !connections.is_empty() => (),

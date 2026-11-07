@@ -23,6 +23,12 @@ pub struct TmuxGuard {
 }
 impl TmuxGuard {
     pub fn start() -> Self {
+        Self::start_with_input(false)
+    }
+    pub fn start_capture() -> Self {
+        Self::start_with_input(true)
+    }
+    fn start_with_input(capture: bool) -> Self {
         let scratch = tempfile::Builder::new().prefix("tsx-").tempdir().unwrap();
         let name = scratch
             .path()
@@ -43,6 +49,9 @@ impl TmuxGuard {
         watchdog::register(guard.scratch.path());
         for dir in ["home", "run", "state", "config", "bin"] {
             fs::create_dir(guard.scratch.path().join(dir)).unwrap();
+        }
+        if capture {
+            fs::write(guard.scratch.path().join("state/capture-input"), b"").unwrap();
         }
         use std::os::unix::fs::PermissionsExt;
         for dir in ["run", "state"] {

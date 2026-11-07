@@ -56,7 +56,7 @@ pub async fn serve(call: Call, worker: StoreWorker) {
             };
             let selected = group.clone();
             let runs = worker
-                .with(move |store| stored(store, &copied, selected.as_ref(), before, page_limit))
+                .read(move |store| stored(store, &copied, selected.as_ref(), before, page_limit))
                 .await
                 .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))??;
             let count = runs.len();

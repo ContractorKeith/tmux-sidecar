@@ -1,7 +1,10 @@
 //! M0: JSON-RPC 2.0 wire types; socket transport arrives in M1.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+mod frame;
+pub use frame::{MAX_FRAME_BYTES, frame_error, request_frame};
 pub const RPC_VERSION: u32 = 1;
+pub const SEND_TIMEOUT_SECS: u64 = 3;
 pub const METHODS: &[&str] = &[
     "hello",
     "list",

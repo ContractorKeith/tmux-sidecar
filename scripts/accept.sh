@@ -110,4 +110,14 @@ python3 - "$scratch/attention.json" <<'PYLIVE'
 import json, sys
 assert json.load(open(sys.argv[1]))[0]['state'] == 'blocked'
 PYLIVE
+# M4: guarded send, daemon-enforced wait timeout and missing selectors.
+status=0
+"$bin" --tmux-socket "$socket" send "$pane" refused >/dev/null 2>&1 || status=$?
+test "$status" -eq 3
+status=0
+"$bin" --tmux-socket "$socket" wait "$pane" --until waiting --timeout 1 >/dev/null 2>&1 || status=$?
+test "$status" -eq 4
+status=0
+"$bin" --tmux-socket "$socket" history r999999 >/dev/null 2>&1 || status=$?
+test "$status" -eq 5
 echo "accept: ok"

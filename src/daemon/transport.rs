@@ -39,28 +39,30 @@ pub async fn serve(
         // Limit a single frame so a local client cannot grow the daemon without bound.
         let mut bytes = Vec::new();
         use tokio::io::AsyncReadExt;
-        let read = async {
-            (&mut reader)
-                .take(1024 * 1024 + 1)
-                .read_until(b'\n', &mut bytes)
-                .await
-        };
-        tokio::pin!(read);
-        let count = loop {
-            tokio::select! {
-                count=&mut read=>break count?,
-                event=events.recv(), if subscribed=> {
-                    let (frame,close)=match event {
-                        Ok(payload)=>(serde_json::json!({"jsonrpc":"2.0","method":"state_changed","params":payload}),false),
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>(serde_json::json!({"jsonrpc":"2.0","method":"subscription_error","params":{"code":-32001,"message":"slow subscriber exceeded 256 changes"}}),true),
-                        Err(_)=>return Ok(()),
-                    };
-                    let mut encoded=serde_json::to_vec(&frame)?;encoded.push(b'\n');
-                    // A blocked socket never holds the daemon; bound even the final write.
-                    match tokio::time::timeout(std::time::Duration::from_millis(250),writer.write_all(&encoded)).await {
-                        Ok(result)=>result?, Err(_)=>return Ok(()),
+        let count = {
+            let read = async {
+                (&mut reader)
+                    .take(1024 * 1024 + 1)
+                    .read_until(b'\n', &mut bytes)
+                    .await
+            };
+            tokio::pin!(read);
+            loop {
+                tokio::select! {
+                    count=&mut read=>break count?,
+                    event=events.recv(), if subscribed=> {
+                        let (frame,close)=match event {
+                            Ok(payload)=>(serde_json::json!({"jsonrpc":"2.0","method":"state_changed","params":payload}),false),
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>(serde_json::json!({"jsonrpc":"2.0","method":"subscription_error","params":{"code":-32001,"message":"slow subscriber exceeded 256 changes"}}),true),
+                            Err(_)=>return Ok(()),
+                        };
+                        let mut encoded=serde_json::to_vec(&frame)?;encoded.push(b'\n');
+                        // A blocked socket never holds the daemon; bound even the final write.
+                        match tokio::time::timeout(std::time::Duration::from_millis(250),writer.write_all(&encoded)).await {
+                            Ok(result)=>result?, Err(_)=>return Ok(()),
+                        }
+                        if close {return Ok(());}
                     }
-                    if close {return Ok(());}
                 }
             }
         };
@@ -105,6 +107,7 @@ pub async fn serve(
                     ),
                     Ok(request) => {
                         let subscribing = request.method == "subscribe";
+                        let waiting = request.method == "wait";
                         if subscribing && !subscribed {
                             events = events.resubscribe();
                         }
@@ -112,7 +115,23 @@ pub async fn serve(
                         if sender.send(Call { request, reply }).await.is_err() {
                             return Ok(());
                         }
-                        let Ok(response) = receive.await else {
+                        let mut receive = receive;
+                        // Ordinary RPCs own their reply before the next read. Only a
+                        // long-lived wait needs a concurrent disconnect monitor.
+                        let response = if waiting {
+                            tokio::select! {
+                                biased;
+                                response = &mut receive => response,
+                                buffered = reader.fill_buf() => {
+                                    if buffered?.is_empty() && super::peer::disconnected(writer.as_ref()) { return Ok(()); }
+                                    // Preserve pipelined requests; process them after this reply.
+                                    receive.await
+                                }
+                            }
+                        } else {
+                            receive.await
+                        };
+                        let Ok(response) = response else {
                             return Ok(());
                         };
                         if subscribing && matches!(response.outcome, Outcome::Success { .. }) {

@@ -113,6 +113,7 @@ fn output_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<O
         }
         std::thread::sleep(Duration::from_millis(10));
     };
+    let pid = child.0.id();
     let receive = |stream: &str, receiver: mpsc::Receiver<io::Result<Vec<u8>>>| {
         receiver
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
@@ -122,6 +123,12 @@ fn output_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<O
                     format!("{stream} EOF timed out after child exit ({status}): {error}"),
                 )
             })?
+            .map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("{stream} EOF after child pid {pid} exited {status}: {error}"),
+                )
+            })
     };
     Ok(Output {
         status,

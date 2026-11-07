@@ -33,6 +33,50 @@ pub async fn request(
     params: Value,
     spawn: bool,
 ) -> io::Result<Value> {
+    let mut stream = open(socket, paths, spawn).await?;
+    let result = if method == "wait" {
+        exchange(&mut stream, method, params).await
+    } else {
+        let seconds = if method == "send" {
+            rpc::SEND_TIMEOUT_SECS + 2
+        } else {
+            5
+        };
+        tokio::time::timeout(
+            Duration::from_secs(seconds),
+            exchange(&mut stream, method, params),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("RPC {method} exceeded {seconds} s"),
+            ))
+        })
+    };
+    result.map_err(|e| connected_error(method, e))
+}
+pub(crate) fn connected_error(method: &str, error: io::Error) -> io::Error {
+    if error
+        .get_ref()
+        .and_then(|e| e.downcast_ref::<rpc::RpcError>())
+        .is_some_and(|e| e.code != rpc::DAEMON_UNREACHABLE)
+    {
+        return error;
+    }
+    let message = match method {
+        "send" => "send outcome unknown — check the pane before retrying".to_owned(),
+        "wait" => "daemon stopped while waiting".to_owned(),
+        _ => format!("RPC {method} connection failed: {error}"),
+    };
+    io::Error::other(rpc::RpcError {
+        code: rpc::ERROR,
+        message,
+        data: None,
+    })
+}
+
+pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufReader<UnixStream>> {
     let stream = match connect(paths).await {
         Ok(stream) => stream,
         Err(_) if spawn => {
@@ -51,33 +95,24 @@ pub async fn request(
         }
         Err(error) => return Err(error),
     };
-    tokio::time::timeout(Duration::from_secs(2), async {
-        let mut stream = BufReader::new(stream);
-        let hello = exchange(&mut stream, "hello", serde_json::json!({})).await?;
-        let key = paths::server_key(socket)?;
-        if hello["server_key"].as_str() != Some(&key) {
-            return Err(io::Error::other(format!(
-                "wrong tmux server at TMUX_SIDECAR_RUNTIME_DIR {}; expected {key}, received {}",
-                paths.runtime.display(),
-                hello["server_key"]
-            )));
-        }
-        if method == "hello" {
-            return Ok(hello);
-        }
-        exchange(&mut stream, method, params).await
-    })
+    let mut stream = BufReader::new(stream);
+    let hello = tokio::time::timeout(
+        Duration::from_secs(2),
+        exchange(&mut stream, "hello", serde_json::json!({})),
+    )
     .await
-    .map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!(
-                "RPC {method} from {} exceeded 2 s",
-                paths.runtime.join("sock").display()
-            ),
-        )
-    })?
+    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "hello exceeded 2 s"))??;
+    let key = paths::server_key(socket)?;
+    if hello["server_key"].as_str() != Some(&key) {
+        return Err(io::Error::other(format!(
+            "wrong tmux server at TMUX_SIDECAR_RUNTIME_DIR {}; expected {key}, received {}",
+            paths.runtime.display(),
+            hello["server_key"]
+        )));
+    }
+    Ok(stream)
 }
+
 pub(crate) async fn connect(paths: &Paths) -> io::Result<UnixStream> {
     tokio::time::timeout(
         Duration::from_millis(250),
@@ -102,19 +137,12 @@ pub(crate) async fn verify(stream: &mut UnixStream, socket: &Path) -> io::Result
     Ok(())
 }
 pub use spawn::trigger_spawn;
-async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+pub(crate) async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
     stream: &mut BufReader<S>,
     method: &str,
     params: Value,
 ) -> io::Result<Value> {
-    let request = rpc::Request {
-        jsonrpc: rpc::Version::V2,
-        id: rpc::Id::Number(1),
-        method: method.into(),
-        params: Some(params),
-    };
-    let mut bytes = serde_json::to_vec(&request)?;
-    bytes.push(b'\n');
+    let bytes = rpc::request_frame(method, params)?;
     stream.get_mut().write_all(&bytes).await?;
     let mut line = String::new();
     stream.read_line(&mut line).await?;
