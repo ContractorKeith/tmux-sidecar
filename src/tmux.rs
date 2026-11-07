@@ -153,6 +153,9 @@ pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64>
         .map_err(std::io::Error::other)
 }
 pub use parse::{PaneScan, parse, parse_scan};
+mod actions;
 #[cfg(test)]
 #[path = "tmux/tests.rs"]
 mod tests;
+pub use actions::focus;
+pub(crate) use actions::waiting;

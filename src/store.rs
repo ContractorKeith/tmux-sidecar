@@ -13,6 +13,7 @@ mod queries;
 mod row;
 mod signals;
 mod state;
+mod view;
 use row::{enum_name, number, row, run_id};
 fn db_error(path: &Path, error: impl std::fmt::Display) -> io::Error {
     io::Error::other(format!(

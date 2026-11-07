@@ -14,10 +14,12 @@ struct Params {
     group: Option<String>,
     name: Option<String>,
     limit: Option<u32>,
+    views: Option<bool>,
 }
 pub fn handle(method: &str, params: Option<Value>, store: &Store, server_start: u64) -> Result {
     let allowed: &[&str] = match method {
-        "attention" | "subscribe" | "group.ls" => &[],
+        "attention" | "group.ls" => &[],
+        "subscribe" => &["views"],
         "history" => &["sel", "limit"],
         "name" => &["sel", "name"],
         "ack" => &["sel", "selectors"],
@@ -70,7 +72,10 @@ pub fn handle(method: &str, params: Option<Value>, store: &Store, server_start: 
             Ok(json!(runs))
         }
         "group.ls" => store.groups().map_err(internal),
-        "subscribe" => Ok(json!({"subscribed":true})),
+        "subscribe" => {
+            let _ = params.views;
+            Ok(json!({"subscribed":true}))
+        }
         "history" | "name" => {
             let run = select(
                 params

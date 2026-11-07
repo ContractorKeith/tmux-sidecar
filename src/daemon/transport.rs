@@ -28,6 +28,7 @@ pub async fn serve(
     stream: UnixStream,
     sender: mpsc::Sender<Call>,
     mut events: tokio::sync::broadcast::Receiver<Value>,
+    mut views: tokio::sync::watch::Receiver<u64>,
 ) -> std::io::Result<()> {
     if !super::peer::authorize(&stream)? {
         return Ok(());
@@ -35,6 +36,7 @@ pub async fn serve(
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut subscribed = false;
+    let mut view_subscribed = false;
     loop {
         // Limit a single frame so a local client cannot grow the daemon without bound.
         let mut bytes = Vec::new();
@@ -50,6 +52,13 @@ pub async fn serve(
             loop {
                 tokio::select! {
                     count=&mut read=>break count?,
+                    changed=views.changed(), if view_subscribed => {
+                        if changed.is_err() {return Ok(());}
+                        let frame=b"{\"jsonrpc\":\"2.0\",\"method\":\"view_changed\",\"params\":{}}\n";
+                        match tokio::time::timeout(std::time::Duration::from_millis(250),writer.write_all(frame)).await {
+                            Ok(result)=>result?, Err(_)=>return Ok(()),
+                        }
+                    },
                     event=events.recv(), if subscribed=> {
                         let (frame,close)=match event {
                             Ok(payload)=>(serde_json::json!({"jsonrpc":"2.0","method":"state_changed","params":payload}),false),
@@ -107,6 +116,8 @@ pub async fn serve(
                     ),
                     Ok(request) => {
                         let subscribing = request.method == "subscribe";
+                        let wants_views =
+                            request.params.as_ref().is_some_and(|p| p["views"] == true);
                         let waiting = request.method == "wait";
                         if subscribing && !subscribed {
                             events = events.resubscribe();
@@ -136,6 +147,7 @@ pub async fn serve(
                         };
                         if subscribing && matches!(response.outcome, Outcome::Success { .. }) {
                             subscribed = true;
+                            view_subscribed |= wants_views;
                         }
                         response
                     }

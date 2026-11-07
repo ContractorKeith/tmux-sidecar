@@ -93,7 +93,22 @@ pub async fn serve(call: Call, worker: StoreWorker) {
         if filters.all {
             result.truncate(filters.limit as usize);
         }
-        serde_json::to_value(result).map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))
+        let result = worker
+            .with(move |store| {
+                result
+                    .into_iter()
+                    .map(|run| {
+                        let name = store.pane_name(run.server_start, &run.pane_id)?;
+                        let mut value = serde_json::to_value(run)?;
+                        value["pane_name"] = serde_json::json!(name);
+                        Ok(value)
+                    })
+                    .collect::<std::io::Result<Vec<_>>>()
+            })
+            .await
+            .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))?
+            .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))?;
+        Ok(serde_json::json!(result))
     }
     .await;
     let response = match result {

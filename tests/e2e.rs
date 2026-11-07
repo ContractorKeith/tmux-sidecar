@@ -130,3 +130,8 @@ mod mcp_lifecycle;
 mod mcp_replies;
 #[path = "support/mcp_rpc.rs"]
 mod mcp_rpc;
+
+#[path = "support/ui.rs"]
+mod ui;
+#[path = "support/ui_lifecycle.rs"]
+mod ui_lifecycle;

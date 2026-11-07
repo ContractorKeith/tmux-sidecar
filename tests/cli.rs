@@ -1,22 +1,16 @@
 use std::process::Command;
 #[test]
 fn future_verbs_remain_explicit_stubs() {
-    for (args, verb, milestone) in [
-        (vec!["doctor", "--json"], "doctor", 7),
-        (vec!["ui"], "ui", 5),
-    ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
-            .args(["--tmux-socket", "/tmp/unused", "-q"])
-            .args(args)
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2), "{verb}");
-        assert!(output.stdout.is_empty());
-        assert_eq!(
-            String::from_utf8(output.stderr).unwrap(),
-            format!("tmux-sidecar: {verb} is not implemented yet (M{milestone})\n")
-        );
-    }
+    let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+        .args(["--tmux-socket", "/tmp/unused", "-q", "doctor", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "tmux-sidecar: doctor is not implemented yet (M7)\n"
+    );
 }
 #[test]
 fn help_and_version_work() {

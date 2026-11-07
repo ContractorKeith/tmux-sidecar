@@ -1,0 +1,17 @@
+tmux-sidecar
+┌Manual groups─────────────────────────────────────────────────────────────────┐
+│  Attention (3)                                                               │
+│› blocked claude   build · 1m · Latest answer                                 │
+│  error   codex    %1 · 1m · Latest answer                                    │
+│  waiting grok     %2 · 1m · Latest answer                                    │
+│  Ungrouped                                                                   │
+│  error   codex    %1 · 1m · Latest answer                                    │
+│  waiting grok     %2 · 1m · Latest answer                                    │
+│  working opencode %3 · 1m · Latest answer                                    │
+│  idle    claude   %4 · 1m · Latest answer                                    │
+│  done    codex    %5 · 1m · Latest answer                                    │
+│  review                                                                      │
+│  blocked claude   build · 1m · Latest answer                                 │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+j/k move · Enter open · a ack · g group · / filter · q quit

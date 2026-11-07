@@ -85,7 +85,7 @@ Params: `{"sel":"r1","limit":100}`. `sel` accepts a run id or current pane selec
 `limit` is an unsigned 32-bit count, default 100. Returns all evidence and state changes,
 newest `at` first, then newest row id, capped by limit. Each row contains `id`, `run_id`,
 `at`, `source`, `event`, `detail` and decoded `payload`. State-change payloads contain
-`run_id`, `from`, `to`, `at`, and `cause` (the hook or transcript signal row id, or null
+`run_id`, `pane_id`, `server_start`, `from`, `to`, `at`, and `cause` (the hook or transcript signal row id, or null
 for process and clock evidence). State-change rows have source `engine`; transcript
 readings have source `transcript` and event `transcript_reading`.
 
@@ -253,7 +253,7 @@ and the unchanged appended payload. Uninstall restores the prior notify entry.
 ### state_changed notification
 
 ```json
-{"jsonrpc":"2.0","method":"state_changed","params":{"run_id":"r1","from":"working","to":"waiting","at":1793800000000,"cause":42}}
+{"jsonrpc":"2.0","method":"state_changed","params":{"run_id":"r1","pane_id":"%0","server_start":1793800000,"from":"working","to":"waiting","at":1793800000000,"cause":42}}
 ```
 
 ### Errors
@@ -290,3 +290,19 @@ A connection lost during an established wait returns exit 1, "daemon stopped whi
 waiting". Exit 6 covers failure to reach the daemon after auto-spawn.
 CLI errors map to 1 general, 2 usage, 3 refused, 4 timeout, 5 selector not found,
 6 unreachable after auto-spawn. Mutation commands report a brief success message.
+
+### UI view invalidation (M5)
+
+`list` results additionally include nullable `pane_name`, attached to the run's pane
+key. `subscribe` accepts optional `views: true` (boolean). These subscribers also
+receive `{"jsonrpc":"2.0","method":"view_changed","params":{}}` when committed
+run data, read marks, pane names or manual groups change. Invalidation coalesces to
+one pending event per connection; reload `list` and `group.ls` after receiving it.
+Subscribe before the initial load to avoid missing concurrent mutations. Empty
+subscribe params preserve the state-change-only stream. The UI reloads only after
+pushes and never reads the database. Disconnects require a fresh hello, subscribe
+and initial load.
+
+State-change payloads include `pane_id` and `server_start` from the committed run,
+so notification consumers can target its pane without another RPC. Historical rows
+created before M5 may omit these fields.

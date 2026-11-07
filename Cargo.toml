@@ -11,7 +11,8 @@ test-util = []
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-crossterm = "0.29"
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures-core = "0.3"
 libc = "0.2"
 ratatui = "0.30"
 rmcp = { version = "3", default-features = false, features = ["server", "transport-io"] }

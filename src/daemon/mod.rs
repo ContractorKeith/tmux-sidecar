@@ -42,6 +42,12 @@ fn other(e: impl std::error::Error + Send + Sync + 'static) -> io::Error {
     io::Error::other(e)
 }
 
+struct NotificationTask(tokio::task::JoinHandle<()>);
+impl Drop for NotificationTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 struct RuntimeGuard(PathBuf);
 impl Drop for RuntimeGuard {
     fn drop(&mut self) {
@@ -77,6 +83,14 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         )?;
     }
     let store = store_worker::StoreWorker::open(db).await?;
+    let notify_config = crate::notify::Config::read(&paths.config)?;
+    let notifications = crate::notify::start(
+        socket.clone(),
+        paths.state.clone(),
+        notify_config,
+        store.events.subscribe(),
+    );
+    let _notifications = NotificationTask(notifications);
     let poll_ms = config::poll_ms(paths)?;
     let idle_after_ms = config::idle_after_ms(paths)?;
     let mut transcripts = transcripts::Reader::default();
@@ -153,7 +167,7 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 }
             },
             incoming = listener.accept() => match incoming {
-                Ok((stream, _)) => { let sender = sender.clone(); let events=store.events.subscribe(); connections.spawn(async move { transport::serve(stream, sender, events).await }); },
+                Ok((stream, _)) => { let sender = sender.clone(); let events=store.events.subscribe(); let views=store.views.subscribe(); connections.spawn(async move { transport::serve(stream, sender, events, views).await }); },
                 Err(e) => break Err(e),
             },
             Some(mut call) = receiver.recv() => {
