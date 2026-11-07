@@ -79,3 +79,42 @@ fn slow_tmux_does_not_recommend_installation() {
     );
     assert!(!check["fix"].as_str().unwrap().contains("install tmux"));
 }
+
+#[test]
+fn doctor_uses_tmux_override_and_checks_state_directory_permissions() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path();
+    fixture(home, Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
+    let pinned = home.join("pinned-tmux");
+    fs::rename(home.join("bin/tmux"), &pinned).unwrap();
+    // Lifecycle locks and socket discovery belong beside the DB, not in runtime.
+    for file in ["daemon.lock", "spawn.lock"] {
+        fs::write(home.join("state").join(file), "").unwrap();
+    }
+    let peer = peer(home, env!("CARGO_PKG_VERSION"), 2);
+    let output = run(command(home)
+        .env("TMUX_SIDECAR_TMUX", &pinned)
+        .args(["doctor", "--json"]));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    fs::set_permissions(home.join("state"), fs::Permissions::from_mode(0o755)).unwrap();
+    let output = run(command(home)
+        .env("TMUX_SIDECAR_TMUX", &pinned)
+        .args(["doctor", "--json"]));
+    assert_eq!(output.status.code(), Some(1));
+    let checks: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    for (name, expected) in [
+        ("tmux", "ok"),
+        ("runtime permissions", "ok"),
+        ("state permissions", "fail"),
+    ] {
+        assert_eq!(
+            checks.iter().find(|c| c["name"] == name).unwrap()["status"],
+            expected
+        );
+    }
+    peer.join().unwrap();
+}

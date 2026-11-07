@@ -106,6 +106,21 @@ scanning transcripts. `tmux master` is assumed current. Doctor never starts the 
 next call start the current binary. Both hooks and stores honor agent home overrides. Version skew also compares the embedded
 git build id, shown by `--version` and `hello`.
 
+Both the runtime and state directories must be owned by your uid with mode 0700.
+The runtime directory holds the socket and daemon pid; the state directory holds
+`tmux-sidecar.db`, `daemon.lock`, `spawn.lock`, and `daemon.socket`. The last file
+records the daemon's socket so clients with different runtime directories (including
+macOS clients with different `TMPDIR` values) reach the same daemon. Startup also
+holds the legacy runtime `daemon.lock`; stop an older daemon before upgrading.
+
+Set `TMUX_SIDECAR_TMUX` to an executable tmux path to override PATH for commands,
+including doctor's version probe. Spawned daemons inherit the resolved executable;
+an unavailable override falls back to PATH with a warning.
+
+If a pane/process poll fails, `list` and `attention` mark rows `STALE`, and the UI
+shows the health diagnostic. JSON rows expose `stale` and `stale_reason`. Historical
+state stays visible, but `wait` and `send` refuse it until a successful poll.
+
 The local socket contract is [JSON-RPC version 1](docs/rpc.md).
 
 ## MCP
