@@ -24,20 +24,46 @@ pub fn failure(id: Option<Id>, code: i32, message: impl Into<String>) -> Respons
     }
 }
 
-pub async fn serve(stream: UnixStream, sender: mpsc::Sender<Call>) -> std::io::Result<()> {
+pub async fn serve(
+    stream: UnixStream,
+    sender: mpsc::Sender<Call>,
+    mut events: tokio::sync::broadcast::Receiver<Value>,
+) -> std::io::Result<()> {
     if !super::peer::authorize(&stream)? {
         return Ok(());
     }
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
+    let mut subscribed = false;
     loop {
         // Limit a single frame so a local client cannot grow the daemon without bound.
         let mut bytes = Vec::new();
         use tokio::io::AsyncReadExt;
-        let count = (&mut reader)
-            .take(1024 * 1024 + 1)
-            .read_until(b'\n', &mut bytes)
-            .await?;
+        let read = async {
+            (&mut reader)
+                .take(1024 * 1024 + 1)
+                .read_until(b'\n', &mut bytes)
+                .await
+        };
+        tokio::pin!(read);
+        let count = loop {
+            tokio::select! {
+                count=&mut read=>break count?,
+                event=events.recv(), if subscribed=> {
+                    let (frame,close)=match event {
+                        Ok(payload)=>(serde_json::json!({"jsonrpc":"2.0","method":"state_changed","params":payload}),false),
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>(serde_json::json!({"jsonrpc":"2.0","method":"subscription_error","params":{"code":-32001,"message":"slow subscriber exceeded 256 changes"}}),true),
+                        Err(_)=>return Ok(()),
+                    };
+                    let mut encoded=serde_json::to_vec(&frame)?;encoded.push(b'\n');
+                    // A blocked socket never holds the daemon; bound even the final write.
+                    match tokio::time::timeout(std::time::Duration::from_millis(250),writer.write_all(&encoded)).await {
+                        Ok(result)=>result?, Err(_)=>return Ok(()),
+                    }
+                    if close {return Ok(());}
+                }
+            }
+        };
         if count == 0 {
             return Ok(());
         }
@@ -78,6 +104,10 @@ pub async fn serve(stream: UnixStream, sender: mpsc::Sender<Call>) -> std::io::R
                         "invalid request",
                     ),
                     Ok(request) => {
+                        let subscribing = request.method == "subscribe";
+                        if subscribing && !subscribed {
+                            events = events.resubscribe();
+                        }
                         let (reply, receive) = oneshot::channel();
                         if sender.send(Call { request, reply }).await.is_err() {
                             return Ok(());
@@ -85,6 +115,9 @@ pub async fn serve(stream: UnixStream, sender: mpsc::Sender<Call>) -> std::io::R
                         let Ok(response) = receive.await else {
                             return Ok(());
                         };
+                        if subscribing && matches!(response.outcome, Outcome::Success { .. }) {
+                            subscribed = true;
+                        }
                         response
                     }
                 }

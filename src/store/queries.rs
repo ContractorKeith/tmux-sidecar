@@ -15,26 +15,34 @@ impl Store {
         Ok(format!("r{}", self.connection.last_insert_rowid()))
     }
     pub fn end(&self, id: &str, now: u64) -> io::Result<()> {
-        (|| -> rusqlite::Result<_> {
-            self.connection.execute(
-                "UPDATE runs SET ended_at=?1,state='done',state_since=?1,state_source='process'
-            WHERE id=?2 AND ended_at IS NULL",
-                params![number(now)?, run_id(id)?],
-            )?;
-            Ok(())
-        })()
-        .map_err(|e| db_error(&self.path, e))
+        let tx = self
+            .connection
+            .unchecked_transaction()
+            .map_err(io::Error::other)?;
+        self.end_inner(id, now)?;
+        tx.commit().map_err(io::Error::other)
+    }
+    pub(super) fn end_inner(&self, id: &str, now: u64) -> io::Result<()> {
+        if let Some(run) = self.get(id.parse().map_err(io::Error::other)?, 0)? {
+            self.change(&run, crate::model::AgentState::Done, now, "process", None)
+                .map_err(io::Error::other)?;
+            self.connection
+                .execute(
+                    "UPDATE runs SET ended_at=?1 WHERE id=?2 AND ended_at IS NULL",
+                    params![
+                        number(now).map_err(io::Error::other)?,
+                        run_id(id).map_err(io::Error::other)?
+                    ],
+                )
+                .map_err(io::Error::other)?;
+        }
+        Ok(())
     }
     pub fn end_all(&self, now: u64) -> io::Result<()> {
-        (|| -> rusqlite::Result<_> {
-            self.connection.execute(
-                "UPDATE runs SET ended_at=?1,state='done',state_since=?1,state_source='process'
-            WHERE ended_at IS NULL",
-                [number(now)?],
-            )?;
-            Ok(())
-        })()
-        .map_err(|e| db_error(&self.path, e))
+        for run in self.active()? {
+            self.end(&run.id, now)?;
+        }
+        Ok(())
     }
     pub fn list(&self) -> io::Result<Vec<AgentRun>> {
         (|| -> rusqlite::Result<_> {

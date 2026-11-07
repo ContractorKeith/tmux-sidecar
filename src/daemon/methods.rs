@@ -24,7 +24,7 @@ pub fn prepare(request: &Request) -> Prepared {
 }
 pub fn handle(request: Request, store: &Store, key: &str, poll_ms: u64) -> Response {
     let prepared = prepare(&request);
-    handle_prepared(request, store, key, poll_ms, prepared)
+    handle_prepared(request, store, key, poll_ms, prepared, 0)
 }
 pub fn handle_prepared(
     request: Request,
@@ -32,6 +32,7 @@ pub fn handle_prepared(
     key: &str,
     poll_ms: u64,
     prepared: Prepared,
+    server_start: u64,
 ) -> Response {
     let id = Some(request.id.clone());
     let result = match request.method.as_str() {
@@ -46,6 +47,13 @@ pub fn handle_prepared(
         }
         "daemon.stop" => Ok(json!({"stopping":true,"pid":std::process::id()})),
         "list" => list(&request, store),
+        "attention" | "history" | "ack" | "name" | "group.add" | "group.rm" | "group.ls"
+        | "subscribe" => super::state_methods::handle(
+            &request.method,
+            request.params.clone(),
+            store,
+            server_start,
+        ),
         "signal" => match prepared.expect("signal prepared before dispatch") {
             Err(e) => Err((rpc::INVALID_PARAMS, e)),
             Ok(signal) => store
@@ -55,8 +63,7 @@ pub fn handle_prepared(
         },
         method => {
             let milestone = match method {
-                "attention" | "group.add" | "group.rm" | "group.ls" | "subscribe" => "M3",
-                "history" | "wait" | "send" | "ack" | "name" => "M4",
+                "wait" | "send" => "M4",
                 _ => return failure(id, rpc::METHOD_NOT_FOUND, "unknown method"),
             };
             return failure(
@@ -75,33 +82,39 @@ pub fn handle_prepared(
         Err((code, message)) => failure(id, code, message),
     }
 }
-fn list(request: &Request, store: &Store) -> Result<Value, (i32, String)> {
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Filters {
-        group: Option<String>,
-        state: Option<AgentState>,
-        #[serde(default)]
-        all: bool,
-        #[serde(default = "default_limit")]
-        limit: u32,
-    }
-    let filters: Filters = match request.params.as_ref().filter(|p| !p.is_null()) {
-        None => Filters {
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Filters {
+    pub group: Option<String>,
+    pub state: Option<AgentState>,
+    #[serde(default)]
+    pub all: bool,
+    #[serde(default = "default_limit")]
+    pub limit: u32,
+}
+pub(super) fn filters(request: &Request) -> Result<Filters, (i32, String)> {
+    match request.params.as_ref().filter(|p| !p.is_null()) {
+        None => Ok(Filters {
             group: None,
             state: None,
             all: false,
             limit: default_limit(),
-        },
-        Some(value) => serde_json::from_value(value.clone())
-            .map_err(|e| (rpc::INVALID_PARAMS, e.to_string()))?,
-    };
-    if filters.group.is_some() {
-        return Err((rpc::METHOD_NOT_FOUND, "not implemented yet (M3)".into()));
+        }),
+        Some(value) => {
+            serde_json::from_value(value.clone()).map_err(|e| (rpc::INVALID_PARAMS, e.to_string()))
+        }
     }
-    let runs = store
-        .query_runs(filters.all, filters.state, filters.limit)
-        .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))?;
+}
+fn list(request: &Request, store: &Store) -> Result<Value, (i32, String)> {
+    let filters = filters(request)?;
+    let group = super::labels::Group::parse(filters.group.as_deref())?;
+    let runs = super::list::stored(
+        store,
+        &filters,
+        group.as_ref(),
+        None,
+        filters.all.then_some(filters.limit),
+    )?;
     serde_json::to_value(runs).map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))
 }
 

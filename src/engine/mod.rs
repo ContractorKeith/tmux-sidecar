@@ -1,8 +1,10 @@
-//! Pure process-based run detection. M3 adds signal-driven states.
+//! Pure process detection and evidence-based state transitions.
+pub mod state;
 use crate::{
     model::{AgentKind, AgentRun, AgentState},
     seams::{PaneSnapshot, ProcessSnapshot},
 };
+pub use state::{Evidence, transition};
 use std::collections::HashSet;
 
 #[derive(Debug, Default)]

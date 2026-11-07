@@ -1,6 +1,12 @@
 //! One socket owner and one poller per tmux server.
+mod config;
+mod labels;
+mod list;
 pub mod log;
 mod methods;
+mod state_methods;
+mod transcript_match;
+mod transcripts;
 pub use methods::handle as dispatch;
 mod peer;
 mod poll;
@@ -70,9 +76,11 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         )?;
     }
     let store = store_worker::StoreWorker::open(db).await?;
-    let poll_ms = poll_ms(paths)?;
+    let poll_ms = config::poll_ms(paths)?;
+    let idle_after_ms = config::idle_after_ms(paths)?;
+    let mut transcripts = transcripts::Reader::default();
     let mut health = poll::Health::default();
-    let initial = poll::tick(socket.clone(), &store, paths.runtime.clone()).await;
+    let initial = poll::tick(socket.clone(), &store, paths.runtime.clone(), idle_after_ms).await;
     health.record(&initial);
     match initial {
         Ok(false) => return Err(io::Error::other("tmux server is not running")),
@@ -105,11 +113,14 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    let mut transcript_interval = tokio::time::interval(Duration::from_secs(2));
+    transcript_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut polling: Option<PollFuture<'_>> = None;
     let result = loop {
         tokio::select! {
             _ = term.recv() => break Ok(()),
             _ = interrupt.recv() => break Ok(()),
+            _ = transcript_interval.tick() => transcripts.start(store.clone(),paths.state.clone()),
             _ = interval.tick(), if polling.is_none() => {
                 let socket = socket.clone();
                 let state = paths.state.clone();
@@ -117,7 +128,8 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 let runtime = paths.runtime.clone();
                 polling = Some(Box::pin(async move {
                     replay::replay(state, runtime.clone(),socket.clone(), worker).await;
-                    poll::tick(socket, worker, runtime).await
+                    let alive = poll::tick(socket, worker, runtime, idle_after_ms).await?;
+                    Ok(alive)
                 }));
             },
             result = async {
@@ -140,45 +152,34 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                 }
             },
             incoming = listener.accept() => match incoming {
-                Ok((stream, _)) => { let sender = sender.clone(); connections.spawn(async move { transport::serve(stream, sender).await }); },
+                Ok((stream, _)) => { let sender = sender.clone(); let events=store.events.subscribe(); connections.spawn(async move { transport::serve(stream, sender, events).await }); },
                 Err(e) => break Err(e),
             },
             Some(mut call) = receiver.recv() => {
                 if call.request.method=="signal" && let Some(params)=&mut call.request.params {crate::hook::context::resolve(params,&paths.runtime,&socket);}
+                if call.request.method == "list" {
+                    let worker=store.clone();
+                    connections.spawn(async move {list::serve(call,worker).await;Ok(())});
+                    continue;
+                }
                 let stop = call.request.method == "daemon.stop" && methods::empty_params(&call.request);
                 let key = key.clone();
                 let prepared = methods::prepare(&call.request);
-                let response = store.with(move |store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared)).await?;
+                let server_start=crate::hook::context::read(&paths.runtime,&socket).unwrap_or(0);
+                let response = store.with(move |store| methods::handle_prepared(call.request, store, &key, poll_ms, prepared,server_start)).await?;
                 let _ = call.reply.send(response);
                 if stop { break Ok(()); }
             },
             Some(_) = connections.join_next(), if !connections.is_empty() => (),
         }
     };
+    transcripts.stop().await;
     drop(polling);
     drop(listener);
     let drained = shutdown::drain(&mut connections, &mut receiver, &store, &key, poll_ms).await;
     store.close().await?;
     result.and(drained)
 }
-fn poll_ms(paths: &Paths) -> io::Result<u64> {
-    let config = match fs::read_to_string(&paths.config) {
-        Ok(text) => toml::from_str::<toml::Table>(&text).map_err(other)?,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => toml::Table::new(),
-        Err(e) => return Err(e),
-    };
-    let value = if let Ok(value) = std::env::var("TMUX_SIDECAR_POLL_MS") {
-        value.parse::<u64>().map_err(other)?
-    } else if let Some(value) = config.get("poll_ms") {
-        value
-            .as_integer()
-            .and_then(|n| n.try_into().ok())
-            .ok_or_else(|| io::Error::other("poll_ms must be a positive integer"))?
-    } else {
-        1000
-    };
-    if value == 0 {
-        return Err(io::Error::other("poll_ms must be positive"));
-    }
-    Ok(value)
-}
+
+#[cfg(test)]
+mod transport_tests;

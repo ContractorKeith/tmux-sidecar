@@ -8,9 +8,19 @@ pub fn running(pid: i32) -> io::Result<bool> {
 }
 #[cfg(target_os = "linux")]
 fn state_running(pid: i32) -> io::Result<bool> {
-    let stat = match std::fs::read(format!("/proc/{pid}/stat")) {
+    linux_stat(std::fs::read(format!("/proc/{pid}/stat")))
+}
+#[cfg(target_os = "linux")]
+fn linux_stat(result: io::Result<Vec<u8>>) -> io::Result<bool> {
+    let stat = match result {
         Ok(stat) => stat,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        // A process can disappear after kill(0), or after opening its proc file.
+        Err(error)
+            if error.kind() == io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(libc::ESRCH) =>
+        {
+            return Ok(false);
+        }
         Err(error) => return Err(error),
     };
     let end = stat
@@ -45,4 +55,21 @@ fn state_running(pid: i32) -> io::Result<bool> {
         error.kind(),
         format!("query exit state of pid {pid}: {error}"),
     ))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    #[test]
+    fn process_exit_between_probe_and_stat_read_counts_as_exited() {
+        for code in [libc::ENOENT, libc::ESRCH] {
+            assert!(!linux_stat(Err(io::Error::from_raw_os_error(code))).unwrap());
+        }
+        assert_eq!(
+            linux_stat(Err(io::Error::from_raw_os_error(libc::EACCES)))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(libc::EACCES)
+        );
+    }
 }

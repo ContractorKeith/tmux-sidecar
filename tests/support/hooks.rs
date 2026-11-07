@@ -80,7 +80,7 @@ e2e_test!(every_fixture_is_delivered_by_its_real_ancestor, {
     }
     // A busy daemon may legitimately make a hook spool; allow its next tick to replay.
     let spool = guard.scratch.path().join("state/spool.ndjson");
-    until!(|| !spool.exists() || fs::read(&spool).unwrap().is_empty());
+    until!(|| tmux_sidecar::hook::spool::drained(spool.parent().unwrap()).unwrap());
     super::lifecycle::stop(&guard);
     let signals = inspect(&guard);
     assert_eq!(
@@ -132,10 +132,10 @@ e2e_test!(down_daemon_spools_replays_in_order_and_deduplicates, {
     );
     drop(lock);
     let _ = super::lifecycle::list(&guard);
-    until!(|| fs::read(&path).unwrap().is_empty());
+    until!(|| tmux_sidecar::hook::spool::drained(path.parent().unwrap()).unwrap());
     // Simulate a crash between committing the records and acknowledging the spool.
     fs::write(&path, &bytes).unwrap();
-    until!(|| fs::read(&path).unwrap().is_empty());
+    until!(|| tmux_sidecar::hook::spool::drained(path.parent().unwrap()).unwrap());
     super::lifecycle::stop(&guard);
     let signals = inspect(&guard);
     assert_eq!(signals.len(), 2);

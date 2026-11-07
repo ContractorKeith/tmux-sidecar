@@ -189,7 +189,7 @@ meta(schema_version)
 | Signal | → state |
 |---|---|
 | Claude/Grok `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
-| Claude/Grok `Notification` `permission_prompt`, Claude `PermissionRequest` | blocked |
+| Claude/Grok `Notification` `permission_prompt`, Claude/Grok `PermissionRequest` | blocked |
 | Claude/Grok `Stop`, `Notification` `idle_prompt` | waiting |
 | Grok `StopCancelled` | waiting |
 | Claude/Grok `StopFailure` | error |
@@ -338,8 +338,10 @@ permission prompt and waiting after its turn.
 
 ## 12. Open questions
 
-- Does `#{pane_active}` plus `#{window_active}` plus `#{session_attached}` reliably mean "the
-  person is looking at it"? M3 decides; fallback is `ack` only.
+- M3 retains focus read marks: `pane_active` + `window_active` + `session_attached` identifies
+  visible panes. The real-tmux test uses two attached control-mode clients, a hidden window
+  and a detached tmux session; only visible panes are read, and switching windows reads the
+  newly visible pane. This measures tmux visibility, not operating-system window focus.
 - Codex `notify` collides with an existing user `notify` program; `--chain` semantics are
   settled in M2.
 - session-board v0.1.0's lib API was not designed as a public interface. If M3 needs

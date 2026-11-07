@@ -48,9 +48,7 @@ e2e_test!(
         let payload = guard.scratch.path().join("large.json");
         fs::write(&payload,serde_json::to_vec(&json!({"hook_event_name":"PostToolUse","tool_name":"Bash","session_id":"large-fake","cwd":"/fixture","tool_response":{"stdout":"x".repeat(5*1024*1024)}})).unwrap()).unwrap();
         super::hooks::fire(&guard, pid, "claude", &payload);
-        until!(|| fs::read(guard.scratch.path().join("state/spool.ndjson"))
-            .unwrap()
-            .is_empty());
+        until!(|| tmux_sidecar::hook::spool::drained(&guard.scratch.path().join("state")).unwrap());
         super::lifecycle::stop(&guard);
         let signals = history(&guard);
         assert_eq!(signals.len(), 1);
@@ -95,9 +93,7 @@ e2e_test!(
             "claude",
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks/claude/Stop.json"),
         );
-        until!(|| fs::read(guard.scratch.path().join("state/spool.ndjson"))
-            .unwrap()
-            .is_empty());
+        until!(|| tmux_sidecar::hook::spool::drained(&guard.scratch.path().join("state")).unwrap());
         assert!(
             !guard.scratch.path().join("home/hook-probe").exists(),
             "hook forked tmux despite cached context"
@@ -136,7 +132,7 @@ e2e_test!(
             return;
         }
         let guard = TmuxGuard::start();
-        let _ = super::lifecycle::list(&guard);
+        let runs = super::lifecycle::list(&guard);
         super::lifecycle::stop(&guard);
         let target = guard.scratch.path().join("target");
         fs::write(&target, "original").unwrap();
@@ -156,6 +152,19 @@ e2e_test!(
         });
         assert_eq!(super::lifecycle::pid(&guard), pid);
         assert_eq!(fs::read_to_string(target).unwrap(), "original");
+        // A failed rejected-file write in an old claim must not starve a new claim.
+        fs::write(
+            guard.scratch.path().join("state/spool.ndjson"),
+            format!("{}\n", frame(&runs[0], 999)),
+        )
+        .unwrap();
+        until!(
+            || !super::state::rpc(&guard, "history", json!({"sel":runs[0]["id"]}))
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
         super::lifecycle::stop(&guard);
+        assert_eq!(history(&guard).len(), 1);
     }
 );

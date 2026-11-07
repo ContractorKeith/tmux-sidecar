@@ -3,7 +3,7 @@ use crate::{hook::signal::Signal, model::AgentState};
 impl Store {
     pub fn signal_history(&self) -> io::Result<Vec<serde_json::Value>> {
         (|| -> rusqlite::Result<_> {
-            self.connection.prepare("SELECT run_id,at,source,event,payload_json,detail FROM signals ORDER BY id")?
+            self.connection.prepare("SELECT run_id,at,source,event,payload_json,detail FROM signals WHERE source LIKE 'hook:%' ORDER BY id")?
                 .query_map([],|r| Ok(serde_json::json!({"run_id":format!("r{}",r.get::<_,i64>(0)?), "at":r.get::<_,i64>(1)?,
                     "source":r.get::<_,String>(2)?,"event":r.get::<_,String>(3)?,"detail":r.get::<_,Option<String>>(5)?,"payload_json":r.get::<_,String>(4)?})))?.collect()
         })().map_err(|e|db_error(&self.path,e))
@@ -56,10 +56,36 @@ impl Store {
             };
             tx.execute("UPDATE runs SET agent_session_id=COALESCE(?1,agent_session_id), transcript_path=COALESCE(?2,transcript_path) WHERE id=?3",
                 params![signal.agent_session_id,signal.transcript_path,id])?;
+            let run = tx.query_row("SELECT * FROM runs WHERE id=?1", [id], row)?;
+            let last_signal_at = self
+                .latest_hook_at(&run.id)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
             tx.execute(
                 "INSERT INTO signals(run_id,at,source,event,payload_json,detail) VALUES (?1,?2,?3,?4,?5,?6)",
                 params![id, number(signal.at)?, signal.source, signal.event, payload,signal.detail],
             )?;
+            let cause = tx.last_insert_rowid();
+            let (state, _) = crate::engine::transition(
+                &run,
+                crate::engine::Evidence::Hook {
+                    event: &signal.event,
+                    detail: signal.detail.as_deref(),
+                    at: signal.at,
+                    last_signal_at,
+                },
+                signal.at,
+            );
+            self.change(&run, state, signal.at, &signal.source, Some(cause))?;
+            if let Some(text) = signal
+                .payload
+                .get("last_assistant_message")
+                .and_then(serde_json::Value::as_str)
+            {
+                tx.execute(
+                    "UPDATE runs SET last_assistant_text=?1 WHERE id=?2",
+                    params![text, id],
+                )?;
+            }
             Ok(())
         })();
         result.map_err(|e| db_error(&self.path, e))?;
@@ -103,7 +129,7 @@ mod tests {
             .connection
             .query_row("SELECT COUNT(*) FROM signals", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 2);
+        assert_eq!(count, 3);
         let longest: i64 = store
             .connection
             .query_row("SELECT MAX(length(nonce)) FROM signal_receipts", [], |r| {

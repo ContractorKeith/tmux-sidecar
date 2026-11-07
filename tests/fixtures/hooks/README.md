@@ -76,7 +76,7 @@ and Grok's installed `~/.grok/docs/user-guide/10-hooks.md`.
 - `opencode/session.idle.json`
 - `opencode/session.status.json`
 
-## Synthesized (17)
+## Synthesized (18)
 
 - `claude/Notification-idle_prompt.json` — synthesized
 - `claude/Notification-permission_prompt.json` — synthesized
@@ -90,6 +90,7 @@ and Grok's installed `~/.grok/docs/user-guide/10-hooks.md`.
 - `codex/UserPromptSubmit.json` — synthesized
 - `grok/Notification-idle_prompt.json` — synthesized
 - `grok/Notification-permission_prompt.json` — synthesized
+- `grok/PermissionRequest.json` — synthesized (Claude-compatible permission entry)
 - `grok/StopCancelled.json` — synthesized
 - `grok/StopFailure.json` — synthesized
 - `opencode/permission.asked.json` — synthesized
