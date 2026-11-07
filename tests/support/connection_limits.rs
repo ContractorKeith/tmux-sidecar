@@ -3,11 +3,7 @@ use super::{
     lifecycle::{list, stop},
     support::{ChildGuard, output},
 };
-use std::{
-    io::{BufRead, BufReader},
-    os::unix::process::CommandExt,
-    process::Stdio,
-};
+use std::{os::unix::process::CommandExt, process::Stdio};
 
 e2e_test!(connection_cap_rejects_extras_and_recovers, {
     if !enabled() {
@@ -16,21 +12,46 @@ e2e_test!(connection_cap_rejects_extras_and_recovers, {
     let g = TmuxGuard::start();
     list(&g);
     let socket = g.scratch.path().join("run/sock");
-    let mut clients = Vec::new();
-    for _ in 0..256 {
-        clients.push(crate::support::socket::connect(&socket).unwrap());
-    }
-    let extra = crate::support::socket::connect(&socket).unwrap();
-    extra
-        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
-        .unwrap();
-    let mut frame = String::new();
-    BufReader::new(extra).read_line(&mut frame).unwrap();
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&frame).unwrap()["error"]["code"],
-        -32600
-    );
-    drop(clients);
+    // Keep deadlines in the runtime: Darwin can reject socket-option changes
+    // after the daemon has already closed an over-capacity peer.
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            use tokio::io::AsyncBufReadExt;
+            let mut clients = Vec::new();
+            for _ in 0..256 {
+                clients.push(
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        tokio::net::UnixStream::connect(&socket),
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                );
+            }
+            let extra = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                tokio::net::UnixStream::connect(&socket),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            let mut frame = String::new();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                tokio::io::BufReader::new(extra).read_line(&mut frame),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&frame).unwrap()["error"]["code"],
+                -32600
+            );
+        });
     until!(|| output(g.sidecar().args(["daemon", "status", "--json"]))
         .status
         .success());
