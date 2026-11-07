@@ -5,25 +5,38 @@ use std::{
 };
 #[test]
 fn real_tmux_version_forms_and_missing_or_old_versions() {
-    for version in ["tmux 3.3a", "tmux next-3.6", "tmux openbsd-7.5", "tmux 3.8"] {
+    for version in [
+        "tmux 3.3a",
+        "tmux next-3.6",
+        "tmux openbsd-7.5",
+        "tmux 3.8",
+        "tmux master",
+    ] {
         assert!(inspect::tmux_version(version).is_ok(), "{version}");
     }
     for version in ["", "tmux 3.2a", "tmux openbsd-7.2", "garbage"] {
         assert!(inspect::tmux_version(version).is_err(), "{version}");
     }
-    assert!(!Check::new("tmux", Err(io::Error::other("not found")), "install").ok);
+    assert_eq!(
+        Check::new("tmux", Err(io::Error::other("not found")), "install").status,
+        Status::Fail
+    );
 }
 #[test]
 fn daemon_unreachable_skew_and_matching() {
-    assert!(!daemon_check(Err(io::Error::other("unreachable"))).ok);
+    assert_eq!(
+        daemon_check(Err(io::Error::other("unreachable"))).status,
+        Status::Fail
+    );
     let skew = daemon_check(Ok(serde_json::json!({"daemon_version":"older"})));
-    assert!(!skew.ok);
+    assert_eq!(skew.status, Status::Fail);
     assert!(skew.fix.contains("daemon stop"));
-    assert!(
+    assert_eq!(
         daemon_check(Ok(
             serde_json::json!({"daemon_version": env!("CARGO_PKG_VERSION")})
         ))
-        .ok
+        .status,
+        Status::Ok
     );
 }
 #[test]

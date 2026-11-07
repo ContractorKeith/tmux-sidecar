@@ -1,17 +1,29 @@
 //! Local diagnostics never auto-start or modify the daemon or agent stores.
+#[cfg(test)]
+mod agent_tests;
+mod agents;
 mod hooks;
 mod inspect;
 #[cfg(test)]
 mod tests;
-use crate::{client, paths};
+use crate::{client, model::AgentKind, paths};
 use serde::Serialize;
 use std::{io, path::Path};
 
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Status {
+    Ok,
+    Fail,
+    Skip,
+}
+
 #[derive(Debug, Serialize)]
-pub struct Check {
+struct Check {
     pub name: String,
-    pub ok: bool,
+    pub status: Status,
     pub detail: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub fix: String,
 }
 impl Check {
@@ -22,10 +34,31 @@ impl Check {
         };
         Self {
             name: name.into(),
-            ok,
+            status: if ok { Status::Ok } else { Status::Fail },
             detail,
-            fix: fix.into(),
+            fix: if ok { String::new() } else { fix.into() },
         }
+    }
+    fn skip(name: &str, detail: &str) -> Self {
+        Self {
+            name: name.into(),
+            status: Status::Skip,
+            detail: detail.into(),
+            fix: String::new(),
+        }
+    }
+    fn human(&self) -> String {
+        let status = match self.status {
+            Status::Ok => "ok",
+            Status::Fail => "fail",
+            Status::Skip => "skip",
+        };
+        let mut line = format!("{status} {}: {}", self.name, self.detail);
+        if self.status == Status::Fail {
+            line.push_str(&format!("; fix: {}", self.fix));
+        }
+        // Keep each diagnostic on one line without quoting readable paths.
+        line.replace(['\n', '\r'], " ")
     }
 }
 fn daemon_check(result: io::Result<serde_json::Value>) -> Check {
@@ -44,7 +77,12 @@ fn daemon_check(result: io::Result<serde_json::Value>) -> Check {
         "run `tmux-sidecar daemon stop`, then `tmux-sidecar list` (inside tmux)",
     )
 }
-pub async fn run(explicit: Option<&Path>, json: bool, quiet: bool) -> Result<(), (u8, String)> {
+pub async fn run(
+    explicit: Option<&Path>,
+    json: bool,
+    quiet: bool,
+    requested: &[AgentKind],
+) -> Result<(), (u8, String)> {
     let home = std::env::var_os("HOME").ok_or((1, "HOME is missing".into()))?;
     let home = std::path::PathBuf::from(home);
     let binary = std::env::current_exe().map_err(|e| (1, e.to_string()))?;
@@ -64,7 +102,7 @@ pub async fn run(explicit: Option<&Path>, json: bool, quiet: bool) -> Result<(),
             |name| std::env::var_os(name),
         )
     });
-    let mut checks = inspect::local(&home, &binary).await;
+    let mut checks = inspect::local(&home, &binary, requested).await;
     let hello = match (&socket, &dirs) {
         (Ok(socket), Some(dirs)) => {
             client::request(socket, dirs, "hello", serde_json::json!({}), false).await
@@ -95,17 +133,11 @@ pub async fn run(explicit: Option<&Path>, json: bool, quiet: bool) -> Result<(),
             );
         } else {
             for check in &checks {
-                println!(
-                    "{} {}: {}; fix: {}",
-                    if check.ok { "ok" } else { "missing" },
-                    check.name,
-                    check.detail.escape_debug(),
-                    check.fix.escape_debug()
-                );
+                println!("{}", check.human());
             }
         }
     }
-    if checks.iter().all(|c| c.ok) {
+    if checks.iter().all(|c| c.status != Status::Fail) {
         Ok(())
     } else {
         Err((1, "doctor found missing or drifted checks".into()))

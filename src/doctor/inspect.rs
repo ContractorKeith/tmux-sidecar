@@ -1,8 +1,12 @@
-use super::{Check, hooks};
+use super::{Check, agents};
+use crate::model::AgentKind;
 use std::{fs, io, os::unix::fs::MetadataExt, path::Path, time::Duration};
 
 pub(super) fn tmux_version(text: &str) -> io::Result<String> {
     let version = text.trim().strip_prefix("tmux ").unwrap_or(text.trim());
+    if version == "master" {
+        return Ok("tmux master: unknown build, assumed current".into());
+    }
     // OpenBSD's base-system releases include tmux >=3.3 starting with 7.3.
     let (version, minimum) = if let Some(v) = version.strip_prefix("openbsd-") {
         (v, (7, 3))
@@ -36,7 +40,7 @@ pub(super) fn permissions(path: &Path, uid: u32) -> io::Result<String> {
     Ok(format!("{} mode 0700, uid {uid}", path.display()))
 }
 pub(super) fn readable(path: &Path) -> io::Result<String> {
-    let meta = fs::symlink_metadata(path)?;
+    let meta = fs::metadata(path)?;
     // Check mode bits as well as opening: tests may run with elevated privileges.
     if meta.mode() & 0o444 == 0 || (meta.is_dir() && meta.mode() & 0o111 == 0) {
         return Err(io::Error::other(format!(
@@ -44,22 +48,16 @@ pub(super) fn readable(path: &Path) -> io::Result<String> {
             path.display()
         )));
     }
-    if meta.is_dir() {
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            readable(&entry.path())?;
-        }
-    } else if meta.is_file() {
-        fs::File::open(path)?;
-    } else {
+    if !meta.is_dir() && !meta.is_file() {
         return Err(io::Error::other("store is not a file or directory"));
     }
+    fs::File::open(path)?;
     Ok(format!("{} readable", path.display()))
 }
 pub(super) fn executable(path: &Path) -> bool {
     fs::metadata(path).is_ok_and(|m| m.is_file() && m.mode() & 0o111 != 0)
 }
-pub(super) async fn local(home: &Path, binary: &Path) -> Vec<Check> {
+pub(super) async fn local(home: &Path, binary: &Path, requested: &[AgentKind]) -> Vec<Check> {
     let mut command = crate::tmux::RealTmux {
         socket: crate::tmux::Socket::Name("unused".into()),
     }
@@ -72,10 +70,6 @@ pub(super) async fn local(home: &Path, binary: &Path) -> Vec<Check> {
     .await
     .and_then(|o| tmux_version(&String::from_utf8_lossy(&o.stdout)));
     let mut checks = vec![Check::new("tmux", version, "install tmux >= 3.3")];
-    for agent in ["claude", "codex", "grok", "opencode"] {
-        checks.push(Check::new(&format!("hooks {agent}"), hooks::check(home, binary, agent),
-            &format!("run `tmux-sidecar hooks install --agent {agent}`; if paths drifted, uninstall then reinstall; Codex may need --chain")));
-    }
     let notifier = if cfg!(target_os = "macos") {
         "osascript"
     } else {
@@ -94,14 +88,16 @@ pub(super) async fn local(home: &Path, binary: &Path) -> Vec<Check> {
     ));
     let (claude, codex) = session_board::source::homes(home);
     let (grok, opencode) = session_board::source::database_paths(home);
-    for (agent, path) in [
-        ("claude", claude.join("projects")),
-        ("codex", codex.join("sessions")),
-        ("grok", grok),
-        ("opencode", opencode),
-    ] {
-        checks.push(Check::new(&format!("store {agent}"), readable(&path).map_err(|e| io::Error::other(format!("{}: {e}", path.display()))),
-            "run the agent once to create its store; check read/search permissions and agent home overrides"));
-    }
+    checks.extend(agents::checks(
+        home,
+        binary,
+        requested,
+        &[
+            (AgentKind::Claude, claude.join("projects")),
+            (AgentKind::Codex, codex.join("sessions")),
+            (AgentKind::Grok, grok),
+            (AgentKind::Opencode, opencode),
+        ],
+    ));
     checks
 }

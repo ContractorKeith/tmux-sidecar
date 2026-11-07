@@ -35,6 +35,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 --locked | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+          test "$GITHUB_REF_NAME" = "v$version"
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-${{ matrix.target }}
@@ -78,26 +84,24 @@ jobs:
         working-directory: dist
         run: |
           if command -v sha256sum >/dev/null; then
-            sha256sum ./*.tar.gz > SHA256SUMS
+            sha256sum *.tar.gz > SHA256SUMS
             sha256sum -c SHA256SUMS
           else
-            shasum -a 256 ./*.tar.gz > SHA256SUMS
+            shasum -a 256 *.tar.gz > SHA256SUMS
             shasum -a 256 -c SHA256SUMS
           fi
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request'
         with:
           name: tmux-sidecar-${{ matrix.target }}
           path: dist/*.tar.gz
           if-no-files-found: error
 
-  release:
-    if: github.event_name != 'pull_request'
+  checksums:
     timeout-minutes: 20
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -106,18 +110,27 @@ jobs:
           path: dist
       - name: Verify checksums
         working-directory: dist
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
         run: |
           test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 3
-          sha256sum ./*.tar.gz > SHA256SUMS
+          sha256sum *.tar.gz > SHA256SUMS
           sha256sum -c SHA256SUMS
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request'
         with:
           name: tmux-sidecar-checksums
           path: dist/SHA256SUMS
+  publish:
+    needs: checksums
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tmux-sidecar-*
+          merge-multiple: true
+          path: dist
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: dist

@@ -60,8 +60,8 @@ pub async fn execute(mut cli: Cli) -> Result<(), Failure> {
             .map_err(|e| (1, e.to_string()));
     }
     super::input::prepare(&mut cli)?;
-    if let Command::Doctor { json } = cli.command {
-        return crate::doctor::run(cli.tmux_socket.as_deref(), json, cli.quiet).await;
+    if let Command::Doctor { json, agent } = cli.command {
+        return crate::doctor::run(cli.tmux_socket.as_deref(), json, cli.quiet, &agent).await;
     }
     let socket = client::select_socket(cli.tmux_socket.as_deref()).map_err(unreachable)?;
     let paths = paths::current(&socket).map_err(unreachable)?;
