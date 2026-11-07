@@ -34,7 +34,10 @@ impl Store {
             "UPDATE runs SET state=?1,state_since=?2,state_source=?3,read_at=NULL WHERE id=?4",
             params![enum_name(&state), number(at)?, source, run_id(&run.id)?],
         )?;
-        let mut payload = json!({"run_id":run.id,"pane_id":run.pane_id,"server_start":run.server_start,"from":run.state,"to":state,"at":at,"cause":cause});
+        let pane_name = self
+            .pane_name(run.server_start, &run.pane_id)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        let mut payload = json!({"run_id":run.id,"pane_id":run.pane_id,"server_start":run.server_start,"from":run.state,"to":state,"at":at,"cause":cause,"agent":run.agent,"project_root":run.project_root,"pane_name":pane_name});
         if source == "send_timeout" {
             payload["notify"] = false.into();
         }

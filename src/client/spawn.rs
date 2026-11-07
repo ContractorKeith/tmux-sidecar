@@ -143,8 +143,13 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
             let log = paths.state.join("daemon.log");
             let detail = fs::read_to_string(&log)
                 .ok()
-                .and_then(|s| s.lines().last().map(str::to_owned))
-                .unwrap_or_default();
+                .and_then(|s| {
+                    s.lines()
+                        .rev()
+                        .find(|line| !line.trim().is_empty())
+                        .map(|line| line.trim().to_owned())
+                })
+                .unwrap_or_else(|| "daemon failed before reporting a reason".into());
             return Err(io::Error::other(format!(
                 "daemon exited {status}: {detail}; see {}",
                 log.display()

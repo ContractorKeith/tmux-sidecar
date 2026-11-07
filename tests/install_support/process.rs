@@ -1,5 +1,5 @@
 #[path = "../isolation/mod.rs"]
-mod isolation;
+pub mod isolation;
 use std::{
     io::Read,
     process::{Command, Output},

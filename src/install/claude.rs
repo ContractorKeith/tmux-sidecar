@@ -65,7 +65,7 @@ pub(crate) fn edit_events(
                         drop_entry = (legacy || before > handlers.len()) && handlers.is_empty();
                     }
                     if legacy && let Some(entry) = entry.as_object_mut() {
-                        entry.remove("_tmux_sidecar");
+                        entry.shift_remove("_tmux_sidecar");
                     }
                     !drop_entry
                 });
@@ -73,12 +73,12 @@ pub(crate) fn edit_events(
                     entries.push(json!({"hooks":[{"type":"command","command":format!("{command} # tmux-sidecar")}]}));
                 }
                 if entries.is_empty() {
-                    hooks.remove(*event);
+                    hooks.shift_remove(*event);
                 }
             }
         }
         if hooks.is_empty() {
-            object.remove("hooks");
+            object.shift_remove("hooks");
         }
     }
     Ok(format!("{}\n", serde_json::to_string_pretty(&value)?))

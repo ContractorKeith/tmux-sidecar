@@ -269,7 +269,8 @@ failure is unknown rather than orphaned. Proven orphan hooks route only to an un
 session owner, parent client, or unidentified same-cwd run; other orphans are dropped and logged.
 It attempts one O_APPEND frame write before live delivery, without appender locks; append
 failure still allows live delivery. Connect/write budget is 100 ms, total budget 200 ms.
-The daemon claims spool files for replay and deduplicates invocation nonces.
+The daemon claims spool files for replay and deduplicates invocation nonces. Appenders check
+and retry inode changes across replay renames; replay recovers leftover claims before the live spool.
 
 **Hooks install.** Claude Code: entries in `~/.claude/settings.json` for Notification,
 PermissionRequest, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure, SessionEnd,

@@ -2,6 +2,7 @@
 #[cfg(test)]
 mod agent_tests;
 mod agents;
+mod health;
 mod hooks;
 mod inspect;
 #[cfg(test)]
@@ -66,15 +67,19 @@ fn daemon_check(result: io::Result<serde_json::Value>) -> Check {
         "daemon",
         result.and_then(|value| {
             let version = value["daemon_version"].as_str().unwrap_or("unknown");
-            if version != env!("CARGO_PKG_VERSION") {
+            if version != env!("CARGO_PKG_VERSION")
+                || value["build_id"].as_str() != Some(env!("TMUX_SIDECAR_BUILD_ID"))
+            {
                 return Err(io::Error::other(format!(
-                    "daemon {version}, client {}",
-                    env!("CARGO_PKG_VERSION")
+                    "daemon {version} ({}), client {} ({})",
+                    value["build_id"].as_str().unwrap_or("unknown build"),
+                    env!("CARGO_PKG_VERSION"),
+                    env!("TMUX_SIDECAR_BUILD_ID")
                 )));
             }
             Ok(format!("reachable, version {version}"))
         }),
-        "run `tmux-sidecar daemon stop`, then `tmux-sidecar list` (inside tmux)",
+        "resolve any config/database failures below; then run `tmux-sidecar list` (inside tmux); if reachable, run `tmux-sidecar daemon stop` to update its binary",
     )
 }
 pub async fn run(
@@ -112,6 +117,9 @@ pub async fn run(
         )),
     };
     checks.push(daemon_check(hello));
+    if let Some(dirs) = &dirs {
+        checks.extend(health::checks(dirs));
+    }
     for (name, path) in [
         ("runtime permissions", dirs.as_ref().map(|p| &p.runtime)),
         ("state permissions", dirs.as_ref().map(|p| &p.state)),
@@ -126,14 +134,18 @@ pub async fn run(
         ));
     }
     if !quiet {
+        use std::io::Write;
+        let mut out = io::stdout().lock();
         if json {
-            println!(
+            writeln!(
+                out,
                 "{}",
                 serde_json::to_string(&checks).map_err(|e| (1, e.to_string()))?
-            );
+            )
+            .map_err(crate::cli::output_error)?;
         } else {
             for check in &checks {
-                println!("{}", check.human());
+                writeln!(out, "{}", check.human()).map_err(crate::cli::output_error)?;
             }
         }
     }

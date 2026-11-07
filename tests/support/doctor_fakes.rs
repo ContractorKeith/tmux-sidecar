@@ -77,7 +77,7 @@ pub fn peer(home: &Path, version: &str, count: usize) -> std::thread::JoinHandle
                         }
                         let request: Value = serde_json::from_str(&line).unwrap();
                         let reply = json!({"jsonrpc":"2.0", "id":request["id"], "result":{
-                            "daemon_version":version, "server_key":key, "rpc_version":1}});
+                            "daemon_version":version, "build_id":env!("TMUX_SIDECAR_BUILD_ID"), "server_key":key, "rpc_version":1}});
                         writeln!(socket.get_mut(), "{reply}").unwrap();
                     }
                     served += 1;

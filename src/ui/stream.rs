@@ -18,7 +18,7 @@ async fn line(reader: &mut BufReader<UnixStream>) -> io::Result<Value> {
         .take(1024 * 1024 + 1)
         .read_until(b'\n', &mut bytes)
         .await?;
-    if count == 0 || count > 1024 * 1024 {
+    if count == 0 || count - usize::from(bytes.last() == Some(&b'\n')) > 1024 * 1024 {
         return Err(io::Error::other("subscription closed or oversized"));
     }
     serde_json::from_slice(&bytes).map_err(io::Error::other)
@@ -94,6 +94,30 @@ pub async fn run(socket: PathBuf, paths: Paths, send: watch::Sender<Snapshot>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn subscription_limit_excludes_the_newline() {
+        use tokio::io::AsyncWriteExt;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            for size in [1024 * 1024 - 1, 1024 * 1024, 1024 * 1024 + 1] {
+                let (mut writer, reader) = UnixStream::pair().unwrap();
+                let mut frame = br#"{"method":"test"}"#.to_vec();
+                frame.resize(size, b' ');
+                frame.push(b'\n');
+                let sending = tokio::spawn(async move { writer.write_all(&frame).await });
+                let mut reader = BufReader::new(reader);
+                let result = line(&mut reader).await;
+                assert_eq!(
+                    result.is_ok(),
+                    size <= 1024 * 1024,
+                    "size {size}: {result:?}"
+                );
+                drop(reader);
+                let _ = sending.await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    }
     #[test]
     fn reconnect_delay_caps_and_resets_after_success() {
         let mut retry = Backoff::default();

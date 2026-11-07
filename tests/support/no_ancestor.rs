@@ -71,8 +71,11 @@ os._exit(0)
         parent.0.try_wait().unwrap().is_some()
     });
     assert!(parent.0.wait().unwrap().success());
-    assert_eq!(
-        fs::read_to_string(root.join("state/hook.log")).unwrap(),
-        "hook dropped: no agent ancestor\n"
+    let log = fs::read_to_string(root.join("state/hook.log")).unwrap();
+    assert!(log.ends_with("hook dropped: no agent ancestor\n"), "{log}");
+    assert_eq!(&log[10..11], "T", "{log}");
+    assert!(
+        log.contains("agent=unknown format=codex-notify pane=%0"),
+        "{log}"
     );
 }

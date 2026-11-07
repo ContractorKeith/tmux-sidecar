@@ -78,7 +78,7 @@ pub async fn serve(
         if count == 0 {
             return Ok(());
         }
-        if count > 1024 * 1024 {
+        if count - usize::from(bytes.last() == Some(&b'\n')) > 1024 * 1024 {
             let response = failure(None, rpc::INVALID_REQUEST, "frame exceeds 1 MiB");
             let mut bytes = serde_json::to_vec(&response)?;
             bytes.push(b'\n');
@@ -115,6 +115,7 @@ pub async fn serve(
                         "invalid request",
                     ),
                     Ok(request) => {
+                        let hello = matches!(request.method.as_str(), "hello" | "daemon.status");
                         let subscribing = request.method == "subscribe";
                         let wants_views =
                             request.params.as_ref().is_some_and(|p| p["views"] == true);
@@ -142,9 +143,13 @@ pub async fn serve(
                         } else {
                             receive.await
                         };
-                        let Ok(response) = response else {
+                        let Ok(mut response) = response else {
                             return Ok(());
                         };
+                        if hello && let Outcome::Success { result } = &mut response.outcome {
+                            result["build_id"] =
+                                Value::String(env!("TMUX_SIDECAR_BUILD_ID").into());
+                        }
                         if subscribing && matches!(response.outcome, Outcome::Success { .. }) {
                             subscribed = true;
                             view_subscribed |= wants_views;

@@ -41,6 +41,11 @@ pub fn prepare(paths: &Paths) -> io::Result<()> {
 }
 
 fn secure_dir(path: &Path, owner: u32) -> io::Result<()> {
+    match verify_dir(path, owner) {
+        Ok(()) => return Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+        Err(error) => return Err(error),
+    }
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -50,6 +55,12 @@ fn secure_dir(path: &Path, owner: u32) -> io::Result<()> {
 
 fn verify_dir(path: &Path, owner: u32) -> io::Result<()> {
     let meta = fs::symlink_metadata(path)?;
+    if meta.file_type().is_symlink() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{} is a symlink", path.display()),
+        ));
+    }
     if !meta.is_dir() || meta.uid() != owner || meta.mode() & 0o7777 != 0o700 {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,

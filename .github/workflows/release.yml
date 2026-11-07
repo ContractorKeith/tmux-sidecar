@@ -59,7 +59,7 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           version=$(cargo metadata --no-deps --format-version 1 --locked | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
-          test "$(target/"$TARGET"/release/tmux-sidecar --version)" = "tmux-sidecar $version"
+          test "$(target/"$TARGET"/release/tmux-sidecar --version)" = "tmux-sidecar $version ($(git rev-parse HEAD))"
       - name: Strip and archive
         shell: bash
         env:

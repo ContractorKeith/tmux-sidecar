@@ -1,7 +1,10 @@
 # Hook payload fixtures and live integration proofs
 
-Versions tested on Linux, 2026-11-04: Claude Code 2.1.309, Codex CLI 0.166.0,
-Grok 1.0.70 and OpenCode 2.2.5. Home paths, session/event ids and UUIDs are
+Current Linux skeptic run, 2026-11-07: Claude Code 2.1.311, Codex CLI 0.166.0,
+Grok 1.0.77 and OpenCode 2.2.6. OpenCode failed the round-1 live check on 2.2.6
+because the hook ancestor walk missed its plugin host (#19). The ancestry fix has now
+landed; it still needs a fresh live 2.2.6 check. Historical captures below used
+Claude 2.1.309, Grok 1.0.70 and OpenCode 2.2.5 on 2026-11-04. Home paths, session/event ids and UUIDs are
 scrubbed. No token or account fields are retained.
 
 ## Proven live
@@ -22,13 +25,12 @@ scrubbed. No token or account fields are retained.
   the capture program recorded `hook opencode` twice and captured both
   session.execution.started and session.execution.succeeded. Detached hook
   children preserve the final notification during OpenCode teardown.
-- Codex notify: the original argv capture is real. **Codex inline hooks remain
-  unproven.** A new run used a scratch CODEX_HOME, copied authentication only
-  into that scratch directory, enabled features.hooks, and marked the scratch
-  git repo trusted there. `codex exec "Run true with the shell tool, then reply
-  ok."` exited 0 and ran true, but produced no inline-hook captures. The scratch
-  authentication copy was deleted afterward. We do not claim these fixtures
-  were emitted by Codex; Interrupt and the other inline payloads are synthesized.
+- Codex notify: the original argv capture is real. The 2026-11-07 skeptic run on
+  **Codex 0.166.0 proved inline UserPromptSubmit, PreToolUse, PermissionRequest,
+  PostToolUse and SessionEnd live** in an isolated CODEX_HOME. The earlier scratch
+  run produced no inline captures; that limitation is superseded by the skeptic
+  evidence. Committed inline payload files remain synthesized schema fixtures;
+  Interrupt remains unproven live.
 
 All live runs had 50-second deadlines and process-group cleanup. The initial
 capture round's incidental real Codex trust and OpenCode service writes were

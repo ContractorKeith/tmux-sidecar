@@ -24,7 +24,23 @@ fn unreachable(error: io::Error) -> Failure {
     (6, format!("daemon unreachable: {error}"))
 }
 
-pub async fn execute(mut cli: Cli) -> Result<(), Failure> {
+pub(crate) fn output_error(error: io::Error) -> Failure {
+    (
+        if error.kind() == io::ErrorKind::BrokenPipe {
+            0
+        } else {
+            1
+        },
+        error.to_string(),
+    )
+}
+pub async fn execute(cli: Cli) -> Result<(), Failure> {
+    match execute_inner(cli).await {
+        Err((0, _)) => Ok(()),
+        result => result,
+    }
+}
+async fn execute_inner(mut cli: Cli) -> Result<(), Failure> {
     if let Command::Hook { agent, payload } = &cli.command {
         let mut args = vec![agent.to_owned()];
         args.extend(payload.iter().cloned());
@@ -50,7 +66,7 @@ pub async fn execute(mut cli: Cli) -> Result<(), Failure> {
             chain,
             dry_run,
         )
-        .map_err(|e| (1, e.to_string()));
+        .map_err(output_error);
     }
     if let Command::Mcp { allow_send } = cli.command {
         let socket = client::select_socket(cli.tmux_socket.as_deref()).map_err(unreachable)?;
@@ -181,7 +197,7 @@ pub async fn execute(mut cli: Cli) -> Result<(), Failure> {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     } else if !cli.quiet {
-        super::output::print(method, &result, json_output).map_err(|e| (1, e.to_string()))?;
+        super::output::print(method, &result, json_output).map_err(output_error)?;
     }
     Ok(())
 }

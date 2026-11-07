@@ -19,7 +19,7 @@ Milestones M0–M7 are GitHub issues #1–#8.
 scripts/accept.sh                                  # the acceptance: worker, reviewer and CI run this
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked                                # unit + fakes; no tmux needed
+cargo test --locked                                # skips real tmux e2e; use accept.sh or TMUX_SIDECAR_E2E=1
 TMUX_SIDECAR_E2E=1 cargo test --locked --test e2e  # real tmux on an isolated -L socket
 cargo build --release                              # target/release/tmux-sidecar
 ```

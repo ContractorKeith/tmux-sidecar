@@ -65,6 +65,12 @@ e2e_test!(separate_servers_and_rpc_contract, {
         let response: Value = serde_json::from_str(&line).unwrap();
         if ["hello", "daemon.status", "subscribe"].contains(method) {
             assert!(response["result"].is_object());
+            if *method == "hello" {
+                assert_eq!(
+                    response["result"]["build_id"],
+                    env!("TMUX_SIDECAR_BUILD_ID")
+                );
+            }
         } else if ["attention", "group.ls"].contains(method) {
             assert!(response["result"].is_array());
         } else if [

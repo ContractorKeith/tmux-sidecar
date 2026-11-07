@@ -89,6 +89,23 @@ e2e_test!(deleted_database_stops_daemon_and_is_logged, {
         log.contains("tmux-sidecar.db") && log.contains("history"),
         "{log}"
     );
+    let output = g
+        .sidecar()
+        .args(["list", "--json"])
+        .bounded_output()
+        .unwrap();
+    assert!(output.status.success());
+    let notice = "history database was deleted; a new one was created";
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains(notice),
+        "{:?}",
+        output
+    );
+    let log = fs::read_to_string(g.scratch.path().join("state/daemon.log")).unwrap();
+    assert!(
+        log.contains(notice) && !log.contains("move it aside"),
+        "{log}"
+    );
     assert_eq!(list(&g).as_array().unwrap().len(), 1);
 });
 e2e_test!(corrupt_database_error_names_path, {
@@ -130,6 +147,18 @@ e2e_test!(oversized_frame_gets_error_before_close, {
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(2)))
         .unwrap();
+    for size in [1024 * 1024 - 1, 1024 * 1024] {
+        let mut frame = br#"{"jsonrpc":"2.0","id":1,"method":"hello"}"#.to_vec();
+        frame.resize(size, b' ');
+        frame.push(b'\n');
+        stream.write_all(&frame).unwrap();
+        let mut response = String::new();
+        BufReader::new(&mut stream)
+            .read_line(&mut response)
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert!(value.get("result").is_some(), "payload {size}: {value}");
+    }
     // Keep writing bounded: daemon closes after reading the first byte over the limit.
     let _ = stream.write_all(&vec![b'x'; 1024 * 1024 + 1]);
     let mut response = String::new();

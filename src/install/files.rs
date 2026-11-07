@@ -24,7 +24,7 @@ pub fn target(path: &Path) -> io::Result<PathBuf> {
                 return if path.exists() {
                     path.canonicalize()
                 } else {
-                    Ok(path)
+                    canonical_missing(&path)
                 };
             }
             Err(e) => return Err(e),
@@ -32,11 +32,32 @@ pub fn target(path: &Path) -> io::Result<PathBuf> {
     }
     Err(io::Error::other("too many config symlinks"))
 }
+// New targets resolve existing parent symlinks just like existing files do.
+fn canonical_missing(path: &Path) -> io::Result<PathBuf> {
+    let mut ancestor = path;
+    let mut missing = Vec::new();
+    while !ancestor.exists() {
+        missing.push(
+            ancestor
+                .file_name()
+                .ok_or_else(|| io::Error::other("missing config path component"))?,
+        );
+        ancestor = ancestor
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+    }
+    let mut resolved = ancestor.canonicalize()?;
+    for name in missing.into_iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
+}
 pub fn read(path: &Path) -> io::Result<String> {
     match fs::read_to_string(path) {
         Ok(s) => Ok(s),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(String::new()),
-        Err(e) => Err(e),
+        Err(e) => Err(io::Error::new(e.kind(), format!("{}: {e}", path.display()))),
     }
 }
 pub fn backup(path: &Path) -> PathBuf {
@@ -85,22 +106,16 @@ pub fn apply(
 ) -> io::Result<()> {
     let after_text = after.unwrap_or("");
     if before == after_text && (after.is_some() || !path.exists()) {
+        if !install && !dry_run {
+            remove_backup(path)?;
+        }
         return Ok(());
     }
     if dry_run {
-        println!(
-            "--- {}\n+++ {}\n@@ -1,{} +1,{} @@",
-            path.display(),
-            path.display(),
-            before.lines().count(),
-            after_text.lines().count()
-        );
-        for line in before.lines() {
-            println!("-{line}");
-        }
-        for line in after_text.lines() {
-            println!("+{line}");
-        }
+        use std::io::Write;
+        io::stdout()
+            .lock()
+            .write_all(super::diff::unified(path, before, after_text).as_bytes())?;
         return Ok(());
     }
     let parent = path
@@ -116,7 +131,7 @@ pub fn apply(
         file.write_all(before.as_bytes())?;
         file.sync_all()?;
     }
-    if let Some(after) = after {
+    let result = if let Some(after) = after {
         let temp = parent.join(format!(".tmux-sidecar-{}.tmp", std::process::id()));
         let result = (|| {
             let mut file = fs::OpenOptions::new()
@@ -137,5 +152,17 @@ pub fn apply(
         result
     } else {
         fs::remove_file(path)
+    };
+    result?;
+    if !install {
+        remove_backup(path)?;
+    }
+    Ok(())
+}
+fn remove_backup(path: &Path) -> io::Result<()> {
+    match fs::remove_file(backup(path)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
     }
 }

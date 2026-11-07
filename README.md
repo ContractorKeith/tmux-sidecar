@@ -66,13 +66,18 @@ tmux-sidecar ui
 Restart agent CLIs after installing hooks. If Codex already has a notify command, use `tmux-sidecar
 hooks install --agent codex --chain` to preserve and call it. Live captures: Claude
 UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd; Grok's same five events; Codex
-`notify`; OpenCode execution.started and execution.succeeded (stored as session.status/busy and
-session.idle). Claude and Grok Notification, PermissionRequest and StopFailure fixtures are
-synthesized from documented schemas; Grok StopCancelled is also synthesized. All Codex inline hooks
-(including Interrupt) remain unproven and synthesized. OpenCode error and permission fixtures are
-synthesized from 2.2.5 package types. Grok shares Claude's common entries by default; disabling
-compatibility uses a separate Grok file. Exact versions and provenance: [fixture
-evidence](tests/fixtures/hooks/README.md).
+`notify` plus inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse and
+SessionEnd on Codex 0.166.0. Interrupt remains synthesized and unproven live. Claude and Grok
+Notification, PermissionRequest and StopFailure fixtures are synthesized from documented schemas;
+Grok StopCancelled is also synthesized. OpenCode 2.2.6 failed the round-1 live check because its plugin
+host was missing from the hook ancestor walk (#19). That fix has landed; a fresh live
+2.2.6 check is still needed. Earlier standalone captures proved
+execution.started and execution.succeeded; permission and error fixtures are synthesized.
+Grok shares Claude's common entries by default; disabling compatibility uses a separate Grok file.
+Exact versions and provenance: [fixture evidence](tests/fixtures/hooks/README.md).
+
+The installer and doctor honor `CLAUDE_CONFIG_DIR` (default `~/.claude`), `CODEX_HOME`
+(default `~/.codex`) and `XDG_CONFIG_HOME` (default `~/.config`, OpenCode under `opencode/plugins`).
 
 ## Doctor
 
@@ -82,15 +87,16 @@ tmux-sidecar doctor --json
 ```
 
 Doctor reports tmux version, daemon connectivity and version, hooks for each agent, notifier
-availability, session-board store readability, and runtime/state directory permissions. Failed
+availability, config parsing, read-only history database integrity, session-board store readability,
+and runtime/state directory permissions. Failed
 checks include a fix hint. Exit 0 means no failures; exit 1 means something required is missing or
 drifted. Uninstalled hooks and absent stores for unhooked agents show `skip`, excluded from the exit
 code. Existing unreadable stores and missing stores for hooked agents fail. `doctor --agent codex`
 requires Codex hooks even without a marker; repeat `--agent` for more agents. JSON checks have
 `status: "ok"`, `"fail"` or `"skip"`. Store probes follow symlinks and check only the root, without
 scanning transcripts. `tmux master` is assumed current. Doctor never starts the daemon; `tmux-sidecar list` does. Version skew warns once per client process; `tmux-sidecar daemon stop` lets the
-next call start the current binary. Hooks use HOME-relative installer paths; stores honor agent home
-overrides.
+next call start the current binary. Both hooks and stores honor agent home overrides. Version skew also compares the embedded
+git build id, shown by `--version` and `hello`.
 
 The local socket contract is [JSON-RPC version 1](docs/rpc.md).
 
@@ -216,4 +222,6 @@ and `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-sidecar`. macOS:
 `$TMPDIR/tmux-sidecar-<uid>` and `$HOME/Library/Application Support/tmux-sidecar`.
 If set, `TMUX_SIDECAR_RUNTIME_DIR` and `TMUX_SIDECAR_STATE_DIR` replace the default
 per-server directories. State deletion permanently removes agent run history.
-Hook uninstall preserves unrelated entries and restores a chained Codex notify.
+Hook uninstall preserves unrelated entries, restores a chained Codex notify, and removes its backups.
+If the history database is deleted, the next startup creates a new one and reports that history
+was lost; existing history is never pruned automatically.

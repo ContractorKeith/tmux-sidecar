@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(version, about)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TMUX_SIDECAR_BUILD_ID"), ")"), about)]
 pub struct Cli {
     #[arg(long, global = true)]
     pub tmux_socket: Option<PathBuf>,

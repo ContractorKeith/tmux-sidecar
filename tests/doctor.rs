@@ -128,3 +128,36 @@ fn unused_agents_skip_but_explicit_and_partial_hooks_fail() {
     assert!(text.contains("skip hooks codex"));
     server.join().unwrap();
 }
+
+#[test]
+fn doctor_reports_broken_config_and_database_without_writing_them() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path(), Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
+    let config = if cfg!(target_os = "macos") {
+        root.path()
+            .join("Library/Application Support/tmux-sidecar/config.toml")
+    } else {
+        root.path().join(".config/tmux-sidecar/config.toml")
+    };
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(&config, "[notify]\ndesktop='yes'\n").unwrap();
+    let database = root.path().join("state/tmux-sidecar.db");
+    fs::write(&database, "garbage").unwrap();
+    let output = run(command(root.path())
+        .env("XDG_CONFIG_HOME", root.path().join(".config"))
+        .args(["doctor", "--json"]));
+    let checks: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();
+    for (name, path) in [("config", &config), ("database", &database)] {
+        let check = checks.iter().find(|c| c["name"] == name).expect(name);
+        assert_eq!(check["status"], "fail");
+        assert!(
+            check["detail"]
+                .as_str()
+                .unwrap()
+                .contains(path.to_str().unwrap()),
+            "{check}"
+        );
+    }
+    assert_eq!(fs::read_to_string(database).unwrap(), "garbage");
+    assert!(!root.path().join("run/daemon.pid").exists());
+}

@@ -41,14 +41,11 @@ fn round_trip_crlf_user_hooks_comments_idempotence_and_missing_files() {
     );
     assert!(
         !home
-            .join(".config/opencode/plugin/tmux-sidecar.js")
+            .join(".config/opencode/plugins/tmux-sidecar.js")
             .exists()
     );
     assert!(!home.join(".grok/hooks/tmux-sidecar.json").exists());
-    assert_eq!(
-        fs::read_to_string(home.join(".codex/config.toml.tmux-sidecar.bak")).unwrap(),
-        toml
-    );
+    assert!(!home.join(".codex/config.toml.tmux-sidecar.bak").exists());
 }
 #[test]
 fn blank_home_round_trip_and_grok_opt_out() {
@@ -63,7 +60,7 @@ fn blank_home_round_trip_and_grok_opt_out() {
             ".claude/settings.json",
             ".codex/config.toml",
             ".grok/hooks/tmux-sidecar.json",
-            ".config/opencode/plugin/tmux-sidecar.js",
+            ".config/opencode/plugins/tmux-sidecar.js",
         ] {
             assert!(!home.join(p).exists(), "{p}");
         }

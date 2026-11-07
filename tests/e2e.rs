@@ -38,7 +38,14 @@ fn enabled() -> bool {
             std::env::var_os("CI").is_none(),
             "CI requires TMUX_SIDECAR_E2E=1"
         );
-        eprintln!("skip: set TMUX_SIDECAR_E2E=1 for real tmux tests");
+        use std::io::Write;
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            let _ = writeln!(
+                std::io::stderr().lock(),
+                "SKIPPED REAL TMUX E2E: run scripts/accept.sh or set TMUX_SIDECAR_E2E=1"
+            );
+        });
         false
     }
 }
@@ -136,7 +143,11 @@ mod ui;
 #[path = "support/ui_lifecycle.rs"]
 mod ui_lifecycle;
 
+#[path = "support/history_recovery.rs"]
+mod history_recovery;
 #[path = "support/round2_hooks.rs"]
 mod round2_hooks;
 #[path = "support/skeptic_state.rs"]
 mod skeptic_state;
+#[path = "support/skeptic_ux.rs"]
+mod skeptic_ux;

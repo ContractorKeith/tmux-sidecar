@@ -2,7 +2,7 @@
 
 The per-tmux-server `<runtime>/sock` is a Unix socket, mode 0600 inside a directory
 owned by the daemon uid with mode 0700. Connections from other uids are dropped.
-Each UTF-8 JSON object occupies one newline-terminated frame (maximum 1 MiB).
+Each UTF-8 JSON object occupies one newline-terminated frame (maximum 1 MiB excluding the terminating newline).
 An oversized frame receives -32600, "frame exceeds 1 MiB", with id null; the
 daemon then closes that connection.
 Requests require `jsonrpc: "2.0"`, a string or integer `id`, and `method`.
@@ -279,8 +279,14 @@ and the unchanged appended payload. Uninstall restores the prior notify entry.
 ### state_changed notification
 
 ```json
-{"jsonrpc":"2.0","method":"state_changed","params":{"run_id":"r1","pane_id":"%0","server_start":1793800000,"from":"working","to":"waiting","at":1793800000000,"cause":42}}
+{"jsonrpc":"2.0","method":"state_changed","params":{"run_id":"r1","pane_id":"%0","server_start":1793800000,"from":"working","to":"waiting","at":1793800000000,"cause":42,"agent":"claude","project_root":"/work/project","pane_name":"review"}}
 ```
+
+`agent` identifies the run's agent. `project_root` and `pane_name` are nullable;
+`pane_id` remains available when the pane has no user name. These labels are
+captured in the same transaction as the state change. When a stored project root
+is unavailable, the desktop notification worker resolves it through `list` outside
+the SQLite owner and RPC tasks.
 
 ### Errors
 
