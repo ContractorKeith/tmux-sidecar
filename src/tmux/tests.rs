@@ -2,7 +2,7 @@ use super::*;
 #[test]
 fn missing_cwd_only_skips_its_pane() {
     let record = |cwd: &str| {
-        ["1234", "%7", "42", cwd, "codex", "1", "0", "0"]
+        ["1234", "%7", "42", cwd, "codex", "1", "0", "0", "0"]
             .iter()
             .map(|s| format!("{}:{s}", s.len()))
             .collect::<String>()
@@ -30,6 +30,7 @@ fn canned_panes_and_malformed_records() {
         "1",
         "0",
         "2",
+        "0",
     ];
     let record = fields
         .iter()
@@ -61,7 +62,7 @@ fn canned_panes_and_malformed_records() {
 fn byte_cwd_and_bad_record_are_isolated() {
     use std::os::unix::ffi::OsStrExt;
     let record = |cwd: &[u8], pid: &[u8]| {
-        let fields: [&[u8]; 8] = [b"1", b"%7", pid, cwd, b"code\xff", b"1", b"0", b"0"];
+        let fields: [&[u8]; 9] = [b"1", b"%7", pid, cwd, b"code\xff", b"1", b"0", b"0", b"0"];
         let mut bytes = Vec::new();
         for field in fields {
             bytes.extend_from_slice(format!("{}:", field.len()).as_bytes());
@@ -105,4 +106,16 @@ fn server_exit_requires_the_second_probe_to_agree() {
         || true,
         || panic!("must not probe a transient error")
     ));
+}
+
+#[test]
+fn dead_pane_is_an_exit_even_with_missing_cwd_or_reused_pid() {
+    let record = ["1234", "%7", "42", "", "codex", "0", "0", "0", "1"]
+        .iter()
+        .map(|s| format!("{}:{s}", s.len()))
+        .collect::<String>()
+        + "\n";
+    let scan = parse_scan(record.as_bytes()).unwrap();
+    assert!(scan.panes.is_empty());
+    assert!(scan.skipped.is_empty(), "dead pane must end its run");
 }

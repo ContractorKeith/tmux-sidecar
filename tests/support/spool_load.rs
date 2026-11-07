@@ -25,7 +25,7 @@ e2e_test!(
         let run = list(&guard)[0]["agent_pid"].as_u64().unwrap();
         stop(&guard);
         let spawn_lock = tmux_sidecar::client::FileLock::try_acquire(
-            &guard.scratch.path().join("run/spawn.lock"),
+            &guard.scratch.path().join("state/spawn.lock"),
         )
         .unwrap();
         super::hooks::fire(

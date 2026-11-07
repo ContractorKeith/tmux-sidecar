@@ -67,6 +67,19 @@ pub(super) async fn send(
         if run.ended_at.is_some() {
             return Err((rpc::NOT_FOUND, format!("run {} has ended", run.id)));
         }
+        let id = run.id.clone();
+        let has_evidence = worker
+            .read(move |s| s.has_state_evidence(&id))
+            .await
+            .map_err(internal)?
+            .map_err(internal)?;
+        if !params.force && !has_evidence {
+            return Err((
+                rpc::REFUSED,
+                "no hook evidence yet; install hooks (tmux-sidecar hooks install) or use --force"
+                    .into(),
+            ));
+        }
         if !params.force && !matches!(run.state, AgentState::Waiting | AgentState::Idle) {
             return Err((
                 rpc::REFUSED,

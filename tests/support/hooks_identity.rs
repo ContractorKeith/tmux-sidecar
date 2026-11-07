@@ -17,7 +17,7 @@ e2e_test!(
         let pid = runs[0]["agent_pid"].as_u64().unwrap();
         super::lifecycle::stop(&guard);
         let lock = tmux_sidecar::client::FileLock::try_acquire(
-            &guard.scratch.path().join("run/daemon.lock"),
+            &guard.scratch.path().join("state/daemon.lock"),
         )
         .unwrap();
         let listener = UnixListener::bind(guard.scratch.path().join("run/sock")).unwrap();

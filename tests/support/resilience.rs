@@ -127,7 +127,7 @@ e2e_test!(spawn_lock_contention_reports_a_deadline, {
     }
     let g = TmuxGuard::start();
     let _lock =
-        tmux_sidecar::client::FileLock::try_acquire(&g.scratch.path().join("run/spawn.lock"))
+        tmux_sidecar::client::FileLock::try_acquire(&g.scratch.path().join("state/spawn.lock"))
             .unwrap();
     let result = g
         .sidecar()

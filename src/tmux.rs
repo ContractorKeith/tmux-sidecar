@@ -12,6 +12,7 @@ const FORMAT: &str = concat!(
     "#{n:pane_active}:#{pane_active}",
     "#{n:window_active}:#{window_active}",
     "#{n:session_attached}:#{session_attached}",
+    "#{n:pane_dead}:#{pane_dead}",
 );
 
 pub enum Socket {
@@ -23,6 +24,7 @@ pub struct RealTmux {
 }
 impl RealTmux {
     pub(crate) async fn scan_before(&self, deadline: tokio::time::Instant) -> io::Result<PaneScan> {
+        resolve_binary()?;
         let mut command = self.command();
         command.args(["list-panes", "-a", "-F", FORMAT]);
         parse_scan(
@@ -50,7 +52,7 @@ impl RealTmux {
     }
 
     pub fn command(&self) -> Command {
-        let mut command = Command::new("tmux");
+        let mut command = Command::new(binary());
         match &self.socket {
             Socket::Path(path) => {
                 command.arg("-S").arg(path);
@@ -67,6 +69,7 @@ impl Tmux for RealTmux {
         Ok(self.scan()?.panes)
     }
     fn scan(&self) -> io::Result<PaneScan> {
+        resolve_binary()?;
         let output = self
             .command()
             .args(["list-panes", "-a", "-F", FORMAT])
@@ -96,7 +99,8 @@ fn unsupported(milestone: &str) -> io::Error {
 }
 /// Used only when neither an explicit socket nor TMUX selects a server.
 pub fn default_socket() -> io::Result<PathBuf> {
-    let output = Command::new("tmux")
+    resolve_binary()?;
+    let output = Command::new(binary())
         .args(["display", "-p", "#{socket_path}"])
         .output()?;
     if !output.status.success() {
@@ -140,7 +144,7 @@ pub(crate) fn paste_outcome_unknown(error: &io::Error) -> bool {
 pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64> {
     let output = tokio::time::timeout(
         std::time::Duration::from_millis(30),
-        tokio::process::Command::new("tmux")
+        tokio::process::Command::new(binary())
             .arg("-S")
             .arg(socket)
             .args(["display-message", "-p", "#{start_time}"])
@@ -160,7 +164,7 @@ pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64>
 pub async fn hook_pane_pid(socket: &std::path::Path, pane: &str) -> std::io::Result<u32> {
     let output = tokio::time::timeout(
         std::time::Duration::from_millis(30),
-        tokio::process::Command::new("tmux")
+        tokio::process::Command::new(binary())
             .arg("-S")
             .arg(socket)
             .args(["display-message", "-p", "-t", pane, "#{pane_pid}"])
@@ -184,3 +188,7 @@ mod actions;
 mod tests;
 pub use actions::focus;
 pub(crate) use actions::waiting;
+
+mod binary;
+use binary::binary;
+pub use binary::resolve_binary;

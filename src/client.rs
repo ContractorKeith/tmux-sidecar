@@ -127,21 +127,29 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
 }
 
 pub(crate) async fn connect(paths: &Paths) -> io::Result<UnixStream> {
-    tokio::time::timeout(
-        Duration::from_millis(250),
-        UnixStream::connect(paths.runtime.join("sock")),
-    )
-    .await
-    .map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!(
-                "connect to {} exceeded 250 ms",
-                paths.runtime.join("sock").display()
-            ),
-        )
-    })?
+    let local = paths.runtime.join("sock");
+    let recorded = std::fs::read(paths.state.join("daemon.socket"))
+        .ok()
+        .map(|bytes| {
+            use std::os::unix::ffi::OsStringExt;
+            PathBuf::from(std::ffi::OsString::from_vec(bytes))
+        });
+    let mut error = io::Error::new(io::ErrorKind::NotFound, "daemon not running");
+    for path in std::iter::once(local).chain(recorded) {
+        match tokio::time::timeout(Duration::from_millis(250), UnixStream::connect(&path)).await {
+            Ok(Ok(stream)) => return Ok(stream),
+            Ok(Err(e)) => error = e,
+            Err(_) => {
+                error = io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!("connect to {} exceeded 250 ms", path.display()),
+                )
+            }
+        }
+    }
+    Err(error)
 }
+
 pub(crate) async fn verify(stream: &mut UnixStream, socket: &Path) -> io::Result<()> {
     let hello = exchange(&mut BufReader::new(stream), "hello", serde_json::json!({})).await?;
     if hello["server_key"].as_str() != Some(&paths::server_key(socket)?) {

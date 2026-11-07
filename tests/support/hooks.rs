@@ -130,9 +130,10 @@ e2e_test!(down_daemon_spools_replays_in_order_and_deduplicates, {
     let pid = runs[0]["agent_pid"].as_u64().unwrap();
     super::lifecycle::stop(&guard);
     // Hold the daemon lifetime lock to exercise spooling without racing auto-start.
-    let lock =
-        tmux_sidecar::client::FileLock::try_acquire(&guard.scratch.path().join("run/daemon.lock"))
-            .unwrap();
+    let lock = tmux_sidecar::client::FileLock::try_acquire(
+        &guard.scratch.path().join("state/daemon.lock"),
+    )
+    .unwrap();
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks/claude");
     fire(
         &guard,

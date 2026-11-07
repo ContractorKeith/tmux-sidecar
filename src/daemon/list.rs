@@ -27,7 +27,7 @@ pub fn stored(
         )
         .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))
 }
-pub async fn serve(call: Call, worker: StoreWorker) {
+pub async fn serve(call: Call, worker: StoreWorker, stale: bool) {
     let id = call.request.id.clone();
     let result = async {
         let attention = call.request.method == "attention";
@@ -113,6 +113,7 @@ pub async fn serve(call: Call, worker: StoreWorker) {
                         let name = store.pane_name(run.server_start, &run.pane_id)?;
                         let mut value = serde_json::to_value(run)?;
                         value["pane_name"] = serde_json::json!(name);
+                        value["stale"] = serde_json::json!(stale);
                         Ok(value)
                     })
                     .collect::<std::io::Result<Vec<_>>>()

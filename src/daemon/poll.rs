@@ -113,8 +113,9 @@ impl Health {
                 false
             }
             Err(f) => {
-                self.failures += 1;
-                f.fatal || self.failures >= 5
+                self.failures = self.failures.saturating_add(1);
+                let exhausted = matches!(f.error.raw_os_error(), Some(libc::EMFILE | libc::ENFILE));
+                f.fatal || (!exhausted && self.failures >= 5)
             }
         }
     }

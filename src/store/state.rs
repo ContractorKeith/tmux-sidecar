@@ -18,6 +18,12 @@ impl Store {
     pub fn has_hooks(&self, id: &str) -> io::Result<bool> {
         Ok(self.latest_hook_at(id)?.is_some())
     }
+    pub fn has_state_evidence(&self, id: &str) -> io::Result<bool> {
+        self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM signals WHERE run_id=?1 AND (source GLOB 'hook:*' OR source='transcript'))",
+            [run_id(id).map_err(io::Error::other)?], |r| r.get(0),
+        ).map_err(io::Error::other)
+    }
     /// Caller owns the transaction, so history and run state become visible together.
     pub(super) fn change(
         &self,

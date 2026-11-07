@@ -1,4 +1,5 @@
 //! One socket owner and one poller per tmux server.
+mod accept;
 mod actions;
 mod config;
 mod labels;
@@ -25,12 +26,12 @@ use std::{
     fs,
     future::Future,
     io,
-    os::unix::fs::PermissionsExt,
     path::PathBuf,
     pin::Pin,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::{net::UnixListener, sync::mpsc, task::JoinSet};
+use tokio::{sync::mpsc, task::JoinSet};
+mod startup;
 
 type PollFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, poll::Failure>> + 'a>>;
 
@@ -46,35 +47,18 @@ fn other(e: impl std::error::Error + Send + Sync + 'static) -> io::Error {
 
 use shutdown::{NotificationTask, RuntimeGuard};
 
-pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
-    let result = run_inner(socket, &paths).await;
-    if let Err(error) = &result
-        && paths::prepare(&paths).is_ok()
-    {
-        let _ = log::write(&paths.state, &error.to_string());
-    }
-    result
-}
+pub use startup::run;
 async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     paths::prepare(paths)?;
     // Also protects foreground starts; never unlink a live daemon's socket.
-    let _lock = FileLock::try_acquire(&paths.runtime.join("daemon.lock"))?;
+    let _lock = FileLock::try_acquire(&paths.state.join("daemon.lock"))?;
     let _guard = RuntimeGuard(paths.runtime.clone());
     match fs::remove_file(paths.runtime.join("sock")) {
         Ok(()) => (),
         Err(e) if e.kind() == io::ErrorKind::NotFound => (),
         Err(e) => return Err(e),
     }
-    let db = paths.state.join("tmux-sidecar.db");
-    let recreated = recovery::was_deleted(&paths.state, &db)?;
-    if !db.exists() && !recreated {
-        log::write(
-            &paths.state,
-            &format!("creating fresh database {}", db.display()),
-        )?;
-    }
-    let store = store_worker::StoreWorker::open(db).await?;
-    recovery::created(paths, recreated)?;
+    let store = startup::store(paths).await?;
     let notify_config = crate::notify::Config::read(&paths.config)?;
     let notifications = crate::notify::start(
         socket.clone(),
@@ -112,18 +96,11 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         &store,
     )
     .await;
-    let listener = UnixListener::bind(paths.runtime.join("sock"))?;
-    fs::set_permissions(
-        paths.runtime.join("sock"),
-        fs::Permissions::from_mode(0o600),
-    )?;
-    fs::write(
-        paths.runtime.join("daemon.pid"),
-        std::process::id().to_string(),
-    )?;
+    let listener = startup::listener(paths)?;
     let key = paths::server_key(&socket)?;
     let (sender, mut receiver) = mpsc::channel::<transport::Call>(64);
     let mut connections = JoinSet::new();
+    let mut acceptor = accept::Acceptor::new()?;
     let mut interval = tokio::time::interval(Duration::from_millis(poll_ms));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
@@ -166,15 +143,16 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
                     }
                 }
             },
-            incoming = listener.accept() => match incoming {
-                Ok((stream, _)) => { let sender = sender.clone(); let events=store.events.subscribe(); let views=store.views.subscribe(); connections.spawn(async move { transport::serve(stream, sender, events, views).await }); },
-                Err(e) => break Err(e),
+            incoming = acceptor.accept(&listener) => match incoming {
+                Ok(stream) => acceptor.start(stream, sender.clone(), &store, &mut connections),
+                Err(error) => acceptor.retry(error, &paths.state),
             },
             Some(mut call) = receiver.recv() => {
                 if call.request.method=="signal" && let Some(params)=&mut call.request.params {crate::hook::context::resolve(params,&paths.runtime,&socket);}
                 if matches!(call.request.method.as_str(), "list" | "attention") {
                     let worker=store.clone();
-                    connections.spawn(async move {list::serve(call,worker).await;Ok(())});
+                    let stale=health.failures()>0;
+                    connections.spawn(async move {list::serve(call,worker,stale).await;Ok(())});
                     continue;
                 }
                 if call.request.method == "signal" {
