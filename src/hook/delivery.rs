@@ -10,6 +10,26 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::io::AsyncWriteExt;
+const HOOK_BUDGET: Duration = Duration::from_millis(180);
+fn live_budget(elapsed: Duration) -> Duration {
+    HOOK_BUDGET
+        .saturating_sub(Duration::from_millis(10))
+        .saturating_sub(elapsed)
+        .min(Duration::from_millis(100))
+}
+async fn deliver(
+    socket: &Path,
+    paths: &paths::Paths,
+    line: &[u8],
+    budget: Duration,
+) -> Result<io::Result<()>, tokio::time::error::Elapsed> {
+    tokio::time::timeout(budget, async {
+        let mut stream = client::connect(paths).await?;
+        client::verify(&mut stream, socket).await?;
+        stream.write_all(line).await
+    })
+    .await
+}
 pub async fn run(args: Vec<String>) -> io::Result<()> {
     let started = Instant::now();
     let format = args.first().map(String::as_str).unwrap_or("");
@@ -50,7 +70,7 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
         let _ = paths::prepare(&paths);
         let _ = super::log(&paths.state, error);
     }
-    if started.elapsed() >= Duration::from_millis(180) {
+    if started.elapsed() >= HOOK_BUDGET {
         let _ = super::log(&paths.state, &"budget exceeded");
     }
     result
@@ -103,15 +123,10 @@ async fn record(
     {
         signal.server_start = start;
     }
-    let remaining = Duration::from_millis(170).saturating_sub(started.elapsed());
+    let remaining = live_budget(started.elapsed());
     if !remaining.is_zero() && signal.server_start != 0 {
         let line = frame(&signal)?;
-        let sent = tokio::time::timeout(remaining.min(Duration::from_millis(100)), async {
-            let mut stream = client::connect(paths).await?;
-            client::verify(&mut stream, socket).await?;
-            stream.write_all(&line).await
-        })
-        .await;
+        let sent = deliver(socket, paths, &line, remaining).await;
         if sent.is_err() {
             let _ = super::log(
                 &paths.state,
@@ -129,3 +144,7 @@ async fn record(
     let _ = client::trigger_spawn(socket, paths);
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "delivery_tests.rs"]
+mod tests;

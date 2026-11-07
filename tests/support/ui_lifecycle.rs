@@ -15,13 +15,23 @@ e2e_test!(ui_signals_restore_raw_mode_and_alternate_screen, {
     for (name, signal) in [("term", libc::SIGTERM), ("hup", libc::SIGHUP)] {
         let pidfile = guard.scratch.path().join(format!("ui-{name}.pid"));
         let modes = guard.scratch.path().join(format!("ui-{name}.modes"));
-        let command = format!(
-            "{} --tmux-socket {} ui < /dev/tty & child=$!; echo $child > {}; wait $child; stty -a > {}; printf 'terminal restored\\n'; sleep 30",
-            quote(Path::new(env!("CARGO_BIN_EXE_tmux-sidecar"))),
-            quote(&guard.socket()),
+        // Foreground exec records the UI pid without a background terminal job.
+        let inner = format!(
+            "echo $$ > {}; exec {} --tmux-socket {} ui",
             quote(&pidfile),
+            quote(Path::new(env!("CARGO_BIN_EXE_tmux-sidecar"))),
+            quote(&guard.socket())
+        );
+        let command = format!(
+            "/bin/sh -c {}; stty -a > {}; printf 'terminal restored\\n'; sleep 30",
+            tmux_sidecar::install::quote(&inner),
             quote(&modes)
         );
+        assert_eq!(
+            super::state::rpc(&guard, "hello", serde_json::json!({}))["rpc_version"],
+            1
+        );
+        let launched = std::time::Instant::now();
         let result = output(
             guard
                 .command()
@@ -30,10 +40,47 @@ e2e_test!(ui_signals_restore_raw_mode_and_alternate_screen, {
         );
         assert!(result.status.success());
         let pane = String::from_utf8(result.stdout).unwrap().trim().to_string();
-        until!(|| String::from_utf8_lossy(
-            &output(guard.command().args(["capture-pane", "-p", "-t", &pane])).stdout
+        let dimensions = String::from_utf8(
+            output(guard.command().args([
+                "display-message",
+                "-p",
+                "-t",
+                &pane,
+                "#{pane_width} #{pane_height}",
+            ]))
+            .stdout,
         )
-        .contains("Projects"));
+        .unwrap();
+        let size: Vec<u16> = dimensions
+            .split_whitespace()
+            .map(|n| n.parse().unwrap())
+            .collect();
+        assert!(
+            size[0] >= 40 && size[1] >= 10,
+            "unexpected UI pane size: {dimensions}"
+        );
+        crate::support::stage(&format!(
+            "signal UI {name}: daemon hello ready, pane {pane} size {dimensions}"
+        ));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+        loop {
+            let text = String::from_utf8(
+                output(guard.command().args(["capture-pane", "-p", "-t", &pane])).stdout,
+            )
+            .unwrap();
+            if text.contains("Projects") {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "UI did not render: {text}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        crate::support::stage(&format!(
+            "signal UI {name}: first frame ready after {:?}",
+            launched.elapsed()
+        ));
         let pid: i32 = fs::read_to_string(&pidfile)
             .unwrap()
             .trim()

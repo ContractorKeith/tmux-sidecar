@@ -70,10 +70,11 @@ pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
         color: std::env::var_os("NO_COLOR").is_none(),
         ..App::default()
     };
-    let mut events = EventStream::new();
     let mut ages = tokio::time::interval(Duration::from_secs(1));
     ages.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // First-frame readiness precedes input initialization and daemon I/O.
     terminal.draw(|frame| render::draw(&app, frame, crate::daemon::now()))?;
+    let mut events = EventStream::new();
     loop {
         tokio::select! {
             _=term.recv()=>return Ok(()),
