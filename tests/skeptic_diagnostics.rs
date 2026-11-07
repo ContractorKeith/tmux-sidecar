@@ -129,3 +129,34 @@ fn broken_pipe_is_quiet_for_data_output() {
     }
     peer.join().unwrap();
 }
+
+#[test]
+fn doctor_validates_rebased_send_confirmation_duration() {
+    let root = tempfile::tempdir().unwrap();
+    fakes::fixture(root.path(), Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
+    let config = if cfg!(target_os = "macos") {
+        root.path()
+            .join("Library/Application Support/tmux-sidecar/config.toml")
+    } else {
+        root.path().join(".config/tmux-sidecar/config.toml")
+    };
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    for value in ["-1", "9223372036854775807"] {
+        fs::write(&config, format!("send_confirm_secs={value}\n")).unwrap();
+        let output = fakes::run(
+            fakes::command(root.path())
+                .env("XDG_CONFIG_HOME", root.path().join(".config"))
+                .args(["doctor", "--json"]),
+        );
+        let checks: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();
+        let check = checks.iter().find(|c| c["name"] == "config").unwrap();
+        assert_eq!(check["status"], "fail", "{check}");
+        assert!(
+            check["detail"]
+                .as_str()
+                .unwrap()
+                .contains("send_confirm_secs"),
+            "{check}"
+        );
+    }
+}

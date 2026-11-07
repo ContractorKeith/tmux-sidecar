@@ -14,7 +14,7 @@ fn config(path: &Path) -> io::Result<String> {
         Err(e) => return Err(named(path, e)),
     };
     let table: toml::Table = toml::from_str(&text).map_err(|e| named(path, e))?;
-    for key in ["poll_ms", "idle_after_secs"] {
+    for key in ["poll_ms", "idle_after_secs", "send_confirm_secs"] {
         if let Some(value) = table.get(key) {
             let valid = value.as_integer().is_some_and(|v| {
                 if key == "poll_ms" {
