@@ -4,6 +4,7 @@ mod scratch;
 pub use scratch::Scratch;
 mod fake_binary;
 pub mod load;
+pub mod no_ancestor;
 mod notify_config;
 mod process;
 pub mod socket;

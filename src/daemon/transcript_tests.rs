@@ -14,6 +14,8 @@ fn hook() -> Signal {
         agent_session_id: None,
         cwd: "/work".into(),
         transcript_path: None,
+        orphaned: false,
+        parent_agent_pid: None,
         payload: serde_json::json!({}),
     }
 }

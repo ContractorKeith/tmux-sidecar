@@ -10,6 +10,10 @@ pub struct Signal {
     pub pane_id: String,
     pub agent: AgentKind,
     pub agent_pid: u32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub orphaned: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_agent_pid: Option<u32>,
     pub at: u64,
     pub source: String,
     pub nonce: String,
@@ -19,6 +23,9 @@ pub struct Signal {
     pub cwd: String,
     pub transcript_path: Option<String>,
     pub payload: Value,
+}
+fn is_false(value: &bool) -> bool {
+    !value
 }
 impl Signal {
     pub fn validate(&self) -> io::Result<()> {

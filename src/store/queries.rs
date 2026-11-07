@@ -1,5 +1,19 @@
 use super::*;
 impl Store {
+    pub(crate) fn process_cwds(
+        &self,
+        cwds: &std::collections::BTreeMap<u32, PathBuf>,
+    ) -> io::Result<()> {
+        for (&pid, cwd) in cwds {
+            self.connection
+                .execute(
+                    "UPDATE runs SET cwd=?1 WHERE agent_pid=?2 AND ended_at IS NULL AND cwd<>?1",
+                    params![cwd.to_string_lossy(), pid],
+                )
+                .map_err(io::Error::other)?;
+        }
+        Ok(())
+    }
     pub fn insert(&self, run: &AgentRun) -> io::Result<String> {
         self.pane(run.server_start, &run.pane_id)?;
         self.insert_inner(run).map_err(|e| db_error(&self.path, e))

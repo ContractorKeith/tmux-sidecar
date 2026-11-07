@@ -15,6 +15,9 @@ fn request(store: &Store, method: &str, params: Value) -> rpc::Outcome {
     .outcome
 }
 fn result(store: &Store, method: &str, params: Value) -> Value {
+    if method == "attention" {
+        return serde_json::to_value(store.attention().unwrap()).unwrap();
+    }
     match request(store, method, params) {
         rpc::Outcome::Success { result } => result,
         other => panic!("{other:?}"),
@@ -35,6 +38,8 @@ fn seed(store: &Store, pid: u32) {
             agent_session_id: None,
             cwd: "/work".into(),
             transcript_path: None,
+            orphaned: false,
+            parent_agent_pid: None,
             payload: json!({}),
         })
         .unwrap();

@@ -37,3 +37,20 @@ pub fn idle_after_ms(paths: &Paths) -> io::Result<u64> {
     secs.checked_mul(1000)
         .ok_or_else(|| io::Error::other("idle_after_secs overflows milliseconds"))
 }
+
+pub fn send_confirm_ms(paths: &Paths) -> io::Result<u64> {
+    let table = match fs::read_to_string(&paths.config) {
+        Ok(text) => toml::from_str::<toml::Table>(&text).map_err(other)?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => toml::Table::new(),
+        Err(e) => return Err(e),
+    };
+    let secs = match table.get("send_confirm_secs") {
+        None => 30,
+        Some(v) => v
+            .as_integer()
+            .and_then(|v| u64::try_from(v).ok())
+            .ok_or_else(|| io::Error::other("send_confirm_secs must be nonnegative"))?,
+    };
+    secs.checked_mul(1000)
+        .ok_or_else(|| io::Error::other("send_confirm_secs overflows milliseconds"))
+}

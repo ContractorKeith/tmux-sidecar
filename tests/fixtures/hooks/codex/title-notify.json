@@ -1,0 +1,1 @@
+{"type":"agent-turn-complete","thread-id":"title-thread","turn-id":"title-turn","cwd":"/home/user/project","input-messages":["Generate a concise, single-line task title for the following user request."],"last-assistant-message":"Fix state and signal correctness"}

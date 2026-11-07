@@ -10,7 +10,10 @@ use std::{
 mod groups;
 mod lists;
 mod queries;
+mod routing;
 mod row;
+mod sends;
+mod signal_filter;
 mod signals;
 mod state;
 mod view;
@@ -74,10 +77,22 @@ impl Store {
                 UPDATE meta SET schema_version=3;")?;
         }
         tx.execute_batch(
-            "CREATE INDEX IF NOT EXISTS signals_changes ON signals(event,id);
+            "CREATE TABLE IF NOT EXISTS pending_sends(run_id INTEGER PRIMARY KEY REFERENCES runs(id), at INTEGER NOT NULL, prior_json TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS signals_changes ON signals(event,id);
             CREATE INDEX IF NOT EXISTS signals_run ON signals(run_id,source);
             CREATE INDEX IF NOT EXISTS hook_time ON signals(run_id,at DESC) WHERE source GLOB 'hook:*';",
         )?;
+        let has_cursor = tx
+            .prepare("PRAGMA table_info(pending_sends)")?
+            .query_map([], |r| r.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .iter()
+            .any(|name| name == "signal_id");
+        if !has_cursor {
+            tx.execute_batch(
+                "ALTER TABLE pending_sends ADD COLUMN signal_id INTEGER NOT NULL DEFAULT 0",
+            )?;
+        }
         tx.commit()?;
         let meta = std::fs::metadata(path)
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;

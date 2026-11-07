@@ -11,6 +11,10 @@ impl Store {
 
     /// Receipt and signal commit together; replay can safely repeat after a crash.
     pub fn signal(&self, signal: &Signal) -> io::Result<()> {
+        self.record_signal(signal).map(|_| ())
+    }
+    pub(crate) fn record_signal(&self, signal: &Signal) -> io::Result<bool> {
+        let mut dropped = false;
         signal.validate()?;
         let payload = serde_json::to_string(&signal.payload)?;
         let tx = self
@@ -25,8 +29,19 @@ impl Store {
             {
                 return Ok(());
             }
-            let existing: Option<i64> = tx.query_row("SELECT id FROM runs WHERE server_start=?1 AND pane_id=?2 AND agent_pid=?3 ORDER BY id DESC LIMIT 1",
-                params![number(signal.server_start)?,signal.pane_id,signal.agent_pid], |r| r.get(0)).optional()?;
+            let existing: Option<i64> = if signal.orphaned {
+                let Some(owner) = self
+                    .orphan_owner(signal)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?
+                else {
+                    dropped = true;
+                    return Ok(());
+                };
+                Some(run_id(&owner.id)?)
+            } else {
+                tx.query_row("SELECT id FROM runs WHERE server_start=?1 AND pane_id=?2 AND agent_pid=?3 ORDER BY id DESC LIMIT 1",
+                params![number(signal.server_start)?,signal.pane_id,signal.agent_pid], |r| r.get(0)).optional()?
+            };
             let id = match existing {
                 Some(id) => id,
                 None => {
@@ -54,8 +69,23 @@ impl Store {
                     self.connection.last_insert_rowid()
                 }
             };
+            let original = tx.query_row("SELECT * FROM runs WHERE id=?1", [id], row)?;
+            if super::signal_filter::ignore(&original, signal) {
+                return Ok(());
+            }
+            tx.execute(
+                "UPDATE runs SET started_at=MIN(started_at,?1) WHERE id=?2 AND NOT EXISTS(SELECT 1 FROM signals WHERE run_id=?2)",
+                params![number(signal.at)?, id],
+            )?;
+            let session_id = if signal.agent == crate::model::AgentKind::Codex
+                && signal.source != "hook:codex"
+            {
+                None
+            } else {
+                signal.agent_session_id.as_ref()
+            };
             tx.execute("UPDATE runs SET agent_session_id=COALESCE(?1,agent_session_id), transcript_path=COALESCE(?2,transcript_path) WHERE id=?3",
-                params![signal.agent_session_id,signal.transcript_path,id])?;
+                params![session_id,signal.transcript_path,id])?;
             let run = tx.query_row("SELECT * FROM runs WHERE id=?1", [id], row)?;
             let last_signal_at = self
                 .latest_hook_at(&run.id)
@@ -65,9 +95,14 @@ impl Store {
                 params![id, number(signal.at)?, signal.source, signal.event, payload,signal.detail],
             )?;
             let cause = tx.last_insert_rowid();
+            tx.execute(
+                "DELETE FROM pending_sends WHERE run_id=?1 AND signal_id<?2",
+                params![id, cause],
+            )?;
             let (state, _) = crate::engine::transition(
-                &run,
+                &original,
                 crate::engine::Evidence::Hook {
+                    session_id: signal.agent_session_id.as_deref(),
                     event: &signal.event,
                     detail: signal.detail.as_deref(),
                     at: signal.at,
@@ -89,97 +124,10 @@ impl Store {
             Ok(())
         })();
         result.map_err(|e| db_error(&self.path, e))?;
-        tx.commit().map_err(|e| db_error(&self.path, e))
+        tx.commit().map_err(|e| db_error(&self.path, e))?;
+        Ok(dropped)
     }
 }
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn unknown_run_metadata_dedupe_and_late_replay_preserve_state() {
-        let root = tempfile::tempdir().unwrap();
-        let store = Store::open(&root.path().join("db")).unwrap();
-        let mut signal = Signal {
-            server_start: 42,
-            pane_id: "%0".into(),
-            agent: crate::model::AgentKind::Grok,
-            agent_pid: 100,
-            at: 1000,
-            source: "hook:claude".into(),
-            nonce: "00000000000000000000000000000001".into(),
-            event: "Stop".into(),
-            detail: None,
-            agent_session_id: Some("fake".into()),
-            cwd: "/work".into(),
-            transcript_path: Some("/transcript".into()),
-            payload: serde_json::json!({"hook_event_name":"Stop"}),
-        };
-        store.signal(&signal).unwrap();
-        store.signal(&signal).unwrap();
-        let run = &store.list().unwrap()[0];
-        assert_eq!(run.state, AgentState::Waiting);
-        assert_eq!(run.agent_session_id.as_deref(), Some("fake"));
-        store.end(&run.id, 2000).unwrap();
-        signal.nonce = "00000000000000000000000000000002".into();
-        store.signal(&signal).unwrap();
-        let runs = store.list().unwrap();
-        assert_eq!(runs.len(), 1);
-        assert_eq!(runs[0].state, AgentState::Done);
-        let count: i64 = store
-            .connection
-            .query_row("SELECT COUNT(*) FROM signals", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(count, 3);
-        let longest: i64 = store
-            .connection
-            .query_row("SELECT MAX(length(nonce)) FROM signal_receipts", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(longest, 32);
-    }
-}
-
-#[cfg(test)]
-mod migration_tests {
-    use super::*;
-    #[test]
-    fn draft_v2_history_migrates_kind_and_detail_without_losing_rows() {
-        let root = tempfile::tempdir().unwrap();
-        let db = root.path().join("db");
-        let store = Store::open(&db).unwrap();
-        let signal = Signal {
-            server_start: 1,
-            pane_id: "%0".into(),
-            agent: crate::model::AgentKind::Claude,
-            agent_pid: 42,
-            at: 10,
-            nonce: "00000000000000000000000000000001".into(),
-            source: "hook:claude".into(),
-            event: "Stop".into(),
-            detail: None,
-            agent_session_id: None,
-            cwd: "/work".into(),
-            transcript_path: None,
-            payload: serde_json::json!({"hook_event_name":"Stop"}),
-        };
-        store.signal(&signal).unwrap();
-        store
-            .connection
-            .execute_batch(
-                "UPDATE signals SET event='Stop:end_turn';
-            ALTER TABLE signals DROP COLUMN detail;
-            ALTER TABLE signals RENAME COLUMN event TO kind;
-            DROP TABLE signal_receipts;
-            CREATE TABLE signal_receipts(at INTEGER,fingerprint TEXT,PRIMARY KEY(at,fingerprint));
-            UPDATE meta SET schema_version=2;",
-            )
-            .unwrap();
-        drop(store);
-        let reopened = Store::open(&db).unwrap();
-        let rows = reopened.signal_history().unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["event"], "Stop");
-        assert_eq!(rows[0]["detail"], "end_turn");
-    }
-}
+#[path = "signal_tests.rs"]
+mod tests;

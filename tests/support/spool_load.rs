@@ -3,12 +3,16 @@ use super::{TmuxGuard, enabled};
 use serde_json::json;
 use std::{fs, path::Path};
 fn count(guard: &TmuxGuard) -> usize {
-    super::state::rpc(guard, "history", json!({"sel":"r2","limit":1000}))
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|row| row["source"] == "hook:claude")
-        .count()
+    super::state::rpc(
+        guard,
+        "history",
+        json!({"sel":list(guard)[0]["id"],"limit":1000}),
+    )
+    .as_array()
+    .unwrap()
+    .iter()
+    .filter(|row| row["source"] == "hook:claude")
+    .count()
 }
 e2e_test!(
     two_hundred_parallel_hooks_survive_down_daemon_and_replay,
@@ -18,26 +22,17 @@ e2e_test!(
             return;
         }
         let guard = TmuxGuard::start();
-        list(&guard);
+        let run = list(&guard)[0]["agent_pid"].as_u64().unwrap();
         stop(&guard);
         let spawn_lock = tmux_sidecar::client::FileLock::try_acquire(
             &guard.scratch.path().join("run/spawn.lock"),
         )
         .unwrap();
-        let mut burst = std::process::Command::new(guard.scratch.path().join("bin/claude"));
-        guard.isolate(&mut burst);
-        burst
-            .env("TMUX", format!("{},0,0", guard.socket().display()))
-            .env("TMUX_PANE", "%0")
-            .args(["--hook-burst", env!("CARGO_BIN_EXE_tmux-sidecar")])
-            .arg(
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks/claude/Stop.json"),
-            );
-        let result = crate::support::output(&mut burst);
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
+        super::hooks::fire(
+            &guard,
+            run,
+            "burst",
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks/claude/Stop.json"),
         );
         let spool = guard.scratch.path().join("state/spool.ndjson");
         let text = fs::read_to_string(&spool).unwrap();

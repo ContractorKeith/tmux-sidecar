@@ -1,4 +1,5 @@
-//! Hook input is drained and a whole durable frame is appended before live delivery.
+//! Drain hook input; attempt durable append before live delivery, even when append fails.
+pub(crate) mod attribution;
 pub mod context;
 mod delivery;
 pub(crate) mod files;

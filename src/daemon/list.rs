@@ -30,6 +30,10 @@ pub fn stored(
 pub async fn serve(call: Call, worker: StoreWorker) {
     let id = call.request.id.clone();
     let result = async {
+        let attention = call.request.method == "attention";
+        if attention && !methods::empty_params(&call.request) {
+            return Err((rpc::INVALID_PARAMS, "expected empty params".into()));
+        }
         let filters = methods::filters(&call.request)?;
         let group = Group::parse(filters.group.as_deref())?;
         let mut roots = session_board::project::ProjectRoots::default();
@@ -56,7 +60,15 @@ pub async fn serve(call: Call, worker: StoreWorker) {
             };
             let selected = group.clone();
             let runs = worker
-                .read(move |store| stored(store, &copied, selected.as_ref(), before, page_limit))
+                .read(move |store| {
+                    if attention {
+                        store
+                            .attention()
+                            .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))
+                    } else {
+                        stored(store, &copied, selected.as_ref(), before, page_limit)
+                    }
+                })
                 .await
                 .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string()))??;
             let count = runs.len();

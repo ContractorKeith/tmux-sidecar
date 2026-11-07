@@ -35,6 +35,21 @@ fn main() {
     }
     let root = PathBuf::from(std::env::var_os("TMUX_SIDECAR_STATE_DIR").unwrap());
     let pid = std::process::id();
+    if let Some(cwd) = args.iter().find_map(|a| a.strip_prefix("--cwd=")) {
+        std::env::set_current_dir(cwd).unwrap();
+    }
+    let _host = if args.iter().any(|a| a == "--plugin-host") {
+        let child = ChildGuard(
+            command(std::env::current_exe().unwrap())
+                .arg("--host-child")
+                .spawn()
+                .unwrap(),
+        );
+        fs::write(root.join("plugin-host-pid"), child.0.id().to_string()).unwrap();
+        Some(child)
+    } else {
+        None
+    };
     let executable = std::env::current_exe().unwrap();
     let name = executable.file_name().unwrap().to_str().unwrap();
     fs::write(root.join(format!("ready-{name}")), b"").unwrap();
@@ -67,8 +82,17 @@ fn main() {
             let binary = lines.next().unwrap();
             let format = lines.next().unwrap();
             let fixture = lines.next().unwrap();
+            let pane_override = lines.next();
+            if format == "burst" {
+                burst(binary, fixture);
+                fs::write(root.join(format!("fired-{pid}")), "true\n0\n0\n0").unwrap();
+                continue;
+            }
             let start = std::time::Instant::now();
             let mut command = command(binary);
+            if let Some(pane) = pane_override {
+                command.env("TMUX_PANE", pane);
+            }
             command
                 .args(["hook", format])
                 .stdout(Stdio::piped())
