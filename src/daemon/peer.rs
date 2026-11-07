@@ -25,7 +25,9 @@ pub fn disconnected(stream: &UnixStream) -> bool {
     use std::os::fd::AsRawFd;
     let mut descriptor = libc::pollfd {
         fd: stream.as_raw_fd(),
-        events: 0,
+        // Darwin poll registers only requested filters; request write readiness
+        // to observe a fully closed peer while preserving write-half closes.
+        events: libc::POLLOUT,
         revents: 0,
     };
     // SAFETY: descriptor is initialized, writable, and backed by the live stream.
