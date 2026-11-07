@@ -113,8 +113,16 @@ impl Store {
 
 impl Store {
     pub fn verify_identity(&self) -> io::Result<()> {
-        let meta = std::fs::metadata(&self.path)
-            .map_err(|e| db_error(&self.path, format!("history file disappeared: {e}")))?;
+        let meta = std::fs::metadata(&self.path).map_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                io::Error::new(
+                    e.kind(),
+                    format!("history database was deleted: {}", self.path.display()),
+                )
+            } else {
+                db_error(&self.path, e)
+            }
+        })?;
         if (meta.dev(), meta.ino()) != self.identity {
             return Err(db_error(
                 &self.path,

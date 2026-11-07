@@ -89,6 +89,23 @@ e2e_test!(deleted_database_stops_daemon_and_is_logged, {
         log.contains("tmux-sidecar.db") && log.contains("history"),
         "{log}"
     );
+    let output = g
+        .sidecar()
+        .args(["list", "--json"])
+        .bounded_output()
+        .unwrap();
+    assert!(output.status.success());
+    let notice = "history database was deleted; a new one was created";
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains(notice),
+        "{:?}",
+        output
+    );
+    let log = fs::read_to_string(g.scratch.path().join("state/daemon.log")).unwrap();
+    assert!(
+        log.contains(notice) && !log.contains("move it aside"),
+        "{log}"
+    );
     assert_eq!(list(&g).as_array().unwrap().len(), 1);
 });
 e2e_test!(corrupt_database_error_names_path, {

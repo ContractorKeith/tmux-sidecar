@@ -69,8 +69,9 @@ UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd; Grok's same five ev
 `notify` plus inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse and
 SessionEnd on Codex 0.166.0. Interrupt remains synthesized and unproven live. Claude and Grok
 Notification, PermissionRequest and StopFailure fixtures are synthesized from documented schemas;
-Grok StopCancelled is also synthesized. OpenCode **fails on 2.2.6 until #19 lands**: its plugin
-host is not recognized in the hook ancestor walk. Earlier standalone captures proved
+Grok StopCancelled is also synthesized. OpenCode 2.2.6 failed the round-1 live check because its plugin
+host was missing from the hook ancestor walk (#19). That fix has landed; a fresh live
+2.2.6 check is still needed. Earlier standalone captures proved
 execution.started and execution.succeeded; permission and error fixtures are synthesized.
 Grok shares Claude's common entries by default; disabling compatibility uses a separate Grok file.
 Exact versions and provenance: [fixture evidence](tests/fixtures/hooks/README.md).
@@ -221,4 +222,6 @@ and `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-sidecar`. macOS:
 `$TMPDIR/tmux-sidecar-<uid>` and `$HOME/Library/Application Support/tmux-sidecar`.
 If set, `TMUX_SIDECAR_RUNTIME_DIR` and `TMUX_SIDECAR_STATE_DIR` replace the default
 per-server directories. State deletion permanently removes agent run history.
-Hook uninstall preserves unrelated entries and restores a chained Codex notify.
+Hook uninstall preserves unrelated entries, restores a chained Codex notify, and removes its backups.
+If the history database is deleted, the next startup creates a new one and reports that history
+was lost; existing history is never pruned automatically.

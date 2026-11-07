@@ -46,7 +46,11 @@ pub fn run(
             let original = files::read(&backup)?;
             // Restore bytes only when the current file is exactly our generated version.
             // Semantic equality alone would discard comments added after installation.
-            let after = if !install && before == editor(&original, true)? {
+            let after = if !install
+                && before
+                    == editor(&original, true).map_err(|e| {
+                        io::Error::new(e.kind(), format!("{}: {e}", backup.display()))
+                    })? {
                 backup.exists().then_some(original)
             } else {
                 Some(after)
@@ -98,7 +102,7 @@ pub fn run(
         let mut out = io::stdout().lock();
         writeln!(
             out,
-            "Live-proven: Claude Code 2.1.311 command entries, Grok 1.0.77 payload captures, Codex 0.166.0 notify and inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, SessionEnd hooks. OpenCode fails on 2.2.6 until #19 lands. See tests/fixtures/hooks/README.md."
+            "Live-proven: Claude Code 2.1.311 command entries, Grok 1.0.77 payload captures, Codex 0.166.0 notify and inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, SessionEnd hooks. OpenCode 2.2.6 failed round-1 live proof; #19 is fixed, awaiting a fresh live check. See tests/fixtures/hooks/README.md."
         )?;
         writeln!(
             out,

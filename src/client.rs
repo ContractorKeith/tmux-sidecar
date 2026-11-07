@@ -119,6 +119,10 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
             hello["server_key"]
         )));
     }
+    // Internal clients leave startup warnings for a client that may auto-spawn.
+    if spawn {
+        crate::daemon::recovery::report(paths);
+    }
     Ok(stream)
 }
 

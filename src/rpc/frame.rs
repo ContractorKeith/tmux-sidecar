@@ -5,7 +5,7 @@ pub fn frame_error(method: &str) -> io::Error {
     io::Error::other(RpcError {
         code: INVALID_PARAMS,
         message: format!(
-            "{} exceeds maximum 1 MiB encoded request frame (1048576 bytes including JSON and newline)",
+            "{} exceeds maximum 1 MiB encoded request frame (1048576 bytes including JSON, excluding the newline)",
             if method == "send" {
                 "prompt"
             } else {
@@ -23,10 +23,10 @@ pub fn request_frame(method: &str, params: Value) -> io::Result<Vec<u8>> {
         params: Some(params),
     };
     let mut bytes = serde_json::to_vec(&request)?;
-    bytes.push(b'\n');
     if bytes.len() > MAX_FRAME_BYTES {
         return Err(frame_error(method));
     }
+    bytes.push(b'\n');
     Ok(bytes)
 }
 #[cfg(test)]
@@ -35,13 +35,13 @@ mod tests {
     #[test]
     fn prompt_limit_counts_json_escaping_and_frame_overhead() {
         let params = |text: String| serde_json::json!({"sel":"%0","text":text,"force":false});
-        let overhead = request_frame("send", params(String::new())).unwrap().len();
+        let overhead = request_frame("send", params(String::new())).unwrap().len() - 1;
         let max = MAX_FRAME_BYTES - overhead;
         assert_eq!(
             request_frame("send", params("x".repeat(max)))
                 .unwrap()
                 .len(),
-            MAX_FRAME_BYTES
+            MAX_FRAME_BYTES + 1
         );
         for text in [
             "x".repeat(max + 1),

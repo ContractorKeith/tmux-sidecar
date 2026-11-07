@@ -5,6 +5,7 @@ mod labels;
 mod list;
 pub mod log;
 mod methods;
+pub(crate) mod recovery;
 mod state_methods;
 mod transcript_match;
 mod transcripts;
@@ -65,13 +66,15 @@ async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
         Err(e) => return Err(e),
     }
     let db = paths.state.join("tmux-sidecar.db");
-    if !db.exists() {
+    let recreated = recovery::was_deleted(&paths.state, &db)?;
+    if !db.exists() && !recreated {
         log::write(
             &paths.state,
             &format!("creating fresh database {}", db.display()),
         )?;
     }
     let store = store_worker::StoreWorker::open(db).await?;
+    recovery::created(paths, recreated)?;
     let notify_config = crate::notify::Config::read(&paths.config)?;
     let notifications = crate::notify::start(
         socket.clone(),

@@ -1,8 +1,9 @@
 # Hook payload fixtures and live integration proofs
 
 Current Linux skeptic run, 2026-11-07: Claude Code 2.1.311, Codex CLI 0.166.0,
-Grok 1.0.77 and OpenCode 2.2.6. OpenCode **fails on 2.2.6 until #19 lands**
-because the hook ancestor walk misses its plugin host. Historical captures below used
+Grok 1.0.77 and OpenCode 2.2.6. OpenCode failed the round-1 live check on 2.2.6
+because the hook ancestor walk missed its plugin host (#19). The ancestry fix has now
+landed; it still needs a fresh live 2.2.6 check. Historical captures below used
 Claude 2.1.309, Grok 1.0.70 and OpenCode 2.2.5 on 2026-11-04. Home paths, session/event ids and UUIDs are
 scrubbed. No token or account fields are retained.
 

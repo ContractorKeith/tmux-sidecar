@@ -57,7 +57,7 @@ pub fn read(path: &Path) -> io::Result<String> {
     match fs::read_to_string(path) {
         Ok(s) => Ok(s),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(String::new()),
-        Err(e) => Err(e),
+        Err(e) => Err(io::Error::new(e.kind(), format!("{}: {e}", path.display()))),
     }
 }
 pub fn backup(path: &Path) -> PathBuf {
