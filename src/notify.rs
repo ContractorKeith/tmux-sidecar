@@ -1,4 +1,6 @@
 //! Desktop notifications consume committed changes outside the store and RPC tasks.
+#[cfg(test)]
+mod burst_tests;
 mod command;
 #[cfg(test)]
 mod tests;
@@ -43,34 +45,71 @@ impl Config {
     }
 }
 #[derive(Default)]
+struct Window {
+    next: Option<Instant>,
+    pending: Vec<serde_json::Value>,
+}
+#[derive(Default)]
 struct Debounce {
-    runs: HashMap<String, Instant>,
-    global: Option<Instant>,
+    runs: HashMap<(String, String), Instant>,
+    windows: [Window; 2],
 }
 impl Debounce {
-    fn allow(&mut self, config: &Config, id: &str, state: &str, now: Instant) -> bool {
-        if !match state {
-            "waiting" => config.tmux,
-            "blocked" | "error" => config.desktop,
-            _ => false,
-        } {
-            return false;
+    fn push(&mut self, config: &Config, event: serde_json::Value, now: Instant) {
+        let (Some(id), Some(to)) = (event["run_id"].as_str(), event["to"].as_str()) else {
+            return;
+        };
+        if event["from"] == event["to"] {
+            return;
         }
+        let channel = match to {
+            "waiting"
+                if config.tmux
+                    && event["pane_id"].is_string()
+                    && event["server_start"].is_u64() =>
+            {
+                1
+            }
+            "blocked" | "error" if config.desktop => 0,
+            _ => return,
+        };
         self.runs.retain(|_, at| {
             now.saturating_duration_since(*at) < Duration::from_secs(config.debounce_secs)
         });
-        if self
-            .global
-            .is_some_and(|at| now.saturating_duration_since(at) < Duration::from_secs(2))
-            || (state != "waiting" && self.runs.contains_key(id))
-        {
-            return false;
+        let key = (id.to_owned(), to.to_owned());
+        if self.runs.contains_key(&key) {
+            return;
         }
-        if state != "waiting" {
-            self.runs.insert(id.into(), now);
+        self.runs.insert(key, now);
+        let window = &mut self.windows[channel];
+        if window.pending.is_empty() {
+            window.next = Some(now + Duration::from_secs(2));
         }
-        self.global = Some(now);
-        true
+        window.pending.push(event);
+    }
+    fn deadline(&self) -> Option<Instant> {
+        self.windows
+            .iter()
+            .filter(|w| !w.pending.is_empty())
+            .map(|w| w.next.unwrap_or_else(Instant::now))
+            .min()
+    }
+    fn drain(&mut self, now: Instant) -> Vec<Vec<serde_json::Value>> {
+        let mut batches = Vec::new();
+        for window in &mut self.windows {
+            if !window.pending.is_empty() && window.next.is_none_or(|at| now >= at) {
+                batches.push(std::mem::take(&mut window.pending));
+                window.next = None;
+            }
+        }
+        batches
+    }
+    fn finish(&mut self) -> Vec<Vec<serde_json::Value>> {
+        self.windows
+            .iter_mut()
+            .filter(|w| !w.pending.is_empty())
+            .map(|w| std::mem::take(&mut w.pending))
+            .collect()
     }
 }
 pub(crate) fn start(

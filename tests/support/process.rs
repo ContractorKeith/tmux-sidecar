@@ -42,9 +42,13 @@ impl BoundedCommand for Command {
     }
 }
 pub fn wait_for(name: &str, mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(4);
+    let timeout = load_timeout(Duration::from_secs(4));
+    let deadline = Instant::now() + timeout;
     while !condition() {
-        assert!(Instant::now() < deadline, "wait for {name} exceeded 4 s");
+        assert!(
+            Instant::now() < deadline,
+            "wait for {name} exceeded {timeout:?}"
+        );
         std::thread::sleep(Duration::from_millis(25));
     }
 }
@@ -97,7 +101,7 @@ pub fn output(command: &mut Command) -> Output {
         .unwrap_or_else(|error| panic!("{command:?}: {error}; {}", diagnostics(command)))
 }
 pub fn try_output(command: &mut Command) -> io::Result<Output> {
-    output_with_timeout(command, Duration::from_secs(8))
+    output_with_timeout(command, load_timeout(Duration::from_secs(8)))
 }
 fn output_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<Output> {
     let sandbox = isolation::fill(command);
@@ -191,4 +195,20 @@ e2e_test!(timeout_kills_and_reaps_the_owned_process, {
 pub fn stage(message: &str) {
     use std::io::Write;
     let _ = writeln!(std::io::stderr(), "{message}");
+}
+
+// Keep load tuning bounded below the per-test 60-second watchdog.
+pub fn load_timeout(base: Duration) -> Duration {
+    let multiplier = std::env::var("TMUX_SIDECAR_TEST_TIMEOUT_MULTIPLIER")
+        .ok()
+        .map(|v| {
+            v.parse::<u32>()
+                .expect("timeout multiplier must be an integer")
+        })
+        .unwrap_or(1);
+    assert!(
+        (1..=4).contains(&multiplier),
+        "timeout multiplier must be 1..=4"
+    );
+    base * multiplier
 }

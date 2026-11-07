@@ -28,7 +28,10 @@ fn installer_and_doctor_share_all_agent_home_overrides() {
             .env("XDG_CONFIG_HOME", home.join("custom-config"));
         cmd
     };
-    let installed = fakes::run(command().args(["hooks", "install"]));
+    let installed = fakes::run(command().args([
+        "hooks", "install", "--agent", "claude", "--agent", "codex", "--agent", "grok", "--agent",
+        "opencode",
+    ]));
     assert!(installed.status.success(), "{:?}", installed);
     for path in [
         "custom-claude/settings.json",

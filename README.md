@@ -35,7 +35,9 @@ else
 fi
 ```
 
-Install the verified archive:
+Install the verified archive from a terminal. On macOS, use `tar -xzf` below rather
+than Finder to avoid quarantine. If needed, remove the downloaded binary’s quarantine
+with `xattr -d com.apple.quarantine tmux-sidecar` before installing:
 
 ```bash
 mkdir -p "$HOME/.local/bin"
@@ -63,11 +65,16 @@ tmux-sidecar hooks install
 tmux-sidecar ui
 ```
 
+With no `--agent`, installation selects only agent CLIs on PATH and prints which
+agents it skipped. Use `--agent` to install for an agent explicitly.
+
 Restart agent CLIs after installing hooks. If Codex already has a notify command, use `tmux-sidecar
 hooks install --agent codex --chain` to preserve and call it. Live captures: Claude
 UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd; Grok's same five events; Codex
 `notify` plus inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse and
-SessionEnd on Codex 0.166.0. Interrupt remains synthesized and unproven live. Claude and Grok
+SessionEnd on Codex 0.166.0 on Linux and macOS. Codex needs these inline hooks to
+report blocked; notify alone reports waiting only. On first use, Codex 0.166 shows
+a "Hooks need review" screen and records hook trust in `config.toml` after review. Interrupt remains synthesized and unproven live. Claude and Grok
 Notification, PermissionRequest and StopFailure fixtures are synthesized from documented schemas;
 Grok StopCancelled is also synthesized. OpenCode 2.2.6 failed the round-1 live check because its plugin
 host was missing from the hook ancestor walk (#19). That fix has landed; a fresh live
@@ -90,8 +97,9 @@ Doctor reports tmux version, daemon connectivity and version, hooks for each age
 availability, config parsing, read-only history database integrity, session-board store readability,
 and runtime/state directory permissions. Failed
 checks include a fix hint. Exit 0 means no failures; exit 1 means something required is missing or
-drifted. Uninstalled hooks and absent stores for unhooked agents show `skip`, excluded from the exit
-code. Existing unreadable stores and missing stores for hooked agents fail. `doctor --agent codex`
+drifted. Uninstalled hooks, stores for agents not run yet, absent runtime/state directories
+and a daemon not started yet show `skip`, excluded from the exit code. Existing unreadable
+stores and insecure directories fail. `doctor --agent codex`
 requires Codex hooks even without a marker; repeat `--agent` for more agents. JSON checks have
 `status: "ok"`, `"fail"` or `"skip"`. Store probes follow symlinks and check only the root, without
 scanning transcripts. `tmux master` is assumed current. Doctor never starts the daemon; `tmux-sidecar list` does. Version skew warns once per client process; `tmux-sidecar daemon stop` lets the
@@ -191,10 +199,11 @@ bind-key a display-popup -E -w 80% -h 80% tmux-sidecar ui
 ```
 
 The daemon sends desktop notifications on transitions into blocked or error using
-`notify-send` on Linux or `osascript` on macOS. It limits delivery to once per run
-per 10 seconds and globally once every 2 seconds. Waiting transitions display a
+`notify-send` on Linux or `osascript` on macOS (listed under **Script Editor** in
+macOS Notification settings). Repeats for the same run and state collapse within
+10 seconds. Bursts queue for a summary at the end of the two-second delivery window. Waiting transitions display a
 tmux message to attached clients in the run's tmux session. `notify.tmux = false`
-disables these messages; they share the global two-second debounce with desktop notifications. Configure desktop
+disables these messages; they have their own two-second window, separate from desktop notifications. Configure desktop
 notifications in tmux-sidecar's `config.toml`:
 
 ```toml

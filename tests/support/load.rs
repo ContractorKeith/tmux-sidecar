@@ -1,11 +1,23 @@
+//! Bound ordinary process storms too: many-core hosts otherwise run every probe at once.
 //! Keep the deliberate twenty-server storm separate from hook latency proofs.
 use std::{
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{
+        RwLock, RwLockReadGuard, RwLockWriteGuard,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
+static NORMAL: AtomicUsize = AtomicUsize::new(0);
+pub struct Slot;
+impl Drop for Slot {
+    fn drop(&mut self) {
+        NORMAL.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 static LOAD: RwLock<()> = RwLock::new(());
 pub enum Guard {
     Normal {
+        _slot: Slot,
         _guard: RwLockReadGuard<'static, ()>,
     },
     Stress {
@@ -21,8 +33,21 @@ pub fn enter(stress: bool) -> Guard {
             if let Ok(guard) = LOAD.try_write() {
                 return Guard::Stress { _guard: guard };
             }
-        } else if let Ok(guard) = LOAD.try_read() {
-            return Guard::Normal { _guard: guard };
+        } else {
+            let normal = NORMAL.load(Ordering::Relaxed);
+            if normal < 8
+                && NORMAL
+                    .compare_exchange(normal, normal + 1, Ordering::Relaxed, Ordering::Relaxed)
+                    .is_ok()
+            {
+                let slot = Slot;
+                if let Ok(guard) = LOAD.try_read() {
+                    return Guard::Normal {
+                        _slot: slot,
+                        _guard: guard,
+                    };
+                }
+            }
         }
         assert!(Instant::now() < deadline, "test load gate exceeded 50 s");
         std::thread::sleep(Duration::from_millis(10));

@@ -13,7 +13,17 @@ e2e_test!(two_failed_ps_ticks_keep_serving_then_recover, {
     let ps = g.scratch.path().join("bin/ps");
     fs::write(&ps, b"#!/bin/sh\nn=0\n[ ! -f \"$HOME/ps-count\" ] || n=$(cat \"$HOME/ps-count\")\nn=$((n+1))\necho $n > \"$HOME/ps-count\"\n[ $n -gt 2 ] || exit 1\nexec /bin/ps \"$@\"\n").unwrap();
     fs::set_permissions(ps, fs::Permissions::from_mode(0o700)).unwrap();
-    let _ = list(&g);
+    let _daemon = super::support::ChildGuard::new(
+        g.sidecar()
+            .args(["daemon", "run"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    super::support::wait_for("daemon ready after ps failures", || {
+        g.scratch.path().join("run/sock").exists()
+    });
     let original = pid(&g);
     until!(|| list(&g).as_array().unwrap().len() == 1);
     assert_eq!(pid(&g), original);

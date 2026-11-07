@@ -28,7 +28,7 @@ fn optional_agents_skip_and_explicit_or_marked_hooks_fail() {
     .unwrap();
     let checks = agents::checks(root.path(), binary, &[], &stores);
     assert_eq!(checks[0].status, Status::Ok);
-    assert_eq!(checks[1].status, Status::Fail);
+    assert_eq!(checks[1].status, Status::Skip);
     fs::create_dir(&store).unwrap();
     fs::write(store.join("unreadable-child"), "ignored").unwrap();
     fs::set_permissions(
@@ -83,7 +83,7 @@ fn every_agent_is_optional_until_requested_or_marked() {
         crate::install::run(home.path(), binary, &[agent], true, false, false).unwrap();
         let marked = agents::checks(home.path(), binary, &[], &stores);
         assert_eq!(marked[0].status, Status::Ok);
-        assert_eq!(marked[1].status, Status::Fail);
+        assert_eq!(marked[1].status, Status::Skip);
         let drifted = agents::checks(home.path(), Path::new("/old binary"), &[], &stores);
         assert_eq!(drifted[0].status, Status::Fail);
     }
