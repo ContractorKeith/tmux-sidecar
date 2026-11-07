@@ -145,7 +145,12 @@ pub(crate) async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + U
     let bytes = rpc::request_frame(method, params)?;
     stream.get_mut().write_all(&bytes).await?;
     let mut line = String::new();
-    stream.read_line(&mut line).await?;
+    if stream.read_line(&mut line).await? == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "daemon connection closed",
+        ));
+    }
     let response: rpc::Response = serde_json::from_str(&line)?;
     if response.id != Some(rpc::Id::Number(1)) {
         return Err(io::Error::other("mismatched RPC response id"));

@@ -114,3 +114,19 @@ mod transcript_poll;
 mod cli_deadlines;
 #[path = "support/cli_stream.rs"]
 mod cli_stream;
+#[path = "support/mcp.rs"]
+mod mcp;
+#[path = "support/mcp_client.rs"]
+mod mcp_client;
+#[path = "support/mcp_contract.rs"]
+mod mcp_contract;
+#[path = "support/mcp_daemon.rs"]
+mod mcp_daemon;
+#[path = "support/mcp_deadlines.rs"]
+mod mcp_deadlines;
+#[path = "support/mcp_lifecycle.rs"]
+mod mcp_lifecycle;
+#[path = "support/mcp_replies.rs"]
+mod mcp_replies;
+#[path = "support/mcp_rpc.rs"]
+mod mcp_rpc;
