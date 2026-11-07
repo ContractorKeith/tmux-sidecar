@@ -47,6 +47,7 @@ for block in blocks:
                              stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
     captured = bytearray()
+    quit_sent = False
     deadline = time.monotonic() + 10
     try:
         while child.poll() is None and time.monotonic() < deadline:
@@ -56,8 +57,15 @@ for block in blocks:
                 except OSError as error:
                     if error.errno != errno.EIO:
                         raise
-            if b'Attention' in captured or b'attention' in captured:
-                os.write(master, b'q')
+            if not quit_sent and (b'Attention' in captured or b'attention' in captured):
+                quit_sent = True
+                try:
+                    os.write(master, b'q')
+                except OSError as error:
+                    # BSD reports EIO if the slave closed between poll and write.
+                    # The exit-status assertion below still catches UI failures.
+                    if error.errno != errno.EIO:
+                        raise
         assert child.wait(timeout=1) == 0, captured.decode(errors='replace')
         assert b'not a terminal' not in captured
     finally:
