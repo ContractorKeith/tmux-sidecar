@@ -5,6 +5,15 @@ use crate::{
 };
 use serde_json::{Value, json};
 impl Store {
+    pub fn sent(&self, run: &AgentRun, at: u64) -> io::Result<()> {
+        let tx = self
+            .connection
+            .unchecked_transaction()
+            .map_err(io::Error::other)?;
+        self.change(run, AgentState::Working, at, "send", None)
+            .map_err(io::Error::other)?;
+        tx.commit().map_err(io::Error::other)
+    }
     pub fn latest_hook_at(&self, id: &str) -> io::Result<Option<u64>> {
         self.connection
             .query_row(

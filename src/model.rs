@@ -68,6 +68,15 @@ pub struct AgentRun {
     pub transcript_path: Option<String>,
 }
 
+impl std::fmt::Display for RunSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Run(id) => write!(f, "r{id}"),
+            Self::Pane(id) => write!(f, "%{id}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -93,6 +93,8 @@ mod round1;
 #[path = "support/shutdown.rs"]
 mod shutdown;
 
+#[path = "support/cli_verbs.rs"]
+mod cli_verbs;
 #[path = "support/focus.rs"]
 mod focus;
 #[path = "support/ordering.rs"]
@@ -107,3 +109,6 @@ mod state;
 mod transcript;
 #[path = "support/transcript_poll.rs"]
 mod transcript_poll;
+
+#[path = "support/cli_stream.rs"]
+mod cli_stream;

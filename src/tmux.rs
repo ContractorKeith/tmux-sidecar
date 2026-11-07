@@ -58,11 +58,11 @@ impl Tmux for RealTmux {
         }
         parse_scan(&output.stdout)
     }
-    fn paste_text(&self, _: &str, _: &str) -> io::Result<()> {
-        Err(unsupported("M4"))
+    fn paste_text(&self, pane: &str, text: &str) -> io::Result<()> {
+        paste::paste(self, pane, text)
     }
-    fn send_enter(&self, _: &str) -> io::Result<()> {
-        Err(unsupported("M4"))
+    fn send_enter(&self, pane: &str) -> io::Result<()> {
+        paste::enter(self, pane)
     }
     fn display_message(&self, _: &str, _: &str) -> io::Result<()> {
         Err(unsupported("M5"))
@@ -111,6 +111,7 @@ fn gone_evidence(error: &io::Error, socket_exists: bool) -> bool {
         || error.to_string().contains("error connecting to")
 }
 mod parse;
+mod paste;
 pub async fn hook_server_start(socket: &std::path::Path) -> std::io::Result<u64> {
     let output = tokio::time::timeout(
         std::time::Duration::from_millis(30),

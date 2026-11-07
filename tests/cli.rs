@@ -2,32 +2,6 @@ use std::process::Command;
 #[test]
 fn future_verbs_remain_explicit_stubs() {
     for (args, verb, milestone) in [
-        (vec!["watch", "--json"], "watch", 4),
-        (
-            vec![
-                "wait",
-                "%7",
-                "--until",
-                "waiting",
-                "--timeout",
-                "600",
-                "--json",
-            ],
-            "wait",
-            4,
-        ),
-        (vec!["send", "r42", "-", "--force"], "send", 4),
-        (vec!["ack", "r42", "%7"], "ack", 4),
-        (
-            vec!["history", "r42", "--limit", "10", "--json"],
-            "history",
-            4,
-        ),
-        (vec!["name", "%7", "name"], "name", 4),
-        (vec!["name", "%7", "--clear"], "name", 4),
-        (vec!["group", "add", "g", "%7"], "group add", 4),
-        (vec!["group", "rm", "g", "%7"], "group rm", 4),
-        (vec!["group", "ls", "--json"], "group ls", 4),
         (vec!["doctor", "--json"], "doctor", 7),
         (vec!["ui"], "ui", 5),
         (vec!["mcp", "--allow-send"], "mcp", 6),
@@ -129,4 +103,24 @@ fn missing_default_server_is_clear_and_never_spawns() {
             .contains("no tmux server")
     );
     assert!(!root.path().join("run").exists());
+}
+#[test]
+fn m4_argument_contract() {
+    use clap::Parser;
+    use tmux_sidecar::cli::{Cli, Command as Verb};
+    for args in [
+        vec!["send", "%0", "--force", "hello"],
+        vec!["send", "%0", "hello", "--force"],
+        vec!["send", "%0", "-", "--force"],
+    ] {
+        let parsed = Cli::try_parse_from(std::iter::once("tmux-sidecar").chain(args)).unwrap();
+        assert!(matches!(parsed.command, Verb::Send { force: true, .. }));
+    }
+    for args in [
+        vec!["wait", "%0", "--until", "working"],
+        vec!["history", "%0", "--limit", "4294967296"],
+        vec!["name", "%0", "x", "--clear"],
+    ] {
+        assert!(Cli::try_parse_from(std::iter::once("tmux-sidecar").chain(args)).is_err());
+    }
 }

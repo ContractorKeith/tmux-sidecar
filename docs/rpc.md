@@ -91,11 +91,35 @@ readings have source `transcript` and event `transcript_reading`.
 
 ## wait
 
-Reserved for M4; returns -32601, "not implemented yet (M4)".
+Params: `{"sel":"r1","until":"waiting","timeout":30}`. `until` is waiting,
+blocked or done; optional `timeout` is an unsigned integer in seconds. Omitted or
+null timeout waits indefinitely. A zero timeout checks the current state once.
+Returns `{"run_id":"r1","state":"waiting","at":1793800000000}` when the target state is observed,
+immediately if it already matches (`at` is state_since). Subsequent matches use
+the committed transition timestamp, including transient states followed quickly by
+another change. The daemon subscribes before its initial read
+and enforces the deadline itself; clients do not poll. Pane selectors resolve once
+to a run id, so a replacement agent cannot satisfy an earlier wait.
+A missing selector returns -32005; timeout returns -32004; a run ending in done
+while waiting for another state returns -32001. Subscription overflow fails with
+-32001 rather than silently missing transitions.
 
 ## send
 
-Reserved for M4; returns -32601, "not implemented yet (M4)".
+Params: `{"sel":"%2","text":"next prompt","force":false}`. `force` defaults
+to false. Returns `{}` after paste and Enter, and commits an optimistic working
+state with source `send` plus its state_changed history. The next hook confirms it.
+The daemon requires a live run in waiting at paste time, else -32003 with the
+current state. `force` skips only the state guard; ended or missing runs return
+-32005. NUL text returns -32602; terminal failures return -32603.
+A per-run lock covers guard, paste and optimistic commit. Hook, transcript and
+poll state mutations acquire current send locks in stable order before committing.
+SQLite and read RPCs remain available during terminal work. Sends to distinct runs
+can paste concurrently.
+Terminal work runs off the RPC dispatcher and SQLite owner. Each paste uses a
+unique named buffer: load-buffer reads text from stdin, paste-buffer uses
+`-p -d -r -b NAME -t PANE` (`-r` preserves literal newlines), then send-keys sends exactly one Enter. Text never enters
+the tmux key-name parser; failed pastes remove their buffer.
 
 ## ack
 
@@ -240,7 +264,17 @@ Error response example:
 | -32603 | Internal failure |
 | -32001 | General error; slow subscription overflow |
 | -32002 | Usage error (reserved) |
-| -32003 | Refused (reserved) |
-| -32004 | Timeout (reserved) |
+| -32003 | Refused by send state guard |
+| -32004 | Wait timeout |
 | -32005 | Selector not found |
 | -32006 | Daemon unreachable (reserved) |
+
+### CLI output
+
+Read verbs expose their RPC result unchanged with `--json`. `watch --json` emits
+one state_changed params object per line (NDJSON); human watch emits a compact
+state table. Watch exits 0 on Ctrl-C, 1 on daemon exit or subscription failure.
+Other human reads use compact tab-separated tables; control characters in text
+are escaped. `-q` suppresses successful output. `send SEL -` reads UTF-8 stdin.
+CLI errors map to 1 general, 2 usage, 3 refused, 4 timeout, 5 selector not found,
+6 unreachable after auto-spawn. Mutation commands report a brief success message.

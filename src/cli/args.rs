@@ -50,7 +50,6 @@ pub enum Command {
     /// Paste a prompt into an agent run.
     Send {
         sel: RunSelector,
-        #[arg(allow_hyphen_values = true)]
         text: String,
         #[arg(long)]
         force: bool,
@@ -64,7 +63,7 @@ pub enum Command {
     History {
         sel: RunSelector,
         #[arg(long)]
-        limit: Option<u64>,
+        limit: Option<u32>,
         #[arg(long)]
         json: bool,
     },

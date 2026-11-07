@@ -61,17 +61,14 @@ pub fn handle_prepared(
                 .map(|()| json!({}))
                 .map_err(|e| (rpc::INTERNAL_ERROR, e.to_string())),
         },
-        method => {
-            let milestone = match method {
-                "wait" | "send" => "M4",
-                _ => return failure(id, rpc::METHOD_NOT_FOUND, "unknown method"),
-            };
+        "wait" | "send" => {
             return failure(
                 id,
-                rpc::METHOD_NOT_FOUND,
-                format!("not implemented yet ({milestone})"),
+                rpc::INVALID_PARAMS,
+                "requires asynchronous daemon dispatch",
             );
         }
+        _ => return failure(id, rpc::METHOD_NOT_FOUND, "unknown method"),
     };
     match result {
         Ok(result) => Response {
