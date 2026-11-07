@@ -27,7 +27,7 @@ fn connect_with_timeout(path: &Path, timeout: Duration) -> io::Result<UnixStream
 
 e2e_test!(full_backlog_has_a_connect_deadline, {
     use std::os::fd::AsRawFd;
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::support::Scratch::new();
     let path = root.path().join("sock");
     let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
     // SAFETY: listener owns the fd; reducing the backlog forces the kernel connect wait.

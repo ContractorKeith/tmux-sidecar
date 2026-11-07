@@ -170,7 +170,7 @@ e2e_test!(foreground_collision_and_sigterm_cleanup, {
         return;
     }
     let guard = TmuxGuard::start();
-    let mut child = super::support::ChildGuard(
+    let mut child = super::support::ChildGuard::new(
         guard
             .sidecar()
             .args(["daemon", "run"])

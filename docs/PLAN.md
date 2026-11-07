@@ -1,6 +1,6 @@
 # tmux-sidecar — Build Plan
 
-Status: M0 in progress (2026-11-04). Sources studied: Herdr, TuiOS, Zellij, Muxy, and
+Status: v1 feature-complete, untagged, pending skeptic review (2026-11-07). Sources studied: Herdr, TuiOS, Zellij, Muxy, and
 Keith's own session-board (sboard). Decisions come from the 2026-11-04 grill; terms are in
 `CONTEXT.md`, and the hard-to-reverse choices are in `docs/adr/`.
 
@@ -278,7 +278,7 @@ If `claude_hooks_enabled = false`, common Grok events instead live in the separa
 `~/.grok/hooks/tmux-sidecar-common.json`, so the Grok-only file never duplicates them. Codex: `notify` in
 `~/.codex/config.toml` (refuse and explain if the user already has a different `notify`
 program; offer `--chain`), plus UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Interrupt and SessionEnd hooks. OpenCode: a plugin file
-`~/.config/opencode/plugin/tmux-sidecar.js` that forwards the five events by spawning
+`~/.config/opencode/plugins/tmux-sidecar.js` that forwards the five events by spawning
 `tmux-sidecar hook opencode`. `--dry-run` prints a unified diff per file and changes nothing.
 Every write is atomic (temp file + rename) and keeps a `.tmux-sidecar.bak` of the first
 original.
@@ -324,6 +324,29 @@ reviewer and CI run the same script; each milestone adds its own live checks. v1
 also includes a manual run on Omarchy and the Mac Studio with real Claude Code, Codex, Grok and
 OpenCode sessions (recorded in the skeptic report): each agent shows blocked on a real
 permission prompt and waiting after its turn.
+
+- [x] 1. Build/layout and acceptance — CI `Rust (ubuntu-latest)` / `Rust (macos-latest)`.
+- [x] 2. Per-server daemon/socket — `separate_servers_and_rpc_contract`.
+- [x] 3. Pane discovery — `real_adapter_sees_isolated_pane`.
+- [x] 4. Agent process detection — `run_discovery_exit_pane_close_and_server_exit`.
+- [x] 5. Persistence — `migrates_reopens_wal_and_preserves_history_and_pane_names`.
+- [x] 6. Bounded hooks and replay — `internal_budget_never_exceeds_two_hundred_ms`,
+  `down_daemon_spools_replays_in_order_and_deduplicates`.
+- [x] 7. Reversible installation — `round_trip_crlf_user_hooks_comments_idempotence_and_missing_files`.
+- [x] 8. Payload fixtures — `every_fixture_is_delivered_by_its_real_ancestor`.
+- [x] 9. State transitions — `fixture_states_attention_history_and_subscription`.
+- [x] 10. Transcript fallback — `transcript_fallback_then_hook_payload_owns_state_and_metadata`.
+- [x] 11. Attention/read marks — `focus_with_two_attached_clients_and_detached_session`.
+- [x] 12. Project/manual groups — `project_groups_and_manual_membership_survive_restart`.
+- [x] 13. CLI/streaming/wait — `cli_verbs_and_every_exit_code`.
+- [x] 14. Guarded send — `cli_stdin_send_and_concurrent_guard`.
+- [x] 15. UI/popup — `backend_snapshots`, README popup live check in `accept.sh`.
+- [x] 16. Notifications — `only_blocked_and_error_fire_with_per_run_and_global_debounce`.
+- [x] 17. MCP — `mcp_stdio_tools_read_fixtures_and_guard_registration`.
+- [x] 18. Doctor/docs/release — `doctor_on_complete_and_missing_fakes`,
+  `documented_methods_match_the_wire_table_exactly`, README live checks in `accept.sh`,
+  Release `build` / `checksums` jobs.
+- [ ] Real-agent blocked/waiting acceptance on Omarchy and Mac Studio — pending `skeptic-review`.
 
 ## 11. Process
 

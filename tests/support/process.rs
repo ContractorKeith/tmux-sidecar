@@ -1,3 +1,5 @@
+#[path = "../isolation/mod.rs"]
+mod isolation;
 use std::{
     io::{self, Read},
     process::{Child, Command, Output, Stdio},
@@ -6,8 +8,15 @@ use std::{
 };
 
 pub struct ChildGuard(pub Child);
+impl ChildGuard {
+    pub fn new(child: Child) -> Self {
+        super::watchdog::track(child.id());
+        Self(child)
+    }
+}
 impl Drop for ChildGuard {
     fn drop(&mut self) {
+        super::watchdog::untrack(self.0.id());
         let _ = self.0.kill();
         let deadline = Instant::now() + Duration::from_secs(1);
         while self.0.try_wait().ok().flatten().is_none() {
@@ -91,7 +100,11 @@ pub fn try_output(command: &mut Command) -> io::Result<Output> {
     output_with_timeout(command, Duration::from_secs(8))
 }
 fn output_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<Output> {
-    let mut child = ChildGuard(
+    let sandbox = isolation::fill(command);
+    let _registration = sandbox
+        .as_ref()
+        .map(|root| super::watchdog::Registration::new(root.path()));
+    let mut child = ChildGuard::new(
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -160,11 +173,12 @@ fn diagnostics(command: &Command) -> String {
 }
 
 e2e_test!(timeout_kills_and_reaps_the_owned_process, {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::support::Scratch::new();
     let mut command = Command::new("/bin/sleep");
     command
         .arg("30")
         .env("HOME", root.path())
+        .env("TMUX_TMPDIR", root.path())
         .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
         .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"));
     let start = Instant::now();

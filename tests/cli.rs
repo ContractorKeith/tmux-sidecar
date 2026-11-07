@@ -1,24 +1,34 @@
-use std::process::Command;
+#[path = "isolation/mod.rs"]
+mod isolation;
+fn command(root: &std::path::Path) -> std::process::Command {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
+    command.env("HOME", root);
+    let _sandbox = isolation::fill(&mut command);
+    command
+}
 #[test]
-fn future_verbs_remain_explicit_stubs() {
-    let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+fn doctor_quiet_still_reports_failure_exit_code() {
+    let root = tempfile::tempdir().unwrap();
+    let output = command(root.path())
+        .env("HOME", root.path())
+        .env("CLAUDE_CONFIG_DIR", root.path().join(".claude"))
+        .env("CODEX_HOME", root.path().join(".codex"))
+        .env("GROK_HOME", root.path().join(".grok"))
+        .env("OPENCODE_DB", root.path().join("opencode.db"))
+        .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
+        .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"))
         .args(["--tmux-socket", "/tmp/unused", "-q", "doctor", "--json"])
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8(output.stderr).unwrap(),
-        "tmux-sidecar: doctor is not implemented yet (M7)\n"
-    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("doctor found"));
 }
 #[test]
 fn help_and_version_work() {
+    let root = tempfile::tempdir().unwrap();
     for arg in ["--help", "--version"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
-            .arg(arg)
-            .output()
-            .unwrap();
+        let output = command(root.path()).arg(arg).output().unwrap();
         assert!(output.status.success());
         assert!(output.stderr.is_empty());
         if arg == "--help" {
@@ -51,12 +61,13 @@ fn help_and_version_work() {
 }
 #[test]
 fn nested_help_lists_every_subcommand() {
+    let root = tempfile::tempdir().unwrap();
     for (parent, verbs) in [
         ("group", vec!["add", "rm", "ls"]),
         ("hooks", vec!["install", "uninstall"]),
         ("daemon", vec!["status", "stop", "run"]),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+        let output = command(root.path())
             .args([parent, "--help"])
             .output()
             .unwrap();
@@ -80,7 +91,7 @@ fn fakes_are_available_to_integration_tests() {
 #[test]
 fn missing_default_server_is_clear_and_never_spawns() {
     let root = tempfile::tempdir().unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+    let output = command(root.path())
         .env_remove("TMUX")
         .env("TMUX_TMPDIR", root.path())
         .env("HOME", root.path())
@@ -119,8 +130,9 @@ fn m4_argument_contract() {
 }
 #[test]
 fn empty_prompts_fail_before_connecting() {
+    let root = tempfile::tempdir().unwrap();
     for text in ["", "-"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+        let output = command(root.path())
             .args(["--tmux-socket", "/no/tsx-server", "send", "%0", text])
             .stdin(std::process::Stdio::null())
             .output()
@@ -134,7 +146,7 @@ fn escaped_prompt_size_is_checked_before_connecting() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("prompt");
     std::fs::write(&path, "\"".repeat(600_000)).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+    let output = command(root.path())
         .args(["--tmux-socket", "/no/tsx-server", "send", "%0", "-"])
         .stdin(std::fs::File::open(path).unwrap())
         .output()
@@ -144,7 +156,7 @@ fn escaped_prompt_size_is_checked_before_connecting() {
         String::from_utf8_lossy(&output.stderr)
             .contains("prompt exceeds maximum 1 MiB encoded request frame")
     );
-    let help = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
+    let help = command(root.path())
         .args(["send", "--help"])
         .output()
         .unwrap();

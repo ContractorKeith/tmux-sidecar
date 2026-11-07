@@ -110,7 +110,7 @@ e2e_test!(cli_stdin_send_and_concurrent_guard, {
     fire(&guard, &run, "Stop");
     let mut senders = Vec::new();
     for _ in 0..2 {
-        senders.push(ChildGuard(
+        senders.push(ChildGuard::new(
             guard
                 .sidecar()
                 .args(["send", "%0", "literal Enter C-c"])
@@ -131,7 +131,7 @@ e2e_test!(cli_stdin_send_and_concurrent_guard, {
     assert_eq!(codes, vec![0, 3]);
     let path = guard.scratch.path().join("prompt.txt");
     fs::write(&path, "stdin\nC-c Enter").unwrap();
-    let mut child = ChildGuard(
+    let mut child = ChildGuard::new(
         guard
             .sidecar()
             .args(["send", "%0", "-", "--force"])

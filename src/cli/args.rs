@@ -104,6 +104,8 @@ pub enum Command {
     Doctor {
         #[arg(long)]
         json: bool,
+        #[arg(long, value_enum, action = clap::ArgAction::Append)]
+        agent: Vec<AgentKind>,
     },
     /// Open the terminal interface.
     Ui,

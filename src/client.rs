@@ -102,6 +102,7 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
     )
     .await
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "hello exceeded 2 s"))??;
+    warn_version(&hello);
     let key = paths::server_key(socket)?;
     if hello["server_key"].as_str() != Some(&key) {
         return Err(io::Error::other(format!(
@@ -158,5 +159,20 @@ pub(crate) async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + U
     match response.outcome {
         rpc::Outcome::Success { result } => Ok(result),
         rpc::Outcome::Failure { error } => Err(io::Error::other(error)),
+    }
+}
+
+// One warning per client process, including UI reconnects and MCP calls.
+fn warn_version(hello: &Value) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if let Some(version) = hello["daemon_version"].as_str()
+        && version != env!("CARGO_PKG_VERSION")
+        && !WARNED.swap(true, Ordering::Relaxed)
+    {
+        eprintln!(
+            "tmux-sidecar: daemon version {version} differs from client {}; run `tmux-sidecar daemon stop` to restart",
+            env!("CARGO_PKG_VERSION")
+        );
     }
 }

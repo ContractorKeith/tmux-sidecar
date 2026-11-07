@@ -10,9 +10,7 @@ terminals; tmux-sidecar owns the agent semantics. MIT. "Done" for v1 is every v1
 
 ## Status
 
-M3 implemented (2026-11-04): pure state transitions, transactional history, transcript
-fallback, attention/read marks, computed project and persistent manual groups, subscriptions.
-M4 CLI verbs are next; only attention's minimal CLI is included here.
+v1 feature-complete (2026-11-07), untagged, pending the skeptic review.
 Milestones M0–M7 are GitHub issues #1–#8.
 
 ## Commands

@@ -34,7 +34,7 @@ e2e_test!(focus_with_two_attached_clients_and_detached_session, {
     until!(|| list(&guard).as_array().unwrap().len() == 4);
     let mut clients = Vec::new();
     for name in ["fixture", "second"] {
-        clients.push(ChildGuard(
+        clients.push(ChildGuard::new(
             guard
                 .command()
                 .args(["-C", "attach-session", "-t", name])

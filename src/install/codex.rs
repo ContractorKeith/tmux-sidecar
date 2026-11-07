@@ -1,7 +1,7 @@
 use std::io;
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, Value};
 const MARKER: &str = "# tmux-sidecar";
-const EVENTS: &[&str] = &[
+pub(crate) const EVENTS: &[&str] = &[
     "UserPromptSubmit",
     "PreToolUse",
     "PostToolUse",

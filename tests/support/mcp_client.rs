@@ -21,7 +21,7 @@ impl Mcp {
         if allow_send {
             command.arg("--allow-send");
         }
-        let mut child = ChildGuard(
+        let mut child = ChildGuard::new(
             command
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())

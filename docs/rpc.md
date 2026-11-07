@@ -18,7 +18,10 @@ Request: `{"jsonrpc":"2.0","id":1,"method":"hello"}`
 
 Response: `{"jsonrpc":"2.0","id":1,"result":{"rpc_version":1,"daemon_version":"0.1.0","server_key":"012345abcdef"}}`
 
-Accepts omitted, null or empty object params.
+Accepts omitted, null or empty object params. Clients warn once on stderr if
+`daemon_version` differs from their binary version; they remain connected. Run
+`tmux-sidecar daemon stop` so the next client starts the current binary.
+`rpc_version` remains 1; doctor is a local diagnostic command, not an RPC method.
 
 ## list
 
@@ -259,13 +262,13 @@ and the unchanged appended payload. Uninstall restores the prior notify entry.
 ### Errors
 
 Error response example:
-`{"jsonrpc":"2.0","id":4,"error":{"code":-32601,"message":"not implemented yet (M3)"}}`
+`{"jsonrpc":"2.0","id":4,"error":{"code":-32601,"message":"unknown method"}}`
 
 | Code | Meaning |
 |---|---|
 | -32700 | Malformed JSON; id null |
 | -32600 | Invalid request (including unsupported JSON-RPC version) |
-| -32601 | Unknown or not yet implemented method |
+| -32601 | Unknown method |
 | -32602 | Invalid params |
 | -32603 | Internal failure |
 | -32001 | General error; slow subscription overflow |

@@ -81,7 +81,7 @@ e2e_test!(client_joins_an_already_starting_daemon, {
     )
     .unwrap();
     fs::set_permissions(ps, fs::Permissions::from_mode(0o700)).unwrap();
-    let _daemon = super::support::ChildGuard(
+    let _daemon = super::support::ChildGuard::new(
         guard
             .sidecar()
             .args(["daemon", "run"])
