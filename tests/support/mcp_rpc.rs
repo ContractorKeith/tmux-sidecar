@@ -50,6 +50,8 @@ e2e_test!(mcp_wait_and_send_each_use_one_rpc_and_preserve_errors, {
                     Err(e) => panic!("{e}"),
                 }
             };
+            // macOS inherits O_NONBLOCK from the listener; Linux does not.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
