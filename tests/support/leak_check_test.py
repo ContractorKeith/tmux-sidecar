@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 sys.dont_write_bytecode = True
-from leak_check import snapshot
+from leak_check import snapshot, processes, cleanup
 
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
@@ -20,10 +20,28 @@ with tempfile.TemporaryDirectory() as directory:
     baseline = root / 'baseline.json'
     baseline.write_text(json.dumps(dict(boundaries=boundary, before=before)))
     command = [sys.executable, str(Path(__file__).with_name('leak_check.py')), 'check', str(baseline)]
-    for path in [root / 'sockets/tsx-leak', root / 'scratch/tsx-leak', root / 'state/new-key']:
+    for path in [root / 'sockets/tsx-leak', root / 'sockets/default', root / 'scratch/tsx-leak', root / 'state/new-key']:
         path.mkdir()
         result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=5)
         assert result.returncode != 0 and str(path) in result.stderr, result
         path.rmdir()
+    private = root / 'fixture'
+    private.mkdir()
+    socket = private / 't'
+    (private / 'tmux.socket').write_text(str(socket))
+    child_env = dict(env, HOME=str(private), TMUX_TMPDIR=str(private),
+                     TMUX_SIDECAR_RUNTIME_DIR=str(private / 'run'),
+                     TMUX_SIDECAR_STATE_DIR=str(private / 'state'))
+    try:
+        subprocess.run(['tmux', '-S', str(socket), '-f', '/dev/null', 'new-session',
+                        '-d', '-s', 'leak', '/bin/sleep 30'], env=child_env, check=True, timeout=5)
+        pid = subprocess.run(['tmux', '-S', str(socket), 'display', '-p', '#{pid}'],
+                             env=child_env, capture_output=True, text=True, check=True, timeout=5).stdout.strip()
+        (private / 'tmux.pid').write_text(pid)
+        assert any(item.startswith(pid + ' ') for item in processes()), 'live tmux server was invisible'
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=5)
+        assert result.returncode != 0 and pid in result.stderr, result
+    finally:
+        cleanup(private)
     subprocess.run(command, env=env, check=True, timeout=5)
-    print('accept: leak detector rejects new sockets, scratch directories and real-state entries')
+    print('accept: leak detector rejects new sockets, scratch directories and real-state entries and live servers')

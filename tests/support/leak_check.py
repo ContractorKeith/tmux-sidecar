@@ -14,7 +14,7 @@ def paths(roots):
     found = set()
     for root in roots:
         root = Path(root)
-        if not root.exists():
+        if not root.exists() and not root.is_symlink():
             continue
         found.add(str(root))
         if root.is_dir() and not root.is_symlink():
@@ -47,8 +47,7 @@ def roots():
 
 
 def snapshot(boundaries):
-    sockets = [entry for parent in boundaries['socket_dirs']
-               if Path(parent).exists() for entry in Path(parent).glob('tsx-*')]
+    sockets = [Path(parent) for parent in boundaries['socket_dirs']]
     return dict(paths=sorted(paths(sockets + list(Path(boundaries.get('scratch_dir', '/tmp')).glob('tsx-*')) +
                                   [Path(p) for p in boundaries['state_dirs']])),
                 processes=sorted(processes()))
