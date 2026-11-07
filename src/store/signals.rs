@@ -110,6 +110,12 @@ impl Store {
                 },
                 signal.at,
             );
+            // Detached plugin hosts can update a turn but cannot end the pane's process.
+            let state = if state == AgentState::Done && !signal.pane_verified {
+                original.state
+            } else {
+                state
+            };
             self.change(&run, state, signal.at, &signal.source, Some(cause))?;
             if let Some(text) = signal
                 .payload

@@ -32,12 +32,7 @@ pub(super) async fn send(
     params: Send,
     start: u64,
 ) -> Result<Value> {
-    if params.text.is_empty() {
-        return Err((rpc::INVALID_PARAMS, "empty prompt".into()));
-    }
-    if params.text.contains('\0') {
-        return Err((rpc::INVALID_PARAMS, "text contains NUL".into()));
-    }
+    crate::seams::validate_prompt(&params.text).map_err(|e| (rpc::INVALID_PARAMS, e.into()))?;
     if let Some(error) = super::super::freshness::error(worker) {
         return Err(error);
     }
@@ -79,6 +74,18 @@ pub(super) async fn send(
             .await
             .map_err(internal)?
             .map_err(internal)?;
+        let id = run.id.clone();
+        let notify_only = run.agent == crate::model::AgentKind::Codex
+            && worker
+                .read(move |s| {
+                    Ok::<_, std::io::Error>(s.has_hooks(&id)? && !s.has_guard_hooks(&id)?)
+                })
+                .await
+                .map_err(internal)?
+                .map_err(internal)?;
+        if !params.force && notify_only {
+            return Err((rpc::REFUSED, "Codex notify can't see approval prompts; install Codex inline hooks (tmux-sidecar hooks install --agent codex) or use --force".into()));
+        }
         if !params.force && !has_evidence {
             return Err((
                 rpc::REFUSED,

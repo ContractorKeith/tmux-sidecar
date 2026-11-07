@@ -17,9 +17,7 @@ pub fn prepare(cli: &mut Cli) -> Result<(), Failure> {
         }
         *text = String::from_utf8(bytes).map_err(|e| (2, format!("prompt must be UTF-8: {e}")))?;
     }
-    if text.is_empty() {
-        return Err((2, "empty prompt".into()));
-    }
+    crate::seams::validate_prompt(text).map_err(|e| (2, e.into()))?;
     rpc::request_frame(
         "send",
         json!({"sel":sel.to_string(),"text":text,"force":force}),

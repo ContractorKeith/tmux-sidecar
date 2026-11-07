@@ -70,6 +70,9 @@ pub(crate) fn for_spawn(paths: &crate::paths::Paths) -> io::Result<PathBuf> {
 pub(crate) fn retry_path() {
     RETRY_PATH.store(true, Ordering::Relaxed);
 }
+pub(super) fn scan_succeeded() {
+    RETRY_PATH.store(false, Ordering::Relaxed);
+}
 pub(super) fn quiet_binary() -> PathBuf {
     current()
         .map(|(path, _)| path)

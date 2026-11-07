@@ -116,7 +116,11 @@ pub fn prepare(
             timeout = Some(seconds);
             "wait"
         }
-        "send_prompt" => "send",
+        "send_prompt" => {
+            crate::seams::validate_prompt(args["text"].as_str().expect("validated text"))
+                .map_err(str::to_owned)?;
+            "send"
+        }
         _ => unreachable!(),
     };
     Ok((method, Value::Object(args), timeout))

@@ -63,6 +63,7 @@ pub(super) fn notifications(
     paths: &Paths,
     store: &StoreWorker,
 ) -> io::Result<super::shutdown::NotificationTask> {
+    super::config::validate(&paths.config)?;
     let config = crate::notify::Config::read(&paths.config)?;
     Ok(super::shutdown::NotificationTask(crate::notify::start(
         socket.to_owned(),

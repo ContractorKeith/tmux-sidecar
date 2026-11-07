@@ -65,6 +65,7 @@ pub async fn resolve(
 fn apply(signal: &mut super::signal::Signal, chain: &[(u32, Process)], pane_pid: Option<u32>) {
     if let Some(identity) = pane_pid.and_then(|root| ancestor(chain, root)) {
         (signal.agent_pid, signal.agent) = identity;
+        signal.pane_verified = true;
     } else {
         let nearest = chain
             .iter()

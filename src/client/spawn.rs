@@ -89,6 +89,7 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
     }
     let log = crate::daemon::log::open(&paths.state)?;
     let mut command = Command::new(std::env::current_exe()?);
+    super::launch::prepare(command.as_std_mut())?;
     command
         .arg("--tmux-socket")
         .arg(socket)
@@ -99,15 +100,6 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
-    // SAFETY: pre_exec calls only async-signal-safe setsid and constructs an OS error on failure.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
     let mut starting = StartingChild {
         child: Some(command.spawn()?),
         socket: paths.runtime.join("sock"),

@@ -1,4 +1,6 @@
 //! Every non-daemon reader uses this transport; only list auto-spawns in M1.
+mod fds;
+mod launch;
 mod spawn;
 use crate::{
     paths::{self, Paths},
@@ -77,6 +79,15 @@ pub(crate) fn connected_error(method: &str, error: io::Error) -> io::Error {
 }
 
 pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufReader<UnixStream>> {
+    identified(socket, paths, spawn)
+        .await
+        .map(|(stream, _)| stream)
+}
+async fn identified(
+    socket: &Path,
+    paths: &Paths,
+    spawn: bool,
+) -> io::Result<(BufReader<UnixStream>, PathBuf)> {
     let (stream, endpoint, source) = match discovery::connect_identified(paths).await {
         Ok(stream) => stream,
         Err(_) if spawn => {
@@ -126,11 +137,13 @@ pub async fn open(socket: &Path, paths: &Paths, spawn: bool) -> io::Result<BufRe
     if spawn {
         crate::daemon::recovery::report(paths);
     }
-    Ok(stream)
+    Ok((stream, endpoint))
 }
 
 mod discovery;
+mod stop;
 pub(crate) use discovery::connect;
+pub use stop::stop;
 
 pub(crate) async fn verify(stream: &mut UnixStream, socket: &Path) -> io::Result<()> {
     let hello = exchange(&mut BufReader::new(stream), "hello", serde_json::json!({})).await?;

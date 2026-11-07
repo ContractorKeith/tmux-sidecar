@@ -1,7 +1,7 @@
 use serde_json::json;
 use tmux_sidecar::{hook::signal::Signal, model::AgentState, store::Store};
 fn signal(source: &str, event: &str, session: Option<&str>, at: u64) -> Signal {
-    serde_json::from_value(json!({"server_start":1,"pane_id":"%0","agent":"codex","agent_pid":42,"at":at,"nonce":format!("{at:032x}"),"source":source,"event":event,"agent_session_id":session,"cwd":"/work","payload":{"input-messages":["Create a short label for this task"]}})).unwrap()
+    serde_json::from_value(json!({"server_start":1,"pane_verified":true,"pane_id":"%0","agent":"codex","agent_pid":42,"at":at,"nonce":format!("{at:032x}"),"source":source,"event":event,"agent_session_id":session,"cwd":"/work","payload":{"input-messages":["Create a short label for this task"]}})).unwrap()
 }
 #[test]
 fn changed_title_prompt_cannot_poison_notify_only_or_later_inline_identity() {

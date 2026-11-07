@@ -147,6 +147,8 @@ e2e_test!(agent_process_cwd_and_attention_project_root_agree, {
         .success()
     );
     until!(|| list(&guard)[0]["cwd"] == repo.to_str().unwrap());
+    let run = list(&guard)[0].clone();
+    super::cli_verbs::fire(&guard, &run, "Stop");
     assert_eq!(
         rpc(&guard, "attention", json!({}))[0]["project_root"],
         list(&guard)[0]["project_root"]

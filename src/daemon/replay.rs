@@ -63,6 +63,10 @@ async fn replay_claim(
                 }
                 let signal: Signal = serde_json::from_value(value["params"].clone())?;
                 signal.validate_frame()?;
+                if signal.server_key.as_deref() != Some(crate::paths::server_key(&socket)?.as_str())
+                {
+                    return Err(io::Error::other("server key mismatch in spooled hook"));
+                }
                 Ok(signal)
             })();
             match parsed {
@@ -83,7 +87,9 @@ async fn replay_claim(
                     if !line.ends_with(b"\n") {
                         rejected.push(b'\n');
                     }
-                    let _ = super::log::write(&dir, &format!("rejected spool line: {error}"));
+                    let message = format!("rejected spool line: {error}");
+                    let _ = crate::hook::log(&dir, &message);
+                    let _ = super::log::write(&dir, &message);
                 }
             }
         }

@@ -164,3 +164,9 @@ mod ui_stale;
 
 #[path = "support/binary_recovery.rs"]
 mod binary_recovery;
+#[path = "support/round3_daemon.rs"]
+mod round3_daemon;
+#[path = "support/round3_send.rs"]
+mod round3_send;
+#[path = "support/round3_transcripts.rs"]
+mod round3_transcripts;

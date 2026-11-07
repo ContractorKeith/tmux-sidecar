@@ -47,10 +47,13 @@ pub async fn tick(
             Ok(scan) => scan,
             Err(error) => {
                 crate::tmux::retry_path();
-                if tmux.confirmed_gone(&error) {
-                    return Ok(Snapshot::Gone);
+                match tmux.scan() {
+                    Ok(scan) => scan,
+                    Err(second) if tmux.confirmed_gone(&error) || tmux.confirmed_gone(&second) => {
+                        return Ok(Snapshot::Gone);
+                    }
+                    Err(_) => return Err(error),
                 }
-                return Err(error);
             }
         };
         if let Some(pane) = scan.panes.first() {

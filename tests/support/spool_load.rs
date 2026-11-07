@@ -15,13 +15,22 @@ fn count(guard: &TmuxGuard) -> usize {
     .count()
 }
 e2e_test!(
-    two_hundred_parallel_hooks_survive_down_daemon_and_replay,
+    four_hundred_parallel_hooks_under_cpu_load_survive_and_replay,
     true,
     {
         if !enabled() {
             return;
         }
         let guard = TmuxGuard::start();
+        let mut hog = std::process::Command::new("/bin/sh");
+        guard.isolate(&mut hog);
+        let _hog = super::support::ChildGuard::new(
+            hog.args(["-c", "while :; do :; done"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
         let run = list(&guard)[0]["agent_pid"].as_u64().unwrap();
         stop(&guard);
         let spawn_lock = tmux_sidecar::client::FileLock::try_acquire(
@@ -31,12 +40,18 @@ e2e_test!(
         super::hooks::fire(
             &guard,
             run,
-            "burst",
+            "burst400",
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks/claude/Stop.json"),
         );
         let spool = guard.scratch.path().join("state/spool.ndjson");
         let text = fs::read_to_string(&spool).unwrap();
-        assert_eq!(text.lines().filter(|s| !s.trim().is_empty()).count(), 200);
+        let log =
+            fs::read_to_string(guard.scratch.path().join("state/hook.log")).unwrap_or_default();
+        assert_eq!(
+            text.lines().filter(|s| !s.trim().is_empty()).count(),
+            400,
+            "hook.log:\n{log}"
+        );
         // Simulate a crash after claim, before any signal commits. Recovery must replay it.
         fs::rename(
             &spool,
@@ -45,11 +60,11 @@ e2e_test!(
         .unwrap();
         drop(spawn_lock);
         list(&guard);
-        until!(|| count(&guard) == 200);
+        until!(|| count(&guard) == 400);
         // Replaying the same invocations again must not duplicate their receipts/history.
         fs::write(&spool, text).unwrap();
         until!(|| tmux_sidecar::hook::spool::drained(spool.parent().unwrap()).unwrap());
-        assert_eq!(count(&guard), 200);
+        assert_eq!(count(&guard), 400);
         stop(&guard);
         let log =
             fs::read_to_string(guard.scratch.path().join("state/hook.log")).unwrap_or_default();

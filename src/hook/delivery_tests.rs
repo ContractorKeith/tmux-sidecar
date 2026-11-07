@@ -55,3 +55,14 @@ async fn live_delivery_times_out_on_a_daemon_that_never_answers_hello() {
         "hello"
     );
 }
+
+#[test]
+fn notify_uses_last_argument_after_wrapper_arguments() {
+    let args = [
+        "codex-notify",
+        "wrapper-option",
+        "{\"type\":\"agent-turn-complete\"}",
+    ]
+    .map(str::to_owned);
+    assert_eq!(notify_payload(&args), args[2].as_bytes());
+}

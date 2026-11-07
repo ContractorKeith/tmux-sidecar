@@ -13,7 +13,7 @@ async fn worker() -> (tempfile::TempDir, StoreWorker) {
     (root, worker)
 }
 fn signal(event: &str, at: u64) -> Signal {
-    serde_json::from_value(json!({"server_start":1,"pane_id":"%0","agent":"claude","agent_pid":1,
+    serde_json::from_value(json!({"server_start":1,"pane_verified":true,"pane_id":"%0","agent":"claude","agent_pid":1,
         "at":at,"source":"hook:claude","nonce":format!("{at:032x}"),"event":event,"cwd":"/","payload":{}})).unwrap()
 }
 #[tokio::test(flavor = "current_thread")]

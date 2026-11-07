@@ -2,6 +2,7 @@
 mod accept;
 mod actions;
 mod config;
+pub use config::validate as validate_config;
 mod freshness;
 mod labels;
 mod list;
@@ -41,9 +42,6 @@ pub fn now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
-}
-fn other(e: impl std::error::Error + Send + Sync + 'static) -> io::Error {
-    io::Error::other(e)
 }
 
 use shutdown::RuntimeGuard;

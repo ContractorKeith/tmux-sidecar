@@ -1,7 +1,7 @@
 use serde_json::json;
 use tmux_sidecar::{hook::signal::Signal, model::AgentState, store::Store};
 fn hook(event: &str, session: &str, at: u64) -> Signal {
-    serde_json::from_value(json!({"server_start":1,"pane_id":"%0","agent":"claude","agent_pid":42,"at":at,"nonce":format!("{at:032x}"),"source":"hook:claude","event":event,"agent_session_id":session,"cwd":"/work","payload":{}})).unwrap()
+    serde_json::from_value(json!({"server_start":1,"pane_verified":true,"pane_id":"%0","agent":"claude","agent_pid":42,"at":at,"nonce":format!("{at:032x}"),"source":"hook:claude","event":event,"agent_session_id":session,"cwd":"/work","payload":{}})).unwrap()
 }
 #[test]
 fn clear_and_logout_leave_a_live_process_ready_for_its_next_session() {

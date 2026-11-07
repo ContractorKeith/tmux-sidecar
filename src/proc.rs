@@ -2,6 +2,7 @@
 mod ancestors;
 pub(crate) mod bounded;
 mod cwd;
+mod identity;
 mod liveness;
 use crate::seams::{Process, ProcessSnapshot, ProcessTree};
 pub use ancestors::hook_ancestors;
@@ -31,9 +32,9 @@ impl ProcessTree for PsProcessTree {
                 String::from_utf8_lossy(&output.stderr).into_owned(),
             ));
         }
-        Ok(parse(
+        Ok(identify(parse(
             &String::from_utf8(output.stdout).map_err(io::Error::other)?,
-        ))
+        )))
     }
 }
 
@@ -44,9 +45,19 @@ impl PsProcessTree {
         let mut command = Command::new("ps");
         command.args(["-A", "-o", "pid=,ppid=,comm="]);
         let output = bounded::output(command, deadline).await?;
-        Ok(parse(
-            &String::from_utf8(output.stdout).map_err(io::Error::other)?,
-        ))
+        let text = String::from_utf8(output.stdout).map_err(io::Error::other)?;
+        tokio::time::timeout_at(
+            deadline,
+            tokio::task::spawn_blocking(move || identify(parse(&text))),
+        )
+        .await
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                "process identity scan exceeded send deadline",
+            )
+        })?
+        .map_err(io::Error::other)
     }
 }
 
@@ -96,6 +107,14 @@ pub fn terminate(pid: u32) {
         }
     }
 }
+
+fn identify(mut processes: ProcessSnapshot) -> ProcessSnapshot {
+    for (&pid, process) in &mut processes {
+        process.comm = identity::comm(pid, &process.comm);
+    }
+    processes
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

@@ -97,9 +97,17 @@ fn absent_daemon_status_and_stop_are_sentences() {
                     verb,
                 ]),
         );
-        assert_eq!(output.status.code(), Some(6));
+        assert_eq!(
+            output.status.code(),
+            Some(if verb == "stop" { 0 } else { 6 })
+        );
+        let message = if verb == "stop" {
+            &output.stdout
+        } else {
+            &output.stderr
+        };
         assert!(
-            String::from_utf8_lossy(&output.stderr).contains("daemon not running"),
+            String::from_utf8_lossy(message).contains("daemon not running"),
             "{:?}",
             output
         );

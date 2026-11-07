@@ -39,7 +39,7 @@ pub fn hook_ancestors() -> io::Result<Vec<(u32, Process)>> {
             parent,
             Process {
                 ppid,
-                comm: comm.to_owned(),
+                comm: super::identity::comm(parent, comm),
             },
         ));
         current = parent;
@@ -103,7 +103,7 @@ fn mac_process(pid: u32) -> io::Result<Option<Process>> {
         .collect();
     Ok(Some(Process {
         ppid: info.pbi_ppid,
-        comm: String::from_utf8_lossy(&bytes).into_owned(),
+        comm: super::identity::comm(pid, &String::from_utf8_lossy(&bytes)),
     }))
 }
 #[cfg(all(test, target_os = "macos"))]

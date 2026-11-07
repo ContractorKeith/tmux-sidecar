@@ -8,7 +8,7 @@ impl Store {
     pub(crate) fn view_digest(&self) -> io::Result<u64> {
         let mut digest = DefaultHasher::new();
         for sql in [
-            "SELECT r.id,r.server_start,r.pane_id,r.agent,r.cwd,r.project_root,r.started_at,r.ended_at,r.state,r.state_since,r.read_at,r.last_assistant_text,p.name FROM runs r LEFT JOIN panes p ON p.server_start=r.server_start AND p.pane_id=r.pane_id WHERE r.ended_at IS NULL ORDER BY r.id",
+            "SELECT r.id,r.server_start,r.pane_id,r.agent,r.cwd,r.project_root,r.started_at,r.ended_at,r.state,r.state_since,r.state_source,r.read_at,r.last_assistant_text,p.name FROM runs r LEFT JOIN panes p ON p.server_start=r.server_start AND p.pane_id=r.pane_id WHERE r.ended_at IS NULL ORDER BY r.id",
             "SELECT g.name,m.server_start,m.pane_id FROM groups g LEFT JOIN group_members m ON m.group_id=g.id ORDER BY g.name,m.server_start,m.pane_id",
         ] {
             let mut stmt = self.connection.prepare(sql).map_err(io::Error::other)?;
@@ -45,6 +45,7 @@ mod tests {
         assert_eq!(initial, store.view_digest().unwrap());
         let mut before = initial;
         for sql in [
+            "UPDATE runs SET state_source='hook:claude'",
             "UPDATE runs SET last_assistant_text='new answer'",
             "UPDATE runs SET read_at=2",
             "UPDATE runs SET cwd='/other'",

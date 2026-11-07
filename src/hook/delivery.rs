@@ -31,20 +31,7 @@ async fn deliver(
     .await
 }
 pub async fn run(args: Vec<String>) -> io::Result<()> {
-    let started = Instant::now();
     let format = args.first().map(String::as_str).unwrap_or("");
-    // Drain piped input for every format, even on no-op paths. Notify may inherit a tty.
-    use std::io::IsTerminal;
-    let drained = if std::io::stdin().is_terminal() {
-        Ok(Vec::new())
-    } else {
-        input::read(&mut std::io::stdin())
-    };
-    let raw = if format == "codex-notify" {
-        drained.map(|_| args.get(1).cloned().unwrap_or_default().into_bytes())
-    } else {
-        drained
-    };
     if !matches!(
         format,
         "claude" | "codex" | "codex-notify" | "grok" | "opencode"
@@ -55,6 +42,11 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
     let Some(tmux) = std::env::var_os("TMUX") else {
         return Ok(());
     };
+    let raw = if format == "codex-notify" {
+        Ok((notify_payload(&args), false))
+    } else {
+        input::read_stdin()
+    };
     let Some(pane) = std::env::var("TMUX_PANE").ok().filter(|p| !p.is_empty()) else {
         return Ok(());
     };
@@ -62,8 +54,28 @@ pub async fn run(args: Vec<String>) -> io::Result<()> {
         return Ok(());
     };
     let paths = paths::current(&socket)?;
+    let started = Instant::now();
     let result = match raw {
-        Ok(raw) => record(&raw, format, pane, &socket, &paths, started).await,
+        Ok((raw, expired)) => {
+            if expired {
+                paths::prepare(&paths)?;
+                super::log(
+                    &paths.state,
+                    &format!("hook stdin read budget expired after {} bytes", raw.len()),
+                )?;
+                if raw.is_empty() {
+                    return Ok(());
+                }
+                if serde_json::from_slice::<serde_json::Value>(&raw).is_err() {
+                    super::log(
+                        &paths.state,
+                        &format!("partial payload {} bytes", raw.len()),
+                    )?;
+                    return Ok(());
+                }
+            }
+            record(&raw, format, pane, &socket, &paths, started).await
+        }
         Err(error) => Err(error),
     };
     if let Err(error) = &result {
@@ -94,6 +106,8 @@ async fn record(
     let payload: serde_json::Value = serde_json::from_slice(raw)?;
     let parsed = signal::parse(format, &payload)?;
     let mut signal = Signal {
+        server_key: Some(paths::server_key(socket)?),
+        pane_verified: false,
         server_start: context::read(&paths.runtime, socket).unwrap_or(0),
         pane_id: pane,
         agent,
@@ -161,6 +175,14 @@ async fn record(
     );
     let _ = client::trigger_spawn(socket, paths);
     Ok(())
+}
+
+fn notify_payload(args: &[String]) -> Vec<u8> {
+    args.last()
+        .filter(|_| args.len() > 1)
+        .cloned()
+        .unwrap_or_default()
+        .into_bytes()
 }
 
 #[cfg(test)]

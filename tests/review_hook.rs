@@ -79,7 +79,8 @@ fn no_ancestor_still_drains_five_megabytes_without_epipe() {
 fn clap_hook_help_and_unknown_format_are_consistent() {
     let root = tempfile::tempdir().unwrap();
     let help = output(Command::new(env!("CARGO_BIN_EXE_tmux-sidecar")).args(["hook", "--help"]));
-    assert!(String::from_utf8(help.stdout).unwrap().contains("Usage:"));
+    assert!(help.status.success());
+    assert!(help.stdout.is_empty() && help.stderr.is_empty());
     let bad = output(
         Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
             .args(["hook", "unknown-format"])
