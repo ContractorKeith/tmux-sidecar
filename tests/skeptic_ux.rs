@@ -109,12 +109,17 @@ fn absent_daemon_status_and_stop_are_sentences() {
 #[test]
 fn dry_run_is_a_patch_for_new_and_existing_files() {
     let root = tempfile::tempdir().unwrap();
-    let config = root.path().join(".codex/config.toml");
+    let home = root.path().join("deep/home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.canonicalize().unwrap();
+    let alias = root.path().join("alias");
+    std::os::unix::fs::symlink(&home, &alias).unwrap();
+    let config = home.join(".codex/config.toml");
     fs::create_dir_all(config.parent().unwrap()).unwrap();
     fs::write(&config, "# retain this line\nmodel='test'\n").unwrap();
     let output = support::output(
         Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
-            .env("HOME", root.path())
+            .env("HOME", &alias)
             .args(["hooks", "install", "--dry-run"]),
     );
     assert!(output.status.success());
@@ -125,15 +130,20 @@ fn dry_run_is_a_patch_for_new_and_existing_files() {
     // Informational installer output follows the final hunk.
     fs::write(&patch, text).unwrap();
     for dir in [".claude", ".grok/hooks", ".config/opencode/plugins"] {
-        fs::create_dir_all(root.path().join(dir)).unwrap();
+        fs::create_dir_all(home.join(dir)).unwrap();
     }
     let applied = support::output(
         Command::new("patch")
-            .current_dir(root.path())
+            .current_dir(&home)
             .args(["--dry-run", "--batch"])
-            .arg(format!("-p{}", root.path().components().count()))
+            .arg(format!("-p{}", home.components().count()))
             .arg("-i")
             .arg(&patch),
+    );
+    assert!(
+        String::from_utf8_lossy(&applied.stdout).contains(".claude/settings.json"),
+        "{:?}",
+        applied
     );
     assert!(
         applied.status.success(),

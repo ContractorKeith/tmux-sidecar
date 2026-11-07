@@ -24,13 +24,34 @@ pub fn target(path: &Path) -> io::Result<PathBuf> {
                 return if path.exists() {
                     path.canonicalize()
                 } else {
-                    Ok(path)
+                    canonical_missing(&path)
                 };
             }
             Err(e) => return Err(e),
         }
     }
     Err(io::Error::other("too many config symlinks"))
+}
+// New targets resolve existing parent symlinks just like existing files do.
+fn canonical_missing(path: &Path) -> io::Result<PathBuf> {
+    let mut ancestor = path;
+    let mut missing = Vec::new();
+    while !ancestor.exists() {
+        missing.push(
+            ancestor
+                .file_name()
+                .ok_or_else(|| io::Error::other("missing config path component"))?,
+        );
+        ancestor = ancestor
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+    }
+    let mut resolved = ancestor.canonicalize()?;
+    for name in missing.into_iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
 }
 pub fn read(path: &Path) -> io::Result<String> {
     match fs::read_to_string(path) {
