@@ -25,7 +25,8 @@ fn panic_fixture() {
         return;
     }
     let _restore = Restore::enter().unwrap();
-    panic!("visible panic fixture");
+    let detail = "context ".repeat(8192);
+    panic!("visible panic fixture: {detail}");
 }
 #[test]
 fn panic_restores_terminal_before_printing_diagnostic() {
@@ -74,29 +75,28 @@ fn panic_restores_terminal_before_printing_diagnostic() {
             Ok(())
         });
     }
-    let mut child = Child(command.spawn().unwrap());
-    let until = Instant::now() + Duration::from_secs(5);
-    let status = loop {
-        if let Some(status) = child.0.try_wait().unwrap() {
-            break status;
-        }
-        assert!(Instant::now() < until, "panic fixture did not exit");
-        std::thread::sleep(Duration::from_millis(5));
-    };
-    assert!(!status.success());
     // SAFETY: the master is owned and live; fcntl only changes its status flags.
     let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) };
     assert_eq!(flags, 0);
+    let mut child = Child(command.spawn().unwrap());
+    let until = Instant::now() + Duration::from_secs(5);
     let mut bytes = Vec::new();
-    let mut buffer = [0; 4096];
-    loop {
-        match master.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(n) => bytes.extend_from_slice(&buffer[..n]),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-            Err(e) => panic!("{e}"),
+    let status = loop {
+        // PTY output buffers can be small (notably on macOS). Drain while the
+        // child runs, otherwise printing its diagnostic can prevent exit.
+        drain(&mut master, &mut bytes, until);
+        if let Some(status) = child.0.try_wait().unwrap() {
+            drain(&mut master, &mut bytes, until);
+            break status;
         }
-    }
+        assert!(
+            Instant::now() < until,
+            "panic fixture did not exit: {}",
+            String::from_utf8_lossy(&bytes)
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert!(!status.success());
     let output = String::from_utf8_lossy(&bytes);
     let restored = output
         .find("\x1b[?1049l")
@@ -113,4 +113,26 @@ fn panic_restores_terminal_before_printing_diagnostic() {
     let modes = unsafe { modes.assume_init() };
     assert_ne!(modes.c_lflag & libc::ICANON, 0);
     assert_ne!(modes.c_lflag & libc::ECHO, 0);
+}
+
+fn drain(master: &mut File, bytes: &mut Vec<u8>, deadline: Instant) {
+    let mut buffer = [0; 4096];
+    loop {
+        assert!(Instant::now() < deadline, "PTY drain deadline exceeded");
+        assert!(
+            bytes.len() < 1024 * 1024,
+            "panic fixture output exceeded 1 MiB"
+        );
+        match master.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => bytes.extend_from_slice(&buffer[..n]),
+            Err(e)
+                if e.kind() == io::ErrorKind::WouldBlock || e.raw_os_error() == Some(libc::EIO) =>
+            {
+                break;
+            }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => panic!("{e}"),
+        }
+    }
 }
