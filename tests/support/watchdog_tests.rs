@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeSet;
 e2e_test!(watchdog_timeout_fixture, {
     if std::env::var_os("TSX_WATCHDOG_FIXTURE").is_none() {
         return;

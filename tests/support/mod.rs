@@ -1,4 +1,7 @@
+mod cleanup;
 mod copy_fixture;
+mod scratch;
+pub use scratch::Scratch;
 mod fake_binary;
 pub mod load;
 mod notify_config;
@@ -13,12 +16,11 @@ use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
 };
-use tempfile::TempDir;
 use tmux_sidecar::tmux::{RealTmux, Socket};
 
 pub struct TmuxGuard {
     pub adapter: RealTmux,
-    pub scratch: TempDir,
+    pub scratch: Scratch,
     path: OsString,
     server_socket: PathBuf,
 }
@@ -30,7 +32,7 @@ impl TmuxGuard {
         Self::start_with_input(true)
     }
     fn start_with_input(capture: bool) -> Self {
-        let scratch = tempfile::Builder::new().prefix("tsx-").tempdir().unwrap();
+        let scratch = Scratch::new();
         let name = scratch
             .path()
             .file_name()
@@ -47,7 +49,6 @@ impl TmuxGuard {
             path: OsString::new(),
             server_socket: PathBuf::new(),
         };
-        watchdog::register(guard.scratch.path());
         for dir in ["home", "run", "state", "config", "bin"] {
             fs::create_dir(guard.scratch.path().join(dir)).unwrap();
         }
@@ -99,7 +100,7 @@ impl TmuxGuard {
         // Exercise a copied fake and ensure direct children are killed/reaped on failure too.
         let mut command = Command::new(guard.scratch.path().join("bin/codex"));
         guard.isolate(&mut command);
-        let _agent = ChildGuard(spawn_fixture(
+        let _agent = ChildGuard::new(spawn_fixture(
             command.stdout(Stdio::null()).stderr(Stdio::null()),
         ));
         let output = guard
@@ -128,6 +129,12 @@ impl TmuxGuard {
             fields.next().unwrap().parse().unwrap(),
         );
         guard.server_socket = tmux_sidecar::paths::canonical_socket(&socket).unwrap();
+        fs::write(
+            guard.scratch.path().join("tmux.socket"),
+            guard.server_socket.as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
+        guard.adapter.socket = Socket::Path(guard.server_socket.clone());
         wait_for("fake Claude startup", || {
             guard.scratch.path().join("state/ready-claude").exists()
         });
@@ -137,6 +144,7 @@ impl TmuxGuard {
         let root = self.scratch.path();
         command
             .env("HOME", root.join("home"))
+            .env("TMUX_TMPDIR", root)
             .env("CLAUDE_CONFIG_DIR", root.join("home/.claude"))
             .env("CODEX_HOME", root.join("home/.codex"))
             .env("GROK_HOME", root.join("home/.grok"))
@@ -171,17 +179,11 @@ impl TmuxGuard {
 }
 impl Drop for TmuxGuard {
     fn drop(&mut self) {
-        // Scoped to this scratch directory, including cleanup on an assertion failure.
-        if self.scratch.path().join("run/daemon.pid").exists() {
-            let mut cmd = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
-            self.isolate(&mut cmd);
-            cmd.arg("--tmux-socket")
-                .arg(&self.server_socket)
-                .args(["daemon", "stop"]);
-            let _ = process::try_output(&mut cmd);
-        }
-        let _ = process::try_output(self.command().arg("kill-server"));
-        watchdog::unregister(self.scratch.path());
+        cleanup::fixture(
+            self.scratch.path(),
+            watchdog::server_pid(self.scratch.path()),
+            false,
+        );
     }
 }
 // Concurrent forks can briefly inherit a copy's writable fd before exec closes it.

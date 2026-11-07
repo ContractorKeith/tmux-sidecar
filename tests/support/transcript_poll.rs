@@ -21,7 +21,7 @@ e2e_test!(slow_transcript_scan_does_not_delay_process_exit_poll, {
     }
     let guard = TmuxGuard::start();
     let gate = Release(guard.scratch.path().join("home"));
-    let _daemon = ChildGuard(
+    let _daemon = ChildGuard::new(
         guard
             .sidecar()
             .env("TMUX_SIDECAR_TEST_SCAN_GATE", &gate.0)

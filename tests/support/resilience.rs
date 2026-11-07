@@ -69,7 +69,7 @@ e2e_test!(five_failed_polls_exit_nonzero_with_a_log, {
     let ps = g.scratch.path().join("bin/ps");
     fs::write(&ps, b"#!/bin/sh\nexit 1\n").unwrap();
     fs::set_permissions(ps, fs::Permissions::from_mode(0o700)).unwrap();
-    let mut daemon = super::support::ChildGuard(
+    let mut daemon = super::support::ChildGuard::new(
         g.sidecar()
             .args(["daemon", "run"])
             .stdout(std::process::Stdio::null())
@@ -99,7 +99,7 @@ e2e_test!(dropping_fixture_stops_daemon_before_the_next_poll, {
         return;
     }
     let g = TmuxGuard::start();
-    let mut daemon = super::support::ChildGuard(
+    let mut daemon = super::support::ChildGuard::new(
         g.sidecar()
             .env("TMUX_SIDECAR_POLL_MS", "60000")
             .args(["daemon", "run"])

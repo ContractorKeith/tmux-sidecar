@@ -10,7 +10,7 @@ use std::{
 static BINARY: OnceLock<Vec<u8>> = OnceLock::new();
 pub fn write(path: &Path) {
     let bytes = BINARY.get_or_init(|| {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::support::Scratch::new();
         let executable = root.path().join("fake-agent");
         let output = Command::new("rustc")
             .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_agent.rs"))

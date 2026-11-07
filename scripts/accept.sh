@@ -8,23 +8,31 @@ set -eu
 cd "$(dirname "$0")/.."
 command -v tmux >/dev/null || { echo "accept: tmux is required" >&2; exit 1; }
 
-scratch="$(mktemp -d)"
+leak_snapshot="$(mktemp)"
+python3 tests/support/leak_check.py snapshot "$leak_snapshot"
+scratch="$(mktemp -d /tmp/tsx-accept-XXXXXX)"
 tsock="tsx-accept-$$"
 cleanup() {
-  if [ -n "${bin:-}" ] && [ -n "${socket:-}" ]; then
-    "$bin" --tmux-socket "$socket" daemon stop >/dev/null 2>&1 || true
-  fi
-  tmux -L "$tsock" kill-server 2>/dev/null || true
-  rm -r "$scratch" 2>/dev/null || true
+  result=$?
+  trap - EXIT
+  # Stop every owned server before deleting its socket tree or escalating signals.
+  python3 tests/support/leak_check.py cleanup "$scratch" || result=1
+  python3 tests/support/leak_check.py check "$leak_snapshot" || result=1
+  rm "$leak_snapshot"
+  if [ "$result" -eq 0 ]; then echo "accept: ok"; fi
+  exit "$result"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo "== isolate"
 # All tests and live checks use scratch agent configs, state and tmux sockets.
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
 export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_STATE_HOME="$scratch/state"
 export TMUX_SIDECAR_RUNTIME_DIR="$scratch/run" TMUX_SIDECAR_STATE_DIR="$scratch/data"
-export TMUX_TMPDIR="$scratch"
+export TMUX_TMPDIR="$scratch" TMPDIR="$scratch/tmp"
+mkdir -p "$TMPDIR"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMUX_SIDECAR_RUNTIME_DIR" "$TMUX_SIDECAR_STATE_DIR"
 chmod 700 "$TMUX_SIDECAR_RUNTIME_DIR" "$TMUX_SIDECAR_STATE_DIR"
 export CLAUDE_CONFIG_DIR="$HOME/.claude" CODEX_HOME="$HOME/.codex" GROK_HOME="$HOME/.grok"
@@ -35,6 +43,7 @@ cp "$XDG_CONFIG_HOME/tmux-sidecar/config.toml" "$HOME/Library/Application Suppor
 unset TMUX TMUX_PANE
 
 echo "== gate"
+python3 tests/support/leak_check_test.py
 cargo fmt --all --check
 rustfmt --edition 2024 --check tests/support/fake_agent.rs
 cargo clippy --locked --all-targets -- -D warnings
@@ -53,6 +62,8 @@ echo "== live checks"
 # M1: the script owns this server and daemon; the EXIT trap handles failures too.
 tmux -L "$tsock" -f /dev/null new-session -d -s fixture 'sleep 120'
 socket="$(tmux -L "$tsock" display -p '#{socket_path}')"
+printf '%s' "$socket" > "$scratch/tmux.socket"
+tmux -L "$tsock" display -p '#{pid}' > "$scratch/tmux.pid"
 status=0
 "$bin" --tmux-socket "$socket" daemon status >/dev/null 2>&1 || status=$?
 test "$status" -eq 6
@@ -171,4 +182,3 @@ assert len([c for c in after if c['name'].startswith('hooks ') and c['status'] =
 PYDOCTOR
 # Execute the README's safe bash blocks verbatim, including the UI under a PTY.
 python3 tests/support/readme_commands.py "$bin" "$socket" "$scratch"
-echo "accept: ok"

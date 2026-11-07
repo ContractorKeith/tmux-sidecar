@@ -1,7 +1,7 @@
 use super::*;
 e2e_test!(fixture_start_waits_for_a_transient_writer, {
     use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::support::Scratch::new();
     let executable = root.path().join("fixture");
     fs::write(&executable, b"#!/bin/sh\nexit 0\n").unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
@@ -17,11 +17,12 @@ e2e_test!(fixture_start_waits_for_a_transient_writer, {
         let mut command = Command::new(&executable);
         command
             .env("HOME", root.path())
+            .env("TMUX_TMPDIR", root.path())
             .env_remove("BASH_ENV")
             .env_remove("ENV")
             .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
             .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"));
-        let mut child = ChildGuard(spawn_fixture(&mut command));
+        let mut child = ChildGuard::new(spawn_fixture(&mut command));
         wait_for("transient-writer fixture to exit", || {
             child.0.try_wait().unwrap().is_some()
         });

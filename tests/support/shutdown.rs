@@ -17,7 +17,7 @@ e2e_test!(slow_process_snapshot_does_not_block_rpc, {
     let ps = g.scratch.path().join("bin/ps");
     fs::write(&ps, b"#!/bin/sh\nn=0\n[ ! -f \"$HOME/count\" ] || n=$(cat \"$HOME/count\")\nn=$((n+1))\necho $n > \"$HOME/count\"\nif [ $n -gt 1 ]; then touch \"$HOME/slow\"; sleep 3; fi\nexec /bin/ps \"$@\"\n").unwrap();
     fs::set_permissions(ps, fs::Permissions::from_mode(0o700)).unwrap();
-    let mut daemon = super::support::ChildGuard(
+    let mut daemon = super::support::ChildGuard::new(
         g.sidecar()
             .args(["daemon", "run"])
             .stdout(std::process::Stdio::null())
@@ -50,11 +50,12 @@ e2e_test!(slow_process_snapshot_does_not_block_rpc, {
 });
 
 e2e_test!(exited_child_is_not_running_before_reap, {
-    let root = tempfile::tempdir().unwrap();
-    let mut child = super::support::ChildGuard(
+    let root = crate::support::Scratch::new();
+    let mut child = super::support::ChildGuard::new(
         std::process::Command::new("/bin/sleep")
             .arg("0")
             .env("HOME", root.path())
+            .env("TMUX_TMPDIR", root.path())
             .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
             .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"))
             .spawn()

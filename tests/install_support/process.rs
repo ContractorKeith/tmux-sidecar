@@ -1,3 +1,5 @@
+#[path = "../isolation/mod.rs"]
+mod isolation;
 use std::{
     io::Read,
     process::{Command, Output},
@@ -11,6 +13,7 @@ impl Drop for ChildGuard {
     }
 }
 pub fn output(command: &mut Command) -> Output {
+    let _sandbox = isolation::fill(command);
     use std::process::Stdio;
     let mut child = ChildGuard(
         command

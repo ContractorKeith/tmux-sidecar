@@ -37,7 +37,7 @@ e2e_test!(
         // SAFETY: only this test's isolated tmux server is stopped.
         assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
         let began = Instant::now();
-        let mut send = ChildGuard(
+        let mut send = ChildGuard::new(
             guard
                 .sidecar()
                 .args(["send", "%0", "must not arrive", "--force"])

@@ -40,6 +40,7 @@ pub fn fixture(home: &Path, binary: &Path) {
 pub fn command(home: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
     cmd.env("HOME", home)
+        .env("TMUX_TMPDIR", home)
         .env("PATH", home.join("bin"))
         .env("CLAUDE_CONFIG_DIR", home.join(".claude"))
         .env("CODEX_HOME", home.join(".codex"))

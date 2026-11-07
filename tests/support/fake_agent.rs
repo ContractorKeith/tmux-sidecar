@@ -12,6 +12,21 @@ impl Drop for ChildGuard {
         let _ = self.0.wait();
     }
 }
+fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(program);
+    for key in [
+        "HOME",
+        "TMUX_TMPDIR",
+        "TMUX_SIDECAR_RUNTIME_DIR",
+        "TMUX_SIDECAR_STATE_DIR",
+    ] {
+        command.env(
+            key,
+            std::env::var_os(key).expect("fake agent requires isolated roots"),
+        );
+    }
+    command
+}
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     if args.get(1).is_some_and(|s| s == "--hook-burst") {
@@ -24,7 +39,7 @@ fn main() {
     let name = executable.file_name().unwrap().to_str().unwrap();
     fs::write(root.join(format!("ready-{name}")), b"").unwrap();
     if root.join("capture-input").exists() {
-        let mut terminal = ChildGuard(Command::new("stty").args(["raw", "-echo"]).spawn().unwrap());
+        let mut terminal = ChildGuard(command("stty").args(["raw", "-echo"]).spawn().unwrap());
         terminal.0.wait().unwrap();
         use std::io::Write;
         std::io::stdout().write_all(b"\x1b[?2004h").unwrap();
@@ -53,7 +68,7 @@ fn main() {
             let format = lines.next().unwrap();
             let fixture = lines.next().unwrap();
             let start = std::time::Instant::now();
-            let mut command = Command::new(binary);
+            let mut command = command(binary);
             command
                 .args(["hook", format])
                 .stdout(Stdio::piped())
@@ -111,7 +126,7 @@ fn burst(binary: &str, fixture: &str) {
             scope.spawn(move || {
                 barrier.wait();
                 let mut child = ChildGuard(
-                    Command::new(binary)
+                    command(binary)
                         .args(["hook", "claude"])
                         .stdin(fs::File::open(fixture).unwrap())
                         .stdout(Stdio::null())

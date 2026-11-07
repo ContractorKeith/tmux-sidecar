@@ -17,7 +17,7 @@ fn watch(guard: &TmuxGuard, json: bool) -> (ChildGuard, Receiver<String>) {
     if json {
         command.arg("--json");
     }
-    let mut child = ChildGuard(command.stdout(Stdio::piped()).spawn().unwrap());
+    let mut child = ChildGuard::new(command.stdout(Stdio::piped()).spawn().unwrap());
     let stdout = child.0.stdout.take().unwrap();
     let (send, recv) = mpsc::channel();
     std::thread::spawn(move || {
@@ -44,7 +44,7 @@ e2e_test!(cli_wait_and_watch_follow_committed_changes, {
             .try_iter()
             .any(|line| serde_json::from_str::<Value>(&line).unwrap()["to"] == "waiting")
     });
-    let mut wait = ChildGuard(
+    let mut wait = ChildGuard::new(
         guard
             .sidecar()
             .args([

@@ -12,7 +12,7 @@ e2e_test!(pane_selector_uses_cached_server_identity_not_newest_run, {
     let ps = guard.scratch.path().join("bin/ps");
     fs::write(&ps,"#!/bin/sh\nn=0\n[ ! -f \"$HOME/count\" ] || n=$(cat \"$HOME/count\")\nn=$((n+1))\necho $n > \"$HOME/count\"\nif [ $n -gt 1 ]; then touch \"$HOME/slow\"; sleep 3; fi\nexec /bin/ps \"$@\"\n").unwrap();
     fs::set_permissions(ps, fs::Permissions::from_mode(0o700)).unwrap();
-    let _daemon = ChildGuard(
+    let _daemon = ChildGuard::new(
         guard
             .sidecar()
             .args(["daemon", "run"])
@@ -55,7 +55,7 @@ e2e_test!(manual_and_project_groups_have_distinct_namespaces, {
     let guard = TmuxGuard::start();
     let project = tempfile::Builder::new()
         .prefix("tsx-group-")
-        .tempdir_in("/tmp")
+        .tempdir_in(guard.scratch.path())
         .unwrap();
     let repo = project.path().canonicalize().unwrap();
     assert!(

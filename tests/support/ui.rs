@@ -32,7 +32,7 @@ e2e_test!(
             .status
             .success()
         );
-        let _client = ChildGuard(
+        let _client = ChildGuard::new(
             guard
                 .command()
                 .args(["-C", "attach-session", "-t", "dashboard"])

@@ -45,7 +45,11 @@ fn no_ancestor_still_drains_five_megabytes_without_epipe() {
         Command::new(env!("CARGO_BIN_EXE_tmux-sidecar"))
             .args(["hook", "claude"])
             .env("HOME", root.path())
-            .env("TMUX", "/tmp/tsx-no-server,1,0")
+            .env("TMUX_TMPDIR", root.path())
+            .env(
+                "TMUX",
+                format!("{},1,0", root.path().join("no-server").display()),
+            )
             .env("TMUX_PANE", "%0")
             .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
             .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state"))
@@ -81,7 +85,11 @@ fn clap_hook_help_and_unknown_format_are_consistent() {
             .args(["hook", "unknown-format"])
             .stdin(Stdio::null())
             .env("HOME", root.path())
-            .env("TMUX", "/tmp/tsx-no-server,1,0")
+            .env("TMUX_TMPDIR", root.path())
+            .env(
+                "TMUX",
+                format!("{},1,0", root.path().join("no-server").display()),
+            )
             .env("TMUX_PANE", "%0")
             .env("TMUX_SIDECAR_RUNTIME_DIR", root.path().join("run"))
             .env("TMUX_SIDECAR_STATE_DIR", root.path().join("state")),
