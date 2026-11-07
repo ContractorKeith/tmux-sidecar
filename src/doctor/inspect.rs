@@ -72,7 +72,18 @@ pub(super) async fn local(home: &Path, binary: &Path, requested: &[AgentKind]) -
     )
     .await
     .and_then(|o| tmux_version(&String::from_utf8_lossy(&o.stdout)));
-    let mut checks = vec![Check::new("tmux", version, "install tmux >= 3.3")];
+    let slow = version
+        .as_ref()
+        .is_err_and(|e| e.kind() == io::ErrorKind::TimedOut);
+    let (version, fix) = if slow {
+        (
+            Err(io::Error::other("tmux slow to answer")),
+            "retry when the machine is less busy; check tmux responsiveness",
+        )
+    } else {
+        (version, "install tmux >= 3.3")
+    };
+    let mut checks = vec![Check::new("tmux", version, fix)];
     let notifier = if cfg!(target_os = "macos") {
         "osascript"
     } else {

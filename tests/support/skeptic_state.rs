@@ -9,7 +9,6 @@ e2e_test!(opencode_plugin_host_hooks_change_the_tracked_outer_run, {
     }
     let guard = TmuxGuard::start();
     let binary = guard.scratch.path().join("bin/opencode.exe");
-    fs::copy(guard.scratch.path().join("bin/opencode"), &binary).unwrap();
     assert!(
         output(
             guard

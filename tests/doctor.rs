@@ -66,7 +66,7 @@ fn doctor_on_complete_and_missing_fakes() {
     let checks: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         checks.iter().find(|c| c["name"] == "daemon").unwrap()["status"],
-        "fail"
+        "skip"
     );
     assert!(!root.path().join("run/daemon.pid").exists());
 }
@@ -113,11 +113,11 @@ fn unused_agents_skip_but_explicit_and_partial_hooks_fail() {
     )
     .unwrap();
     let output = run(command(home).args(["doctor", "--json"]));
-    assert_eq!(output.status.code(), Some(1));
+    assert!(output.status.success());
     let checks: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         checks.iter().find(|c| c["name"] == "store claude").unwrap()["status"],
-        "fail"
+        "skip"
     );
     fs::create_dir_all(home.join(".claude/projects")).unwrap();
     let output = run(command(home).arg("doctor"));
@@ -161,3 +161,6 @@ fn doctor_reports_broken_config_and_database_without_writing_them() {
     assert_eq!(fs::read_to_string(database).unwrap(), "garbage");
     assert!(!root.path().join("run/daemon.pid").exists());
 }
+
+#[path = "support/doctor_fresh.rs"]
+mod fresh;

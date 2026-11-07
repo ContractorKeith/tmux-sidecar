@@ -63,6 +63,14 @@ impl Check {
     }
 }
 fn daemon_check(result: io::Result<serde_json::Value>) -> Check {
+    if result.as_ref().is_err_and(|e| {
+        matches!(
+            e.kind(),
+            io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+        )
+    }) {
+        return Check::skip("daemon", "not running; started on first use");
+    }
     Check::new(
         "daemon",
         result.and_then(|value| {
@@ -124,6 +132,15 @@ pub async fn run(
         ("runtime permissions", dirs.as_ref().map(|p| &p.runtime)),
         ("state permissions", dirs.as_ref().map(|p| &p.state)),
     ] {
+        if let Some(path) = path
+            && std::fs::symlink_metadata(path).is_err_and(|e| e.kind() == io::ErrorKind::NotFound)
+        {
+            checks.push(Check::skip(
+                name,
+                &format!("{} absent; created on first use", path.display()),
+            ));
+            continue;
+        }
         checks.push(Check::new(
             name,
             path.map_or_else(
