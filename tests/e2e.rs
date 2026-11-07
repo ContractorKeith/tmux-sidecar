@@ -173,3 +173,6 @@ mod round3_transcripts;
 
 #[path = "support/notify_episodes.rs"]
 mod notify_episodes;
+
+#[path = "support/diagnostics.rs"]
+mod diagnostics;

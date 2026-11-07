@@ -170,7 +170,7 @@ async fn execute_inner(mut cli: Cli) -> Result<(), Failure> {
             .map_err(response_error)?;
         if !stopped && !cli.quiet {
             use std::io::Write;
-            writeln!(io::stdout().lock(), "daemon not running").map_err(output_error)?;
+            writeln!(io::stdout().lock(), "daemon not running").map_err(stdout_error)?;
         }
         return Ok(());
     }

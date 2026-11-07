@@ -35,15 +35,24 @@ impl Config {
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
-            Err(e) => return Err(e),
+            Err(e) => return Err(config_error(path, e)),
         };
-        let table: toml::Table = toml::from_str(&text).map_err(io::Error::other)?;
+        let table: toml::Table = toml::from_str(&text).map_err(|e| config_error(path, e))?;
         table
             .get("notify")
             .cloned()
-            .map(|v| v.try_into().map_err(io::Error::other))
+            .map(|v| v.try_into().map_err(|e| config_error(path, e)))
             .unwrap_or_else(|| Ok(Self::default()))
     }
+}
+fn config_error(path: &Path, error: impl std::fmt::Display) -> io::Error {
+    let reason = error
+        .to_string()
+        .lines()
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join(" ");
+    io::Error::other(format!("config {}: {reason}", path.display()))
 }
 #[derive(Default)]
 struct Window {

@@ -63,7 +63,7 @@ impl Acceptor {
 
 async fn reject(mut stream: UnixStream) -> io::Result<()> {
     use tokio::io::AsyncWriteExt;
-    let frame=b"{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"connection limit exceeded\"}}\n";
+    let frame=b"{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"daemon connection limit reached (256); close idle clients\"}}\n";
     let _ = tokio::time::timeout(Duration::from_millis(50), stream.write_all(frame)).await;
     Ok(())
 }

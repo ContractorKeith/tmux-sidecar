@@ -96,3 +96,20 @@ fn each_block_episode_notifies_once_even_inside_debounce_window() {
     queue.push(&Config::default(), next, now + Duration::from_secs(4));
     assert_eq!(queue.drain(now + Duration::from_secs(6))[0].len(), 1);
 }
+
+#[test]
+fn config_errors_keep_filename_and_reason() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("broken.toml");
+    for (text, reason) in [
+        ("[notify]\ndesktop='yes'", "invalid type"),
+        ("idle_after_secs=18446744073709551615", "too large"),
+    ] {
+        std::fs::write(&path, text).unwrap();
+        let error = Config::read(&path).unwrap_err().to_string();
+        assert!(
+            error.contains(path.to_str().unwrap()) && error.contains(reason),
+            "{error}"
+        );
+    }
+}

@@ -14,26 +14,29 @@ fn config(path: &Path) -> io::Result<String> {
         Err(e) => return Err(named(path, e)),
     };
     let table: toml::Table = toml::from_str(&text).map_err(|e| named(path, e))?;
-    for key in ["poll_ms", "idle_after_secs", "send_confirm_secs"] {
-        if let Some(value) = table.get(key) {
-            let valid = value.as_integer().is_some_and(|v| {
-                if key == "poll_ms" {
-                    v > 0
-                } else {
-                    v >= 0 && (v as u64).checked_mul(1000).is_some()
-                }
-            });
-            if !valid {
-                return Err(named(
-                    path,
-                    format!(
-                        "{key} must be a valid nonnegative duration (poll_ms must be positive)"
-                    ),
-                ));
-            }
+    for (key, min, max) in [
+        ("poll_ms", 50, 60000),
+        ("idle_after_secs", 0, 86400),
+        ("send_confirm_secs", 0, 86400),
+    ] {
+        if let Some(value) = table.get(key)
+            && !value.as_integer().is_some_and(|v| (min..=max).contains(&v))
+        {
+            return Err(named(
+                path,
+                format!("{key} must be an integer in {min}..={max}"),
+            ));
         }
     }
-    crate::notify::Config::read(path).map_err(|e| named(path, e))?;
+    if let Some(value) = table.get("notify").and_then(|v| v.get("debounce_secs"))
+        && !value.as_integer().is_some_and(|v| (0..=3600).contains(&v))
+    {
+        return Err(named(
+            path,
+            "notify.debounce_secs must be an integer in 0..=3600",
+        ));
+    }
+    crate::notify::Config::read(path)?;
     Ok(format!("{} parses", path.display()))
 }
 fn database(path: &Path) -> io::Result<String> {
@@ -154,5 +157,20 @@ mod tests {
                 .to_string()
                 .contains("not a tmux-sidecar database; move it aside")
         );
+    }
+    #[test]
+    fn config_rejects_the_daemons_duration_bounds() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("config.toml");
+        for text in [
+            "poll_ms=49",
+            "poll_ms=60001",
+            "idle_after_secs=86401",
+            "send_confirm_secs=86401",
+            "[notify]\ndebounce_secs=3601",
+        ] {
+            fs::write(&path, text).unwrap();
+            assert!(config(&path).is_err(), "doctor accepted {text}");
+        }
     }
 }

@@ -39,7 +39,11 @@ pub(super) fn listener(paths: &Paths) -> io::Result<UnixListener> {
 }
 
 pub async fn run(socket: std::path::PathBuf, paths: Paths) -> io::Result<()> {
-    let result = super::run_inner(socket, &paths).await;
+    let result = super::run_inner(socket, &paths).await.map_err(|error| {
+        if error.kind() == io::ErrorKind::WouldBlock {
+            io::Error::new(error.kind(), "tmux-sidecar daemon is already running; use `tmux-sidecar daemon status` or `tmux-sidecar daemon stop`")
+        } else { error }
+    });
     if let Err(error) = &result
         && crate::paths::prepare(&paths).is_ok()
     {

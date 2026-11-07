@@ -184,7 +184,8 @@ timeout can expire before the daemon reads the run; ending before the requested
 state is also a tool error.
 
 To enable `send_prompt` (`selector`, `text`), change the arguments to
-`["mcp", "--allow-send"]`. It only sends to waiting runs, with no force override. If the connection is lost
+`["mcp", "--allow-send"]`. It sends to waiting or idle runs with native hook evidence,
+refusing process-only and Codex notify-only runs, with no force override. If the connection is lost
 after sending, the tool reports "send outcome unknown"; check the pane before
 retrying.
 Without this flag the tool is absent from discovery. A waiting run finished its
@@ -202,6 +203,7 @@ unknown tool calls return the protocol error `invalid_params`.
 
 ## Terminal UI
 
+Process-only and Codex notify-only runs remain in `list` and do not enter attention.
 Run `tmux-sidecar ui` inside tmux. The attention queue appears first, followed by
 agent runs grouped by project. Use `j/k` or arrows to move, `Enter` to switch to the
 selected pane and close the UI, `a` to acknowledge, `g` to toggle manual groups,

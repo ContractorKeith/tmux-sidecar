@@ -1,7 +1,12 @@
 use super::*;
 fn candidates(paths: &Paths) -> Vec<(PathBuf, &'static str)> {
     let local = paths.runtime.join("sock");
-    let mut result = vec![(local.clone(), "runtime (TMUX_SIDECAR_RUNTIME_DIR)")];
+    let source = if std::env::var_os("TMUX_SIDECAR_RUNTIME_DIR").is_some_and(|v| !v.is_empty()) {
+        "runtime (TMUX_SIDECAR_RUNTIME_DIR)"
+    } else {
+        "default runtime"
+    };
+    let mut result = vec![(local.clone(), source)];
     if let Ok(bytes) = std::fs::read(paths.state.join("daemon.socket")) {
         use std::os::unix::ffi::OsStringExt;
         let recorded = PathBuf::from(std::ffi::OsString::from_vec(bytes));
@@ -64,6 +69,9 @@ mod tests {
             error.contains(&format!("recorded state socket {}", recorded.display())),
             "{error}"
         );
-        assert!(error.contains("runtime (TMUX_SIDECAR_RUNTIME_DIR) socket"));
+        assert!(
+            error.contains("runtime")
+                && error.contains(paths.runtime.join("sock").to_str().unwrap())
+        );
     }
 }

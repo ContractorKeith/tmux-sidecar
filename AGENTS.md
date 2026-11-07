@@ -39,8 +39,9 @@ cargo build --release                              # target/release/tmux-sidecar
 - `src/engine/` is pure (signals + pane snapshots + clock in, state out). Only `store.rs`
   touches SQLite, only `tmux.rs` runs tmux, only `proc.rs` reads processes.
 - Every client goes through the socket. Nothing but the daemon reads the DB.
-- `tmux-sidecar hook` always exits 0, prints nothing, and returns within 200 ms; it spools when
-  the daemon is down. Never make it wait.
+- `tmux-sidecar hook` always exits 0 and prints nothing. Input has a one-second inactivity
+  timeout and 64 MiB cap; the 200 ms delivery budget starts after input. It spools when
+  the daemon is down.
 - rusqlite stays on session-board's version (0.38, bundled); two `libsqlite3-sys` cannot link.
 - Tests never touch the real `~/.claude`, `~/.codex`, `~/.grok`, `~/.config/opencode` or the
   default tmux server: set `HOME`, `TMUX_SIDECAR_RUNTIME_DIR`, `TMUX_SIDECAR_STATE_DIR` and use
@@ -62,7 +63,8 @@ cargo build --release                              # target/release/tmux-sidecar
   races. Replay owns `spool.replaying.*` claims and recovers leftovers before the live spool.
 - Both hook ancestor walks avoid subprocesses: `/proc` on Linux, `proc_pidinfo` on macOS.
 - Spool before live delivery; receipts dedupe invocation nonces, not equal payloads. Reject bad lines without stopping the daemon.
-- Cache server_start in the runtime dir; keep hook ancestry/probes cheap and drain stdin before no-op paths.
+- Cache server_start in the runtime dir; keep hook ancestry/probes cheap. Check TMUX before
+  stdin, then read to EOF while input progresses (Codex notify uses argv).
 - OpenCode 2.2.5 uses a default id/setup plugin, V2 data fields, and the opencode.exe process name.
 - Codex inline hook edits use toml_edit; --chain preserves old notify argv after recording.
 - Transcript scans have their own task and drop busy ticks; they never hold up pane/process polls.

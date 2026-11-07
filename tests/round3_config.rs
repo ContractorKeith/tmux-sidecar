@@ -2,7 +2,7 @@ use std::{ffi::OsString, fs, os::unix::ffi::OsStringExt, process::Command};
 #[path = "install_support/process.rs"]
 mod process;
 #[test]
-fn poll_environment_errors_name_the_key_and_config_file() {
+fn poll_environment_errors_name_the_variable_without_a_config_path() {
     for value in [
         OsString::from("not-a-number"),
         OsString::from("49"),
@@ -31,7 +31,9 @@ fn poll_environment_errors_name_the_key_and_config_file() {
         let message = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success());
         assert!(
-            message.contains("poll_ms") && message.contains(config.to_str().unwrap()),
+            message.contains("TMUX_SIDECAR_POLL_MS")
+                && message.contains("poll_ms")
+                && !message.contains(config.to_str().unwrap()),
             "{message}"
         );
     }
