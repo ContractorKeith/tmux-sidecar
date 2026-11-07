@@ -19,8 +19,8 @@ Milestones M0–M7 are GitHub issues #1–#8.
 scripts/accept.sh                                  # the acceptance: worker, reviewer and CI run this
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked                                # skips real tmux e2e; use accept.sh or TMUX_SIDECAR_E2E=1
-TMUX_SIDECAR_E2E=1 cargo test --locked --test e2e  # real tmux on an isolated -L socket
+cargo test --locked --features test-util           # skips real tmux e2e; use accept.sh or TMUX_SIDECAR_E2E=1
+TMUX_SIDECAR_E2E=1 cargo test --locked --features test-util --test e2e  # real tmux on an isolated -L socket
 cargo build --release                              # target/release/tmux-sidecar
 ```
 (Keep this block in step with `Cargo.toml`, `scripts/accept.sh` and CI.)
@@ -39,8 +39,9 @@ cargo build --release                              # target/release/tmux-sidecar
 - `src/engine/` is pure (signals + pane snapshots + clock in, state out). Only `store.rs`
   touches SQLite, only `tmux.rs` runs tmux, only `proc.rs` reads processes.
 - Every client goes through the socket. Nothing but the daemon reads the DB.
-- `tmux-sidecar hook` always exits 0, prints nothing, and returns within 200 ms; it spools when
-  the daemon is down. Never make it wait.
+- `tmux-sidecar hook` always exits 0 and prints nothing. Input has a one-second inactivity
+  timeout and 64 MiB cap; the 200 ms delivery budget starts after input. It spools when
+  the daemon is down.
 - rusqlite stays on session-board's version (0.38, bundled); two `libsqlite3-sys` cannot link.
 - Tests never touch the real `~/.claude`, `~/.codex`, `~/.grok`, `~/.config/opencode` or the
   default tmux server: set `HOME`, `TMUX_SIDECAR_RUNTIME_DIR`, `TMUX_SIDECAR_STATE_DIR` and use
@@ -50,7 +51,9 @@ cargo build --release                              # target/release/tmux-sidecar
 - `TMUX_SIDECAR_POLL_MS` overrides config `poll_ms` (default 1000); tests use 100.
 - Fake agents are copied once per test process and hard-linked into fixtures so macOS
   reuses its first-exec scan. `TMUX_SIDECAR_TEST_TIMEOUT_MULTIPLIER` (1–4, default 1)
-  scales readiness and command deadlines under load. Developer-Mac proof is due in skeptic round 2.
+  scales readiness and command deadlines under load. With `--features test-util`, it also
+  scales the doctor tmux probe; production builds keep the one-second probe. Doctor fake scripts
+  are cached and warmed once, then hard-linked into fixtures.
 - Every e2e body has a 60 s watchdog with scratch-tree/log diagnostics; CI jobs time out at 20 min.
 - `daemon.log` is capped at 1 MiB and rotated once to `daemon.log.1`.
 - A detached daemon needs its own lifetime lock as well as `spawn.lock`: foreground starts
@@ -60,7 +63,8 @@ cargo build --release                              # target/release/tmux-sidecar
   races. Replay owns `spool.replaying.*` claims and recovers leftovers before the live spool.
 - Both hook ancestor walks avoid subprocesses: `/proc` on Linux, `proc_pidinfo` on macOS.
 - Spool before live delivery; receipts dedupe invocation nonces, not equal payloads. Reject bad lines without stopping the daemon.
-- Cache server_start in the runtime dir; keep hook ancestry/probes cheap and drain stdin before no-op paths.
+- Cache server_start in the runtime dir; keep hook ancestry/probes cheap. Check TMUX before
+  stdin, then read to EOF while input progresses (Codex notify uses argv).
 - OpenCode 2.2.5 uses a default id/setup plugin, V2 data fields, and the opencode.exe process name.
 - Codex inline hook edits use toml_edit; --chain preserves old notify argv after recording.
 - Transcript scans have their own task and drop busy ticks; they never hold up pane/process polls.

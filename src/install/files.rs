@@ -115,7 +115,8 @@ pub fn apply(
         use std::io::Write;
         io::stdout()
             .lock()
-            .write_all(super::diff::unified(path, before, after_text).as_bytes())?;
+            .write_all(super::diff::unified(path, before, after_text).as_bytes())
+            .map_err(|e| io::Error::new(e.kind(), format!("could not write stdout: {e}")))?;
         return Ok(());
     }
     let parent = path

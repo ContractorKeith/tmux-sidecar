@@ -93,5 +93,10 @@ pub fn edit(text: &str, install: bool, chain: bool, binary: &str) -> io::Result<
             doc.remove("hooks");
         }
     }
-    Ok(doc.to_string())
+    let edited = doc.to_string();
+    Ok(if text.contains("\r\n") {
+        edited.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        edited
+    })
 }

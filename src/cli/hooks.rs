@@ -1,5 +1,9 @@
 //! Default installation follows PATH; explicit agents and uninstall remain deterministic.
-use super::{Hooks, execute::Failure, output_error};
+use super::{
+    Hooks,
+    execute::{Failure, output_error},
+    stdout_error,
+};
 use crate::model::AgentKind;
 use std::{io, io::Write, os::unix::fs::PermissionsExt, path::Path};
 pub(super) fn run(command: &Hooks, quiet: bool) -> Result<(), Failure> {
@@ -29,7 +33,7 @@ pub(super) fn run(command: &Hooks, quiet: bool) -> Result<(), Failure> {
                 selected.push(agent);
             } else if !quiet {
                 writeln!(io::stdout().lock(), "skip {name}: CLI not on PATH")
-                    .map_err(output_error)?;
+                    .map_err(stdout_error)?;
             }
         }
         if selected.is_empty() {

@@ -81,5 +81,10 @@ pub(crate) fn edit_events(
             object.shift_remove("hooks");
         }
     }
-    Ok(format!("{}\n", serde_json::to_string_pretty(&value)?))
+    let edited = format!("{}\n", serde_json::to_string_pretty(&value)?);
+    Ok(if text.contains("\r\n") {
+        edited.replace('\n', "\r\n")
+    } else {
+        edited
+    })
 }

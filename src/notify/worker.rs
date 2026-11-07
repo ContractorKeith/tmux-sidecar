@@ -1,43 +1,8 @@
 //! One notification consumer; backend execution is replaceable by a recording fake.
-use super::{Config, Debounce, command};
-use std::{future::Future, io, path::PathBuf, time::Instant};
+pub(super) use super::backend::Backend;
+use super::{Config, Debounce};
+use std::{io, path::PathBuf, time::Instant};
 use tokio::sync::broadcast;
-pub(super) trait Backend {
-    fn project_root(&mut self, _id: &str) -> impl Future<Output = Option<String>> + Send {
-        async { None }
-    }
-    fn desktop(&mut self, message: &str) -> impl Future<Output = io::Result<()>> + Send;
-    fn waiting(
-        &mut self,
-        pane: &str,
-        start: u64,
-        message: &str,
-    ) -> impl Future<Output = io::Result<()>> + Send;
-}
-pub(super) struct Real {
-    pub socket: PathBuf,
-}
-impl Backend for Real {
-    async fn project_root(&mut self, id: &str) -> Option<String> {
-        let paths = crate::paths::current(&self.socket).ok()?;
-        let runs = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            crate::client::request(&self.socket, &paths, "list", serde_json::json!({}), false),
-        )
-        .await
-        .ok()?
-        .ok()?;
-        runs.as_array()?.iter().find(|run| run["id"] == id)?["project_root"]
-            .as_str()
-            .map(str::to_owned)
-    }
-    async fn desktop(&mut self, message: &str) -> io::Result<()> {
-        command::desktop(message).await
-    }
-    async fn waiting(&mut self, pane: &str, start: u64, message: &str) -> io::Result<()> {
-        crate::tmux::waiting(&self.socket, pane, start, message).await
-    }
-}
 pub(super) async fn run(
     mut backend: impl Backend,
     state: PathBuf,
@@ -99,6 +64,16 @@ async fn deliver(
     batch: &[serde_json::Value],
     waiting: bool,
 ) -> io::Result<()> {
+    let mut current = Vec::new();
+    for event in batch {
+        if waiting || backend.current(event).await {
+            current.push(event.clone());
+        }
+    }
+    let batch = current.as_slice();
+    if batch.is_empty() {
+        return Ok(());
+    }
     let mut descriptions = Vec::new();
     for event in batch {
         let root = match event["project_root"].as_str() {

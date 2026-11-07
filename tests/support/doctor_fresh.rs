@@ -3,7 +3,10 @@ use super::*;
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 #[test]
 fn quick_start_with_only_claude_then_doctor_succeeds() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .prefix("tsx-dr-")
+        .tempdir_in("/tmp")
+        .unwrap();
     let home = root.path();
     fixture(home, Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
     tmux_sidecar::install::run(
@@ -25,8 +28,6 @@ fn quick_start_with_only_claude_then_doctor_succeeds() {
         fs::remove_dir_all(home.join(dir)).unwrap();
     }
     fs::remove_file(home.join("opencode.db")).unwrap();
-    fs::write(home.join("bin/claude"), "#!/bin/sh\nexit 0\n").unwrap();
-    fs::set_permissions(home.join("bin/claude"), fs::Permissions::from_mode(0o700)).unwrap();
     let dry = run(command(home).args(["hooks", "install", "--dry-run"]));
     assert!(dry.status.success());
     assert!(!home.join(".claude/settings.json").exists());
@@ -61,14 +62,25 @@ fn quick_start_with_only_claude_then_doctor_succeeds() {
 }
 #[test]
 fn slow_tmux_does_not_recommend_installation() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .prefix("tsx-dr-")
+        .tempdir_in("/tmp")
+        .unwrap();
     fixture(root.path(), Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
+    fs::remove_file(root.path().join("bin/tmux")).unwrap();
     fs::write(
         root.path().join("bin/tmux"),
         "#!/bin/sh\nexec /bin/sleep 3\n",
     )
     .unwrap();
-    let output = run(command(root.path()).args(["doctor", "--json"]));
+    fs::set_permissions(
+        root.path().join("bin/tmux"),
+        fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    let output = run(command(root.path())
+        .env("TMUX_SIDECAR_TEST_TIMEOUT_MULTIPLIER", "1")
+        .args(["doctor", "--json"]));
     let checks: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
     let check = checks.iter().find(|c| c["name"] == "tmux").unwrap();
     assert!(
@@ -82,7 +94,10 @@ fn slow_tmux_does_not_recommend_installation() {
 
 #[test]
 fn doctor_uses_tmux_override_and_checks_state_directory_permissions() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .prefix("tsx-dr-")
+        .tempdir_in("/tmp")
+        .unwrap();
     let home = root.path();
     fixture(home, Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
     let pinned = home.join("pinned-tmux");
@@ -117,4 +132,50 @@ fn doctor_uses_tmux_override_and_checks_state_directory_permissions() {
         );
     }
     peer.join().unwrap();
+}
+
+#[test]
+fn doctor_probe_timeout_scaling_is_test_only() {
+    let root = tempfile::Builder::new()
+        .prefix("tsx-dr-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    fixture(root.path(), Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
+    let tmux = root.path().join("bin/tmux");
+    fs::remove_file(&tmux).unwrap();
+    fs::write(&tmux, "#!/bin/sh\necho 'tmux 3.8'\nexec /bin/sleep 2\n").unwrap();
+    fs::set_permissions(tmux, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = run(command(root.path())
+        .env("TMUX_SIDECAR_TEST_TIMEOUT_MULTIPLIER", "3")
+        .args(["doctor", "--json"]));
+    let checks: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        checks.iter().find(|c| c["name"] == "tmux").unwrap()["status"],
+        if cfg!(feature = "test-util") {
+            "ok"
+        } else {
+            "fail"
+        }
+    );
+}
+
+#[test]
+fn doctor_fake_executables_share_the_warmed_inodes() {
+    use std::os::unix::fs::MetadataExt;
+    let a = tempfile::Builder::new()
+        .prefix("tsx-dr-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let b = tempfile::Builder::new()
+        .prefix("tsx-dr-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    for home in [a.path(), b.path()] {
+        fixture(home, Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
+    }
+    for name in ["tmux", "notify-send", "osascript", "claude"] {
+        let first = fs::metadata(a.path().join("bin").join(name)).unwrap();
+        let second = fs::metadata(b.path().join("bin").join(name)).unwrap();
+        assert_eq!((first.dev(), first.ino()), (second.dev(), second.ino()));
+    }
 }

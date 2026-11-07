@@ -159,7 +159,19 @@ pub(crate) async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + U
     params: Value,
 ) -> io::Result<Value> {
     let bytes = rpc::request_frame(method, params)?;
-    stream.get_mut().write_all(&bytes).await?;
+    // A rejection may already be queued when the peer closes before hello's write.
+    let write_error = match stream.get_mut().write_all(&bytes).await {
+        Ok(()) => None,
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset
+            ) =>
+        {
+            Some(e)
+        }
+        Err(e) => return Err(e),
+    };
     let mut line = String::new();
     if stream.read_line(&mut line).await? == 0 {
         return Err(io::Error::new(
@@ -168,7 +180,12 @@ pub(crate) async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + U
         ));
     }
     let response: rpc::Response = serde_json::from_str(&line)?;
-    if response.id != Some(rpc::Id::Number(1)) {
+    let rejected = response.id.is_none()
+        && matches!(&response.outcome, rpc::Outcome::Failure { error } if error.code == rpc::INVALID_REQUEST);
+    if !rejected && let Some(error) = write_error {
+        return Err(error);
+    }
+    if response.id != Some(rpc::Id::Number(1)) && !rejected {
         return Err(io::Error::other("mismatched RPC response id"));
     }
     match response.outcome {

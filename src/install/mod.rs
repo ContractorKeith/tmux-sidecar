@@ -102,13 +102,14 @@ pub fn run(
         let mut out = io::stdout().lock();
         writeln!(
             out,
-            "Live-proven: Claude Code 2.1.311 command entries, Grok 1.0.77 payload captures, Codex 0.166.0 notify and inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, SessionEnd hooks. OpenCode 2.2.6 failed round-1 live proof; #19 is fixed, awaiting a fresh live check. See tests/fixtures/hooks/README.md."
-        )?;
+            "Live-proven: Claude Code 2.1.311 command entries, Grok 1.0.77 payload captures, Codex 0.166.0 notify and inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, SessionEnd hooks. OpenCode 2.2.6 failed round-1 live proof; #19 is fixed, awaiting a fresh live check. See https://github.com/ContractorKeith/tmux-sidecar#agent-hook-support."
+        ).map_err(|e| io::Error::new(e.kind(), format!("could not write stdout: {e}")))?;
         writeln!(
             out,
             "tmux popup binding: bind-key a display-popup -E -w 80% -h 80% {} ui",
             quote(binary)
-        )?;
+        )
+        .map_err(|e| io::Error::new(e.kind(), format!("could not write stdout: {e}")))?;
     }
     Ok(())
 }

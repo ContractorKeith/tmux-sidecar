@@ -42,7 +42,10 @@ impl BoundedCommand for Command {
     }
 }
 pub fn wait_for(name: &str, mut condition: impl FnMut() -> bool) {
-    let timeout = load_timeout(Duration::from_secs(4));
+    wait_for_timeout(name, Duration::from_secs(4), &mut condition);
+}
+pub fn wait_for_timeout(name: &str, base: Duration, mut condition: impl FnMut() -> bool) {
+    let timeout = load_timeout(base);
     let deadline = Instant::now() + timeout;
     while !condition() {
         assert!(

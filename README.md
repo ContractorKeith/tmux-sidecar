@@ -46,7 +46,7 @@ install -m 755 tmux-sidecar "$HOME/.local/bin/tmux-sidecar"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-To build from source, install stable Rust and tmux, then run from a clone:
+To build from source, install Rust ≥ 1.98 and tmux, then run from a clone. On macOS, use `rustup` to install Rust; Homebrew’s `rust` may lag the required version:
 
 ```bash
 cargo build --release --locked
@@ -68,15 +68,18 @@ tmux-sidecar ui
 With no `--agent`, installation selects only agent CLIs on PATH and prints which
 agents it skipped. Use `--agent` to install for an agent explicitly.
 
+### Agent hook support
+
 Restart agent CLIs after installing hooks. If Codex already has a notify command, use `tmux-sidecar
 hooks install --agent codex --chain` to preserve and call it. Live captures: Claude
 UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd; Grok's same five events; Codex
 `notify` plus inline UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse and
 SessionEnd on Codex 0.166.0 on Linux and macOS. Codex needs these inline hooks to
 report blocked; notify alone reports waiting only. On first use, Codex 0.166 shows
-a "Hooks need review" screen and records hook trust in `config.toml` after review. Interrupt remains synthesized and unproven live. Claude and Grok
-Notification, PermissionRequest and StopFailure fixtures are synthesized from documented schemas;
-Grok StopCancelled is also synthesized. OpenCode 2.2.6 failed the round-1 live check because its plugin
+a "Hooks need review" screen and records hook trust in `config.toml` after review. Interrupt was proven live on Codex 0.166.0 on macOS.
+Claude and Grok Notification and PermissionRequest were also proven live; StopFailure
+fixtures are synthesized from documented schemas. Grok StopCancelled was proven live
+on Grok 1.0.77 on macOS. OpenCode 2.2.6 failed the round-1 live check because its plugin
 host was missing from the hook ancestor walk (#19). That fix has landed; a fresh live
 2.2.6 check is still needed. Earlier standalone captures proved
 execution.started and execution.succeeded; permission and error fixtures are synthesized.
@@ -181,7 +184,8 @@ timeout can expire before the daemon reads the run; ending before the requested
 state is also a tool error.
 
 To enable `send_prompt` (`selector`, `text`), change the arguments to
-`["mcp", "--allow-send"]`. It only sends to waiting runs, with no force override. If the connection is lost
+`["mcp", "--allow-send"]`. It sends to waiting or idle runs with native hook evidence,
+refusing process-only and Codex notify-only runs, with no force override. If the connection is lost
 after sending, the tool reports "send outcome unknown"; check the pane before
 retrying.
 Without this flag the tool is absent from discovery. A waiting run finished its
@@ -199,6 +203,7 @@ unknown tool calls return the protocol error `invalid_params`.
 
 ## Terminal UI
 
+Process-only and Codex notify-only runs remain in `list` and do not enter attention.
 Run `tmux-sidecar ui` inside tmux. The attention queue appears first, followed by
 agent runs grouped by project. Use `j/k` or arrows to move, `Enter` to switch to the
 selected pane and close the UI, `a` to acknowledge, `g` to toggle manual groups,
@@ -215,8 +220,8 @@ bind-key a display-popup -E -w 80% -h 80% tmux-sidecar ui
 
 The daemon sends desktop notifications on transitions into blocked or error using
 `notify-send` on Linux or `osascript` on macOS (listed under **Script Editor** in
-macOS Notification settings). Repeats for the same run and state collapse within
-10 seconds. Bursts queue for a summary at the end of the two-second delivery window. Waiting transitions display a
+macOS Notification settings). Each blocked or error episode notifies once. Delivery
+rechecks the current state and drops episodes that have already ended. Bursts queue for a summary at the end of the two-second delivery window. Waiting transitions display a
 tmux message to attached clients in the run's tmux session. `notify.tmux = false`
 disables these messages; they have their own two-second window, separate from desktop notifications. Configure desktop
 notifications in tmux-sidecar's `config.toml`:
@@ -225,7 +230,7 @@ notifications in tmux-sidecar's `config.toml`:
 [notify]
 desktop = true
 tmux = true
-debounce_secs = 10
+debounce_secs = 10 # collapse repeated tmux waiting messages
 ```
 
 ## Uninstall

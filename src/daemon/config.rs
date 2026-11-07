@@ -1,6 +1,12 @@
 use super::*;
 fn error(path: &std::path::Path, message: impl std::fmt::Display) -> io::Error {
-    io::Error::other(format!("config {}: {message}", path.display()))
+    let reason = message
+        .to_string()
+        .lines()
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join(" ");
+    io::Error::other(format!("config {}: {reason}", path.display()))
 }
 /// Shared validation keeps every duration safe before constructing timers.
 pub fn validate(path: &std::path::Path) -> io::Result<toml::Table> {
@@ -44,19 +50,14 @@ fn bounded(
 }
 pub fn poll_ms(paths: &Paths) -> io::Result<u64> {
     let table = validate(&paths.config)?;
-    let value = if let Some(value) = std::env::var_os("TMUX_SIDECAR_POLL_MS") {
+    let override_value = std::env::var_os("TMUX_SIDECAR_POLL_MS");
+    let value = if let Some(value) = &override_value {
         let value = value.to_str().ok_or_else(|| {
-            error(
-                &paths.config,
-                "TMUX_SIDECAR_POLL_MS (poll_ms) must be a UTF-8 integer",
-            )
+            io::Error::other("TMUX_SIDECAR_POLL_MS (poll_ms) must be a UTF-8 integer")
         })?;
-        value.parse::<u64>().map_err(|e| {
-            error(
-                &paths.config,
-                format!("TMUX_SIDECAR_POLL_MS (poll_ms): {e}"),
-            )
-        })?
+        value
+            .parse::<u64>()
+            .map_err(|e| io::Error::other(format!("TMUX_SIDECAR_POLL_MS (poll_ms): {e}")))?
     } else {
         table
             .get("poll_ms")
@@ -64,10 +65,11 @@ pub fn poll_ms(paths: &Paths) -> io::Result<u64> {
             .unwrap_or(1000) as u64
     };
     if !(50..=60000).contains(&value) {
-        return Err(error(
-            &paths.config,
-            "poll_ms must be an integer in 50..=60000 (including TMUX_SIDECAR_POLL_MS)",
-        ));
+        return Err(if override_value.is_some() {
+            io::Error::other("TMUX_SIDECAR_POLL_MS (poll_ms) must be an integer in 50..=60000")
+        } else {
+            error(&paths.config, "poll_ms must be an integer in 50..=60000")
+        });
     }
     Ok(value)
 }

@@ -14,29 +14,44 @@ fn config(path: &Path) -> io::Result<String> {
         Err(e) => return Err(named(path, e)),
     };
     let table: toml::Table = toml::from_str(&text).map_err(|e| named(path, e))?;
-    for key in ["poll_ms", "idle_after_secs", "send_confirm_secs"] {
-        if let Some(value) = table.get(key) {
-            let valid = value.as_integer().is_some_and(|v| {
-                if key == "poll_ms" {
-                    v > 0
-                } else {
-                    v >= 0 && (v as u64).checked_mul(1000).is_some()
-                }
-            });
-            if !valid {
-                return Err(named(
-                    path,
-                    format!(
-                        "{key} must be a valid nonnegative duration (poll_ms must be positive)"
-                    ),
-                ));
-            }
+    for (key, min, max) in [
+        ("poll_ms", 50, 60000),
+        ("idle_after_secs", 0, 86400),
+        ("send_confirm_secs", 0, 86400),
+    ] {
+        if let Some(value) = table.get(key)
+            && !value.as_integer().is_some_and(|v| (min..=max).contains(&v))
+        {
+            return Err(named(
+                path,
+                format!("{key} must be an integer in {min}..={max}"),
+            ));
         }
     }
-    crate::notify::Config::read(path).map_err(|e| named(path, e))?;
+    if let Some(value) = table.get("notify").and_then(|v| v.get("debounce_secs"))
+        && !value.as_integer().is_some_and(|v| (0..=3600).contains(&v))
+    {
+        return Err(named(
+            path,
+            "notify.debounce_secs must be an integer in 0..=3600",
+        ));
+    }
+    crate::notify::Config::read(path)?;
     Ok(format!("{} parses", path.display()))
 }
 fn database(path: &Path) -> io::Result<String> {
+    if let Some(parent) = path.parent().filter(|p| p.exists()) {
+        super::inspect::writable(parent)?;
+    }
+    for file in [
+        path.to_owned(),
+        path.with_file_name("tmux-sidecar.db-shm"),
+        path.with_file_name("tmux-sidecar.db-wal"),
+    ] {
+        if file.exists() {
+            super::inspect::writable(&file)?;
+        }
+    }
     if !path.exists() {
         return Ok(format!(
             "{} absent; created on daemon startup",
@@ -65,7 +80,11 @@ fn database(path: &Path) -> io::Result<String> {
         }
         Ok(())
     })();
-    result.map_err(|e| named(path, e))?;
+    result.map_err(|e| {
+        if matches!(&e, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::NotADatabase) {
+            named(path, "not a tmux-sidecar database; move it aside")
+        } else { named(path, e) }
+    })?;
     Ok(format!("{} opens read-only", path.display()))
 }
 pub(super) fn checks(paths: &Paths) -> Vec<Check> {
@@ -81,4 +100,77 @@ pub(super) fn checks(paths: &Paths) -> Vec<Check> {
             "upgrade for a newer schema; otherwise restore the named database from a backup",
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    #[test]
+    fn database_requires_writable_database_sidecars_and_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("tmux-sidecar.db");
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.execute_batch("CREATE TABLE meta(schema_version); INSERT INTO meta VALUES(3);")
+            .unwrap();
+        drop(db);
+        for target in [
+            path.clone(),
+            root.path().join("tmux-sidecar.db-shm"),
+            root.path().join("tmux-sidecar.db-wal"),
+            root.path().to_owned(),
+        ] {
+            if target != path && target != root.path() {
+                fs::write(&target, "").unwrap();
+            }
+            fs::set_permissions(
+                &target,
+                fs::Permissions::from_mode(if target.is_dir() { 0o500 } else { 0o400 }),
+            )
+            .unwrap();
+            let result = database(&path);
+            fs::set_permissions(
+                &target,
+                fs::Permissions::from_mode(if target.is_dir() { 0o700 } else { 0o600 }),
+            )
+            .unwrap();
+            assert!(result.is_err(), "{} passed", target.display());
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains(target.to_str().unwrap())
+            );
+            if target != path && target != root.path() {
+                fs::remove_file(target).unwrap();
+            }
+        }
+    }
+    #[test]
+    fn non_sqlite_file_has_actionable_hint() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("tmux-sidecar.db");
+        fs::write(&path, "garbage").unwrap();
+        assert!(
+            database(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("not a tmux-sidecar database; move it aside")
+        );
+    }
+    #[test]
+    fn config_rejects_the_daemons_duration_bounds() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("config.toml");
+        for text in [
+            "poll_ms=49",
+            "poll_ms=60001",
+            "idle_after_secs=86401",
+            "send_confirm_secs=86401",
+            "[notify]\ndebounce_secs=3601",
+        ] {
+            fs::write(&path, text).unwrap();
+            assert!(config(&path).is_err(), "doctor accepted {text}");
+        }
+    }
 }

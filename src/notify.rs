@@ -1,4 +1,5 @@
 //! Desktop notifications consume committed changes outside the store and RPC tasks.
+mod backend;
 #[cfg(test)]
 mod burst_tests;
 mod command;
@@ -34,15 +35,24 @@ impl Config {
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
-            Err(e) => return Err(e),
+            Err(e) => return Err(config_error(path, e)),
         };
-        let table: toml::Table = toml::from_str(&text).map_err(io::Error::other)?;
+        let table: toml::Table = toml::from_str(&text).map_err(|e| config_error(path, e))?;
         table
             .get("notify")
             .cloned()
-            .map(|v| v.try_into().map_err(io::Error::other))
+            .map(|v| v.try_into().map_err(|e| config_error(path, e)))
             .unwrap_or_else(|| Ok(Self::default()))
     }
+}
+fn config_error(path: &Path, error: impl std::fmt::Display) -> io::Error {
+    let reason = error
+        .to_string()
+        .lines()
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join(" ");
+    io::Error::other(format!("config {}: {reason}", path.display()))
 }
 #[derive(Default)]
 struct Window {
@@ -51,7 +61,7 @@ struct Window {
 }
 #[derive(Default)]
 struct Debounce {
-    runs: HashMap<(String, String), Instant>,
+    runs: HashMap<(String, String), (serde_json::Value, Instant)>,
     windows: [Window; 2],
 }
 impl Debounce {
@@ -61,6 +71,9 @@ impl Debounce {
         };
         if event["from"] == event["to"] {
             return;
+        }
+        if to == "done" {
+            self.runs.retain(|(run, _), _| run != id);
         }
         let channel = match to {
             "waiting"
@@ -73,14 +86,18 @@ impl Debounce {
             "blocked" | "error" if config.desktop => 0,
             _ => return,
         };
-        self.runs.retain(|_, at| {
-            now.saturating_duration_since(*at) < Duration::from_secs(config.debounce_secs)
-        });
         let key = (id.to_owned(), to.to_owned());
-        if self.runs.contains_key(&key) {
-            return;
+        if let Some((episode, at)) = self.runs.get(&key) {
+            let duplicate = if channel == 0 {
+                event["at"] == *episode
+            } else {
+                now.saturating_duration_since(*at) < Duration::from_secs(config.debounce_secs)
+            };
+            if duplicate {
+                return;
+            }
         }
-        self.runs.insert(key, now);
+        self.runs.insert(key, (event["at"].clone(), now));
         let window = &mut self.windows[channel];
         if window.pending.is_empty() {
             window.next = Some(now + Duration::from_secs(2));
@@ -118,5 +135,5 @@ pub(crate) fn start(
     config: Config,
     events: broadcast::Receiver<serde_json::Value>,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(worker::run(worker::Real { socket }, state, config, events))
+    tokio::spawn(worker::run(backend::Real { socket }, state, config, events))
 }

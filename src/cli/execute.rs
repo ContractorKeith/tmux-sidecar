@@ -34,6 +34,12 @@ pub(crate) fn output_error(error: io::Error) -> Failure {
         error.to_string(),
     )
 }
+pub(crate) fn stdout_error(error: io::Error) -> Failure {
+    output_error(io::Error::new(
+        error.kind(),
+        format!("could not write stdout: {error}"),
+    ))
+}
 pub async fn execute(cli: Cli) -> Result<(), Failure> {
     match execute_inner(cli).await {
         Err((0, _)) => Ok(()),
@@ -164,7 +170,7 @@ async fn execute_inner(mut cli: Cli) -> Result<(), Failure> {
             .map_err(response_error)?;
         if !stopped && !cli.quiet {
             use std::io::Write;
-            writeln!(io::stdout().lock(), "daemon not running").map_err(output_error)?;
+            writeln!(io::stdout().lock(), "daemon not running").map_err(stdout_error)?;
         }
         return Ok(());
     }
@@ -174,7 +180,7 @@ async fn execute_inner(mut cli: Cli) -> Result<(), Failure> {
     if !cli.quiet {
         super::output::print_read(&socket, &paths, method, &result, json_output)
             .await
-            .map_err(output_error)?;
+            .map_err(stdout_error)?;
     }
     Ok(())
 }

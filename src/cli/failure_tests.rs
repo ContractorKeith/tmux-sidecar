@@ -113,3 +113,72 @@ fn wait_shutdown_response_is_general_but_send_timeout_remains_timeout() {
         4
     );
 }
+
+#[test]
+fn stdout_errors_name_the_output_stream() {
+    let error = stdout_error(io::Error::from_raw_os_error(libc::ENOSPC));
+    assert_eq!(error.0, 1);
+    assert!(error.1.contains("stdout"), "{}", error.1);
+}
+
+#[test]
+fn non_output_errors_do_not_blame_stdout() {
+    let error = output_error(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "settings.json is not writable",
+    ));
+    assert_eq!(error, (1, "settings.json is not writable".into()));
+}
+
+#[tokio::test]
+async fn cap_rejection_survives_peer_closing_before_hello_write() {
+    use tokio::{io::AsyncWriteExt, net::UnixStream};
+    let (peer, mut rejector) = UnixStream::pair().unwrap();
+    rejector.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"daemon connection limit reached (256); close idle clients\"}}\n").await.unwrap();
+    drop(rejector);
+    let error = tokio::time::timeout(
+        Duration::from_secs(1),
+        client::exchange(&mut tokio::io::BufReader::new(peer), "hello", json!({})),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("daemon connection limit reached (256); close idle clients"),
+        "{error}"
+    );
+}
+#[tokio::test]
+async fn unrelated_null_or_mismatched_reply_ids_remain_protocol_errors() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    for frame in [
+        json!({"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"unrelated"}}),
+        json!({"jsonrpc":"2.0","id":2,"error":{"code":-32600,"message":"wrong id"}}),
+        json!({"jsonrpc":"2.0","id":null,"result":{}}),
+    ] {
+        let (peer, server) = tokio::io::duplex(4096);
+        let server = tokio::spawn(async move {
+            let mut server = BufReader::new(server);
+            server.read_line(&mut String::new()).await.unwrap();
+            server
+                .get_mut()
+                .write_all(format!("{frame}\n").as_bytes())
+                .await
+                .unwrap();
+        });
+        let error = tokio::time::timeout(
+            Duration::from_secs(1),
+            client::exchange(&mut BufReader::new(peer), "hello", json!({})),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("mismatched RPC response id"),
+            "{error}"
+        );
+        server.await.unwrap();
+    }
+}

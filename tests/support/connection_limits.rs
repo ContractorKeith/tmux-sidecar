@@ -24,6 +24,12 @@ e2e_test!(connection_cap_rejects_extras_and_recovers, {
             for _ in 0..256 {
                 clients.push(capacity_peer(&socket).await);
             }
+            let result = output(g.sidecar().args(["daemon", "status", "--json"]));
+            let error = String::from_utf8(result.stderr).unwrap();
+            assert!(
+                error.contains("daemon connection limit reached (256); close idle clients"),
+                "{error}"
+            );
             let extra = capacity_peer(&socket).await;
             let mut frame = String::new();
             tokio::time::timeout(

@@ -1,7 +1,7 @@
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-pub const STATES: &str = "An agent run is one coding-agent process in one tmux pane, from start to exit. States: working = processing a turn; waiting = finished a turn and wants the next prompt; blocked = mid-turn at a permission or approval request; idle = a read waiting run inactive for 30 minutes by default; error = failed turn; done = process exited or run ended. Select a run by r42 or the current run in pane %7. send_prompt only works on waiting runs.";
+pub const STATES: &str = "An agent run is one coding-agent process in one tmux pane, from start to exit. States: working = processing a turn; waiting = finished a turn and wants the next prompt; blocked = mid-turn at a permission or approval request; idle = a read waiting run inactive for 30 minutes by default; error = failed turn; done = process exited or run ended. Select a run by r42 or the current run in pane %7. send_prompt works on waiting or idle runs with native hook evidence; notify-only and process-only runs are refused.";
 
 pub fn definitions(allow_send: bool) -> Vec<Tool> {
     let selector =
@@ -41,8 +41,8 @@ pub fn definitions(allow_send: bool) -> Vec<Tool> {
         ),
     ];
     if allow_send {
-        tools.push(definition("send_prompt", "Paste text and Enter into a waiting agent run. Refuses working, blocked, idle, error and done runs; cannot override the guard. Only exposed with --allow-send.", json!({
-            "selector":selector,"text":{"type":"string","description":"Prompt text pasted literally and followed by Enter into a waiting run."}
+        tools.push(definition("send_prompt", "Paste text and Enter into a waiting or idle agent run with native hook evidence. Refuses notify-only and process-only runs, and working, blocked, error and done runs; cannot override the guard. Only exposed with --allow-send.", json!({
+            "selector":selector,"text":{"type":"string","description":"Prompt text pasted literally and followed by Enter into a waiting or idle run."}
         }), &["selector", "text"]));
     }
     tools

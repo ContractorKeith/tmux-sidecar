@@ -29,7 +29,7 @@ pub async fn run(socket: &Path, paths: &Paths, json: bool, quiet: bool) -> Resul
         }
         if !quiet {
             super::output::print("state_changed", &frame.params.unwrap_or_default(), json)
-                .map_err(super::execute::output_error)?;
+                .map_err(super::execute::stdout_error)?;
         }
     }
 }

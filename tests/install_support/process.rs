@@ -17,6 +17,7 @@ pub fn output(command: &mut Command) -> Output {
     use std::process::Stdio;
     let mut child = ChildGuard(
         command
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

@@ -35,6 +35,16 @@ e2e_test!(mcp_stdio_tools_read_fixtures_and_guard_registration, {
         names,
         ["list_runs", "attention", "run_history", "wait_for_state"]
     );
+    let wait = tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "wait_for_state")
+        .unwrap();
+    assert_eq!(
+        wait["inputSchema"]["properties"]["state"]["enum"],
+        json!(["waiting", "blocked", "done"])
+    );
     fire(&guard, &run, "Notification-permission_prompt");
     until!(|| list(&guard)[0]["state"] == "blocked");
     assert_eq!(
@@ -63,12 +73,18 @@ e2e_test!(mcp_stdio_tools_read_fixtures_and_guard_registration, {
     assert_eq!(response["id"], id);
     assert_eq!(response["error"]["code"], -32602);
     let mut writable = Mcp::start(&guard, true);
+    let tools = writable.request("tools/list", json!({}));
+    let send = tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "send_prompt")
+        .unwrap();
+    let description = send["description"].as_str().unwrap();
+    assert!(description.contains("waiting or idle"), "{description}");
     assert!(
-        writable.request("tools/list", json!({}))["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|t| t["name"] == "send_prompt")
+        description.contains("notify-only and process-only"),
+        "{description}"
     );
     assert_eq!(
         writable.call(

@@ -7,7 +7,10 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 #[test]
 fn doctor_on_complete_and_missing_fakes() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .prefix("tsx-dr-")
+        .tempdir_in("/tmp")
+        .unwrap();
     fixture(root.path(), Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
     let server = peer(root.path(), env!("CARGO_PKG_VERSION"), 3);
     let output = run(command(root.path()).args(["doctor", "--json"]));
@@ -28,6 +31,14 @@ fn doctor_on_complete_and_missing_fakes() {
             "fail"
         );
     }
+    let tmux = checks.iter().find(|c| c["name"] == "tmux").unwrap();
+    assert!(
+        tmux["detail"]
+            .as_str()
+            .unwrap()
+            .contains("could not run tmux version probe"),
+        "{tmux}"
+    );
     // Insecure runtime must be a reported check, not prevent all output.
     fs::set_permissions(root.path().join("run"), fs::Permissions::from_mode(0o755)).unwrap();
     let output = run(command(root.path()).args(["doctor", "--json"]));
@@ -75,7 +86,7 @@ fn doctor_on_complete_and_missing_fakes() {
 fn unused_agents_skip_but_explicit_and_partial_hooks_fail() {
     let root = tempfile::Builder::new()
         .prefix("tsx doctor é ")
-        .tempdir()
+        .tempdir_in("/tmp")
         .unwrap();
     let home = root.path();
     let binary = Path::new(env!("CARGO_BIN_EXE_tmux-sidecar"));
@@ -131,7 +142,10 @@ fn unused_agents_skip_but_explicit_and_partial_hooks_fail() {
 
 #[test]
 fn doctor_reports_broken_config_and_database_without_writing_them() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .prefix("tsx-dr-")
+        .tempdir_in("/tmp")
+        .unwrap();
     fixture(root.path(), Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
     let config = if cfg!(target_os = "macos") {
         root.path()
