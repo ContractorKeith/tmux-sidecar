@@ -1,4 +1,3 @@
-//! In-memory seam adapters for unit and integration tests.
 use super::*;
 use std::cell::{Cell, RefCell};
 

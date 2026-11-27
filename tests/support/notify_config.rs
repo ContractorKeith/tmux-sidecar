@@ -1,4 +1,3 @@
-//! Tests never deliver desktop notifications to the host's notification service.
 pub fn disable(root: &std::path::Path) {
     for relative in [
         "config/tmux-sidecar",

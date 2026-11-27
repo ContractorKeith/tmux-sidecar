@@ -1,4 +1,3 @@
-//! Complete doctor and hello behavior against a fake tmux, stores and socket peer.
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -31,7 +30,6 @@ fn cache() -> &'static Path {
                 };
                 fs::write(&path, script).unwrap();
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-                // Warm each executable inode before any diagnostic deadline starts.
                 assert!(
                     run(Command::new(&path).stdin(Stdio::null()))
                         .status
@@ -85,7 +83,6 @@ pub fn command(home: &Path) -> Command {
         .arg(home.join("tmux"));
     cmd
 }
-// Thread owns no subprocess and both accept and socket reads have deadlines.
 pub fn peer(home: &Path, version: &str, count: usize) -> std::thread::JoinHandle<()> {
     let listener = UnixListener::bind(home.join("run/sock")).unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -97,7 +94,6 @@ pub fn peer(home: &Path, version: &str, count: usize) -> std::thread::JoinHandle
         while served < count {
             match listener.accept() {
                 Ok((socket, _)) => {
-                    // macOS inherits O_NONBLOCK from the listener; Linux does not.
                     socket.set_nonblocking(false).unwrap();
                     socket
                         .set_read_timeout(Some(Duration::from_secs(2)))

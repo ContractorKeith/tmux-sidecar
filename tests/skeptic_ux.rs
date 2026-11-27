@@ -147,7 +147,6 @@ fn dry_run_is_a_patch_for_new_and_existing_files() {
     assert!(text.contains("@@ -0,0 +1,"), "{text}");
     assert!(!text.contains("-# retain this line"), "{text}");
     let patch = root.path().join("changes.patch");
-    // Informational installer output follows the final hunk.
     fs::write(&patch, text).unwrap();
     for dir in [".claude", ".grok/hooks", ".config/opencode/plugins"] {
         fs::create_dir_all(home.join(dir)).unwrap();

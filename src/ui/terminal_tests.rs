@@ -99,8 +99,6 @@ fn panic_restores_terminal_before_printing_diagnostic() {
     let until = Instant::now() + Duration::from_secs(5);
     let mut bytes = Vec::new();
     let status = loop {
-        // PTY output buffers can be small (notably on macOS). Drain while the
-        // child runs, otherwise printing its diagnostic can prevent exit.
         drain(&mut master, &mut bytes, until);
         if let Some(status) = child.0.try_wait().unwrap() {
             drain(&mut master, &mut bytes, until);
@@ -122,8 +120,6 @@ fn panic_restores_terminal_before_printing_diagnostic() {
         .find("visible panic fixture")
         .expect("panic diagnostic missing");
     assert!(restored < panic, "{output}");
-    // macOS revokes the slave when its controlling session exits. The chained
-    // hook recorded actual modes before exit, after production restoration.
     let modes: libc::tcflag_t = std::fs::read_to_string(marker).unwrap().parse().unwrap();
     assert_ne!(modes & libc::ICANON, 0);
     assert_ne!(modes & libc::ECHO, 0);

@@ -7,7 +7,7 @@ pub fn same_uid(peer: u32, owner: u32) -> bool {
 
 pub fn uid(stream: &UnixStream) -> io::Result<u32> {
     #[cfg(target_os = "linux")]
-    let uid = stream.peer_cred()?.uid(); // tokio uses SO_PEERCRED.
+    let uid = stream.peer_cred()?.uid();
     #[cfg(target_os = "macos")]
     let uid = {
         use std::os::fd::AsRawFd;
@@ -20,13 +20,10 @@ pub fn uid(stream: &UnixStream) -> io::Result<u32> {
     };
     Ok(uid)
 }
-/// EOF alone is a write-half close; POLLHUP identifies a fully disconnected peer.
 pub fn disconnected(stream: &UnixStream) -> bool {
     use std::os::fd::AsRawFd;
     let mut descriptor = libc::pollfd {
         fd: stream.as_raw_fd(),
-        // Darwin poll registers only requested filters; request write readiness
-        // to observe a fully closed peer while preserving write-half closes.
         events: libc::POLLOUT,
         revents: 0,
     };

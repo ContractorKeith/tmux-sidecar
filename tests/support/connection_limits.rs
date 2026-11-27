@@ -12,8 +12,6 @@ e2e_test!(connection_cap_rejects_extras_and_recovers, {
     let g = TmuxGuard::start();
     list(&g);
     let socket = g.scratch.path().join("run/sock");
-    // Keep deadlines in the runtime: Darwin can reject socket-option changes
-    // after the daemon has already closed an over-capacity peer.
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -84,7 +82,6 @@ e2e_test!(emfile_accept_error_keeps_daemon_alive_and_recovers, {
         .unwrap();
     let clients = runtime.block_on(async {
         let mut clients = Vec::new();
-        // Bound backlog waits without setting socket options after peer closure.
         for _ in 0..180 {
             match tokio::time::timeout(
                 std::time::Duration::from_millis(250),
@@ -134,7 +131,6 @@ async fn capacity_peer(socket: &std::path::Path) -> tokio::net::UnixStream {
         loop {
             match tokio::net::UnixStream::connect(socket).await {
                 Ok(stream) => return stream,
-                // Darwin refuses a full backlog rather than waiting for accept.
                 Err(error)
                     if matches!(
                         error.kind(),

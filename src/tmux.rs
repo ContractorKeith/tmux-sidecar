@@ -1,8 +1,6 @@
-//! M0: pane metadata adapter; mutations arrive in M4/M5.
 use crate::seams::{PaneSnapshot, Tmux};
 use std::{io, path::PathBuf, process::Command};
 
-// Length framing preserves tabs/newlines in cwd and command (session-board's idiom).
 const FORMAT: &str = concat!(
     "#{n:start_time}:#{start_time}",
     "#{n:pane_id}:#{pane_id}",
@@ -99,7 +97,6 @@ fn unsupported(milestone: &str) -> io::Error {
         format!("not implemented yet ({milestone})"),
     )
 }
-/// Used only when neither an explicit socket nor TMUX selects a server.
 pub fn default_socket() -> io::Result<PathBuf> {
     resolve_binary()?;
     let output = Command::new(binary())

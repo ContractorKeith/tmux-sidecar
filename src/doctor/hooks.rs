@@ -1,7 +1,6 @@
 use crate::install;
 use std::{io, path::Path};
 
-// Inspect only our marked handlers; unrelated user handlers may appear in any order.
 fn events(
     value: &serde_json::Value,
     agent: &str,

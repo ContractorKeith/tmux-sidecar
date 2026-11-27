@@ -1,4 +1,3 @@
-//! A fake socket pins the MCP adapter's wait/send contract before M4 is available.
 use super::{TmuxGuard, enabled};
 use super::{mcp_client::Mcp, mcp_replies};
 use serde_json::{Value, json};
@@ -50,7 +49,6 @@ e2e_test!(mcp_wait_and_send_each_use_one_rpc_and_preserve_errors, {
                     Err(e) => panic!("{e}"),
                 }
             };
-            // macOS inherits O_NONBLOCK from the listener; Linux does not.
             stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
@@ -70,7 +68,6 @@ e2e_test!(mcp_wait_and_send_each_use_one_rpc_and_preserve_errors, {
             assert_eq!(request["method"], method);
             assert_eq!(request["params"], expected);
             if expected["timeout"] == 3 {
-                // A valid wait must outlive the ordinary two-second RPC deadline.
                 std::thread::sleep(Duration::from_millis(2200));
             }
             let mut response = response;

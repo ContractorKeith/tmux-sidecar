@@ -69,7 +69,6 @@ e2e_test!(run_discovery_exit_pane_close_and_server_exit, {
             & 0o777,
         0o600
     );
-    // Keep the tmux server alive while %0's directly-executed agent exits.
     assert!(
         guard
             .command()

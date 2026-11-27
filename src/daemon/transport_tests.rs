@@ -45,7 +45,6 @@ async fn lagged_subscriber_receives_final_error_and_disconnects() {
     .unwrap()
     .unwrap();
     assert!(line.contains("subscribed"));
-    // Current-thread runtime: the consumer cannot drain until all 257 sends finish.
     for n in 0..257 {
         events.send(json!({"at":n})).unwrap();
     }

@@ -1,4 +1,3 @@
-//! Drain hook input; attempt durable append before live delivery, even when append fails.
 pub(crate) mod attribution;
 pub mod context;
 mod delivery;
@@ -41,7 +40,6 @@ pub fn log(state: &std::path::Path, error: &dyn std::fmt::Display) -> io::Result
     file.write_all(line.as_bytes())
 }
 
-// Use the cached pane boundary when available; logging never runs a tmux probe.
 fn log_agent(pane: &str) -> String {
     let chain = crate::proc::hook_ancestors().unwrap_or_default();
     let bounded = (|| {
@@ -67,7 +65,6 @@ fn log_agent(pane: &str) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
-/// Invalid formats still have a log destination when invoked outside tmux.
 pub(crate) fn unknown_format() -> io::Result<()> {
     let home = std::env::var_os("HOME").ok_or_else(|| io::Error::other("HOME missing"))?;
     let platform = if cfg!(target_os = "macos") {

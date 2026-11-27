@@ -1,4 +1,3 @@
-"""Reject processes and paths tied to acceptance’s scratch directory after cleanup."""
 import json
 import os
 from pathlib import Path
@@ -48,9 +47,8 @@ def references(pid, scope):
                       proc.joinpath('environ').read_bytes(),
                       os.fsencode(os.readlink(proc / 'cwd'))]
         except OSError:
-            return False  # The process exited during the snapshot.
+            return False
         return any(scope in value for scope in scopes for value in values)
-    # Darwin ps -E includes the environment, including HOME and TMUX_TMPDIR.
     result = subprocess.run(['/bin/ps', '-E', '-ww', '-p', pid, '-o', 'command='],
                             capture_output=True, check=False, timeout=5)
     if any(scope in result.stdout for scope in scopes):
@@ -79,7 +77,6 @@ def cleanup(root):
     sockets = set(root.glob('**/tmux-*/tsx-*'))
     for record in root.rglob('tmux.socket'):
         sockets.add(Path(record.read_text().strip()))
-    # Every server gets a graceful request before any signal is sent.
     for socket in sockets:
         if not socket.resolve().is_relative_to(root):
             raise AssertionError(f'cleanup socket escaped scratch tree: {socket}')

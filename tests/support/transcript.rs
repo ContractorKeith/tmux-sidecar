@@ -38,7 +38,6 @@ e2e_test!(
             &stop_fixture,
         );
         until!(|| list(&guard)[0]["state"] == "waiting");
-        // Once hooked, only subsequent hook payloads update state and metadata.
         let mut record: Value =
             serde_json::from_str(fs::read_to_string(&path).unwrap().trim()).unwrap();
         record["type"] = json!("assistant");
@@ -49,7 +48,6 @@ e2e_test!(
             "{record}"
         )
         .unwrap();
-        // Fixture Stop carries a different session id, so bind the matching transcript explicitly.
         let mut signal =
             serde_json::from_slice::<Value>(&fs::read(&stop_fixture).unwrap()).unwrap();
         signal["session_id"] = json!("fixture");

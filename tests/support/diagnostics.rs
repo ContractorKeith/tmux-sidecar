@@ -1,4 +1,3 @@
-//! Diagnostics preserve the object, filename and reason needed to act on failures.
 use super::{TmuxGuard, enabled, lifecycle::list};
 use crate::support::output;
 use std::path::PathBuf;

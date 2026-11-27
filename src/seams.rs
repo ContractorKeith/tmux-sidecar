@@ -45,7 +45,6 @@ pub trait ProcessTree {
         ))
     }
     fn snapshot(&self) -> io::Result<ProcessSnapshot>;
-    /// Nearest parent first; one snapshot, stopping at missing parents or cycles.
     fn ancestors(&self, pid: u32) -> io::Result<Vec<(u32, Process)>> {
         let snapshot = self.snapshot()?;
         let mut seen = HashSet::from([pid]);
@@ -80,7 +79,6 @@ impl Clock for SystemClock {
 #[cfg(feature = "test-util")]
 pub mod fakes;
 
-/// Prompt text cannot escape bracketed paste or synthesize terminal keys.
 pub fn validate_prompt(text: &str) -> Result<(), &'static str> {
     if text.is_empty() {
         return Err("empty prompt");

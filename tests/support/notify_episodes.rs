@@ -1,4 +1,3 @@
-//! Delivery checks live state; each new approval episode remains eligible.
 use super::{TmuxGuard, cli_verbs::fire, enabled, lifecycle::list};
 use crate::support::wait_for_timeout;
 use std::{

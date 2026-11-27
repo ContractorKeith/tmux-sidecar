@@ -152,7 +152,6 @@ e2e_test!(
         });
         assert_eq!(super::lifecycle::pid(&guard), pid);
         assert_eq!(fs::read_to_string(target).unwrap(), "original");
-        // A failed rejected-file write in an old claim must not starve a new claim.
         fs::write(
             guard.scratch.path().join("state/spool.ndjson"),
             format!("{}\n", frame(&guard, &runs[0], 999)),

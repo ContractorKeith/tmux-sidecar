@@ -54,7 +54,6 @@ fn spool_claim_retains_concurrent_append() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn wrong_server_hello_is_rejected_before_signal_delivery() {
-    // The hook's client verifier uses the same identity check as ordinary clients.
     let root = tempfile::tempdir().unwrap();
     let socket = root.path().join("sock");
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();

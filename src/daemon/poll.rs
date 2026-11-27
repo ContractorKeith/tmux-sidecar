@@ -38,7 +38,6 @@ pub async fn tick(
         .with(|store| store.verify_identity())
         .await?
         .map_err(|error| Failure { error, fatal: true })?;
-    // External commands can be slow. Do not occupy the SQLite owner while collecting.
     let snapshot = tokio::task::spawn_blocking(move || -> io::Result<Snapshot> {
         let tmux = RealTmux {
             socket: Socket::Path(socket.clone()),
@@ -108,7 +107,6 @@ pub async fn tick(
         })
         .await?
 }
-/// A good tick resets the failure budget; transient errors do not alter persisted runs.
 #[derive(Default)]
 pub struct Health {
     failures: u8,

@@ -87,7 +87,6 @@ e2e_test!(cli_verbs_and_every_exit_code, {
     until!(|| fs::read(&input)
         .unwrap()
         .ends_with(b"\x1b[200~forced\x1b[201~\r"));
-    // Done in a different state is a general error, not a timeout.
     output(guard.command().args(["new-window", "-d", "sleep 30"]));
     output(guard.command().args(["kill-pane", "-t", "%0"]));
     until!(|| list(&guard).as_array().unwrap().is_empty());

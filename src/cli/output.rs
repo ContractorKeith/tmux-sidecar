@@ -56,7 +56,6 @@ pub fn print(method: &str, value: &Value, json: bool) -> io::Result<()> {
     Ok(())
 }
 
-// Empty queues carry no row diagnostics; consult daemon health for human output.
 pub async fn print_read(
     socket: &std::path::Path,
     paths: &crate::paths::Paths,

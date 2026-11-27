@@ -1,4 +1,3 @@
-//! Marked, reversible config edits, prepared fully before the first write.
 pub mod claude;
 pub mod codex;
 mod codex_groups;
@@ -44,8 +43,6 @@ pub fn run(
             }
             let backup = files::backup(&path);
             let original = files::read(&backup)?;
-            // Restore bytes only when the current file is exactly our generated version.
-            // Semantic equality alone would discard comments added after installation.
             let after = if !install
                 && before
                     == editor(&original, true).map_err(|e| {
@@ -87,7 +84,6 @@ pub fn run(
         prepare(".config/opencode/plugins/tmux-sidecar.js", &|s, mode| {
             opencode::edit(s, mode, binary)
         })?;
-        // Remove the marked pre-v2 integration at the old path during upgrades.
         if locations::config(home, ".config/opencode/plugin/tmux-sidecar.js").exists() {
             prepare(".config/opencode/plugin/tmux-sidecar.js", &|s, _| {
                 opencode::edit(s, false, binary)

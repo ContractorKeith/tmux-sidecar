@@ -35,7 +35,6 @@ impl TmuxGuard {
     fn start_with_input(capture: bool) -> Self {
         let scratch = Scratch::new();
         let socket = scratch.path().join("tmux.sock");
-        // Construct the guard before any operation that could start a server.
         let mut guard = Self {
             adapter: RealTmux {
                 socket: Socket::Path(socket.clone()),
@@ -93,7 +92,6 @@ impl TmuxGuard {
             })
             .collect();
         assert_eq!(resolved.lines().collect::<Vec<_>>(), expected);
-        // Exercise a copied fake and ensure direct children are killed/reaped on failure too.
         let mut command = Command::new(guard.scratch.path().join("bin/codex"));
         guard.isolate(&mut command);
         let _agent = ChildGuard::new(spawn_fixture(
@@ -184,7 +182,6 @@ impl Drop for TmuxGuard {
         );
     }
 }
-// Concurrent forks can briefly inherit a copy's writable fd before exec closes it.
 fn spawn_fixture(command: &mut Command) -> Child {
     let deadline =
         std::time::Instant::now() + process::load_timeout(std::time::Duration::from_secs(1));

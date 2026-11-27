@@ -1,4 +1,3 @@
-//! Resolve overrides for the current home; explicit alternate homes stay isolated.
 use std::path::{Path, PathBuf};
 pub fn config(home: &Path, relative: &str) -> PathBuf {
     if std::env::var_os("HOME").as_deref() == Some(home.as_os_str()) {

@@ -1,4 +1,3 @@
-//! Read-only startup diagnostics: never create or migrate the history database.
 use super::Check;
 use crate::paths::Paths;
 use std::{fs, io, path::Path};

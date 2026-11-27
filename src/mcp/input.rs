@@ -1,4 +1,3 @@
-//! Signal stdin EOF before rmcp begins draining outstanding handlers.
 use std::{
     io,
     pin::Pin,

@@ -1,5 +1,3 @@
-//! Bound ordinary process storms too: many-core hosts otherwise run every probe at once.
-//! Keep the deliberate twenty-server storm separate from hook latency proofs.
 use std::{
     sync::{
         RwLock, RwLockReadGuard, RwLockWriteGuard,
@@ -27,7 +25,6 @@ pub enum Guard {
 pub fn enter(stress: bool) -> Guard {
     let deadline = Instant::now() + Duration::from_secs(50);
     loop {
-        // There is no protected data; one failed test must not poison other bodies.
         LOAD.clear_poison();
         if stress {
             if let Ok(guard) = LOAD.try_write() {

@@ -30,7 +30,6 @@ e2e_test!(byte_cwd_is_discovered, {
         .join(std::ffi::OsString::from_vec(b"bad-\xff".to_vec()));
     match fs::create_dir(&cwd) {
         Ok(()) => (),
-        // APFS rejects invalid UTF-8 at mkdir; parser coverage still runs on macOS.
         Err(error) if cfg!(target_os = "macos") && error.raw_os_error() == Some(libc::EILSEQ) => {
             eprintln!("skip live byte-cwd fixture: filesystem rejects invalid UTF-8 ({error})");
             return;
@@ -159,7 +158,6 @@ e2e_test!(oversized_frame_gets_error_before_close, {
         let value: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert!(value.get("result").is_some(), "payload {size}: {value}");
     }
-    // Keep writing bounded: daemon closes after reading the first byte over the limit.
     let _ = stream.write_all(&vec![b'x'; 1024 * 1024 + 1]);
     let mut response = String::new();
     BufReader::new(stream)

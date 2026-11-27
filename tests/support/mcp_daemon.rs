@@ -1,4 +1,3 @@
-//! Bounded fake daemon handshake shared by MCP lifecycle and contract tests.
 use crate::support::TmuxGuard;
 use serde_json::{Value, json};
 use std::{

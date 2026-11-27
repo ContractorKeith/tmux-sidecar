@@ -1,4 +1,3 @@
-//! Page stored candidates, then resolve project roots off the RPC and SQLite tasks.
 use super::{
     labels::Group,
     methods::{self, Filters},

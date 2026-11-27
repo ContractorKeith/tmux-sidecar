@@ -1,4 +1,3 @@
-//! Reuse the same agent inodes: macOS scans each fresh unsigned executable.
 use super::BoundedCommand;
 use std::{
     fs,
@@ -42,7 +41,6 @@ fn cache() -> &'static Path {
 }
 pub fn link_agents(bin: &Path) {
     for agent in ["claude", "codex", "grok", "opencode", "opencode.exe"] {
-        // A hard link preserves both the executable's name and its already-scanned inode.
         fs::hard_link(cache().join(agent), bin.join(agent)).unwrap();
     }
 }

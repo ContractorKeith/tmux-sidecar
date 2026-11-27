@@ -1,4 +1,3 @@
-//! Lock-free appenders; replay owns renamed files, never rewrites the live spool.
 use super::files;
 use crate::paths::Paths;
 use std::{
@@ -36,7 +35,6 @@ fn append_inner(
             bytes.push(b'\n');
         }
         bytes.extend_from_slice(line);
-        // One write with O_APPEND: frames cannot interleave with another appender.
         if file.write(&bytes)? != bytes.len() {
             return Err(io::Error::other("short spool append"));
         }
@@ -51,11 +49,8 @@ fn append_inner(
             Err(e) if e.kind() == io::ErrorKind::NotFound => (),
             Err(e) => return Err(e),
         }
-        // Replay may have read/unlinked an already-open inode. Retry the same
-        // nonce in the fresh live spool; SQLite receipts deduplicate either copy.
     }
 }
-/// Recover prior claims first, then atomically claim the live file.
 pub fn claim(state: &Path) -> io::Result<Vec<PathBuf>> {
     let mut claims = Vec::new();
     for entry in fs::read_dir(state)? {
@@ -84,7 +79,6 @@ pub fn claim(state: &Path) -> io::Result<Vec<PathBuf>> {
         super::signal::nonce()?
     ));
     fs::rename(&path, &claimed)?;
-    // Keep a live file for new appenders and clients inspecting spool health.
     files::regular(OpenOptions::new().create(true).append(true), &path)?;
     claims.push(claimed);
     Ok(claims)
@@ -110,7 +104,6 @@ pub fn reject(state: &Path, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)?;
     file.sync_all()
 }
-/// Test diagnostics must account for claimed data as well as the live spool.
 #[cfg(feature = "test-util")]
 pub fn drained(state: &Path) -> io::Result<bool> {
     if !read(state)?.is_empty() {

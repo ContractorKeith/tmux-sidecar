@@ -1,4 +1,3 @@
-//! README hook setup before any agent or daemon has run.
 use super::*;
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 #[test]
@@ -102,7 +101,6 @@ fn doctor_uses_tmux_override_and_checks_state_directory_permissions() {
     fixture(home, Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
     let pinned = home.join("pinned-tmux");
     fs::rename(home.join("bin/tmux"), &pinned).unwrap();
-    // Lifecycle locks and socket discovery belong beside the DB, not in runtime.
     for file in ["daemon.lock", "spawn.lock"] {
         fs::write(home.join("state").join(file), "").unwrap();
     }

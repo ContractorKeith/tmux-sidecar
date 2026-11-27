@@ -1,4 +1,3 @@
-//! Stop owned tmux servers before escalating only their recorded process trees.
 use super::{process, watchdog};
 use std::{
     collections::BTreeSet,
@@ -52,7 +51,6 @@ pub fn children(root: &Path, children: &[u32]) {
     terminate(&owned.into_iter().collect::<Vec<_>>());
 }
 pub fn fixture(root: &Path, server: Option<u32>, diagnose: bool) {
-    // A second Drop after watchdog cleanup must not invoke tmux with a deleted TMPDIR.
     if !root.exists() {
         return;
     }
@@ -85,7 +83,6 @@ pub fn fixture(root: &Path, server: Option<u32>, diagnose: bool) {
         stop.arg("-S").arg(root.join("tmux.sock"));
     }
     let _ = process::try_output(stop.arg("kill-server"));
-    // A daemon needs the original server key to accept stop; use the recorded socket when available.
     if let Ok(socket) = std::fs::read_to_string(root.join("tmux.socket")) {
         let _ = process::try_output(isolated(env!("CARGO_BIN_EXE_tmux-sidecar"), root).args([
             "--tmux-socket",

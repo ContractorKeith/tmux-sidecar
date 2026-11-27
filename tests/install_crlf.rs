@@ -1,4 +1,3 @@
-//! Both settings formats retain CRLF after install and edited uninstall.
 use std::{fs, path::Path};
 use tmux_sidecar::{install, model::AgentKind};
 #[test]

@@ -1,4 +1,3 @@
-//! A startup marker distinguishes a missing history DB from a first installation.
 use crate::{hook::files, paths::Paths};
 use std::{
     fs::{self, OpenOptions},
@@ -35,7 +34,6 @@ pub(super) fn created(paths: &Paths, recreated: bool) -> io::Result<()> {
     }
     Ok(())
 }
-// Called after hello validates the server. Hooks use verify(), never this output path.
 pub(crate) fn report(paths: &Paths) {
     let path = paths.runtime.join("history.notice");
     if files::read(&path).is_ok_and(|bytes| bytes == NOTICE.as_bytes())

@@ -139,7 +139,6 @@ async fn record(
         line.push(b'\n');
         Ok(line)
     };
-    // Exactly one O_APPEND write precedes live delivery and daemon spawning.
     let spooled = spool::append(paths, &frame(&signal)?);
     if let Err(error) = &spooled {
         let _ = super::log(

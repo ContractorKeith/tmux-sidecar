@@ -1,4 +1,3 @@
-//! Doctor against fake tmux, agent stores and socket peers.
 #[path = "support/doctor_fakes.rs"]
 mod fakes;
 use fakes::*;
@@ -39,7 +38,6 @@ fn doctor_on_complete_and_missing_fakes() {
             .contains("could not run tmux version probe"),
         "{tmux}"
     );
-    // Insecure runtime must be a reported check, not prevent all output.
     fs::set_permissions(root.path().join("run"), fs::Permissions::from_mode(0o755)).unwrap();
     let output = run(command(root.path()).args(["doctor", "--json"]));
     let checks: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();

@@ -1,4 +1,3 @@
-"""Execute README bash examples in accept.sh's scratch HOME, never real agent CLIs."""
 import errno
 import fcntl
 import hashlib
@@ -14,7 +13,6 @@ import sys
 import tarfile
 import time
 
-# Supply the not-yet-published archive using the binary acceptance just built.
 import tempfile
 sys.dont_write_bytecode = True
 from leak_check import cleanup
@@ -24,7 +22,6 @@ def run(binary, socket, root):
     home.mkdir()
     for directory in ['run', 'state']:
         (root / directory).mkdir(mode=0o700)
-    # Make doctor examples healthy without invoking agent CLIs or desktop notifications.
     for relative in ['.claude/projects', '.codex/sessions', '.grok/sessions']:
         (home / relative).mkdir(parents=True)
     for relative in ['.grok/sessions/session_search.sqlite', 'opencode.db']:
@@ -48,14 +45,12 @@ def run(binary, socket, root):
     with tarfile.open(archive, 'w:gz') as bundle:
         for source, name in [(binary, 'tmux-sidecar'), ('LICENSE', 'LICENSE'), ('README.md', 'README.md')]:
             bundle.add(source, arcname=name)
-    # Match the real aggregate manifest: no ./ prefix, with other platforms absent locally.
     (root / 'SHA256SUMS').write_text(''.join(
         f"{hashlib.sha256(archive.read_bytes()).hexdigest() if item == target else '0' * 64}  tmux-sidecar-v{version}-{item}.tar.gz\n"
         for item in targets))
     subprocess.run([binary, '--tmux-socket', socket, 'list', '--json'], env=env, check=True, timeout=5)
     blocks = re.findall(r'```bash\n(.*?)```', Path('README.md').read_text(), re.S)
     for block in blocks:
-        # These two blocks configure or launch the real Claude client, outside safe acceptance.
         if 'claude mcp add' in block or 'MCP_TOOL_TIMEOUT=' in block:
             print('README: external Claude example excluded', flush=True)
             continue
@@ -96,8 +91,6 @@ def run(binary, socket, root):
                     try:
                         os.write(master, b'q')
                     except OSError as error:
-                        # BSD reports EIO if the slave closed between poll and write.
-                        # The exit-status assertion below still catches UI failures.
                         if error.errno != errno.EIO:
                             raise
             assert child.wait(timeout=1) == 0, captured.decode(errors='replace')
@@ -108,7 +101,6 @@ def run(binary, socket, root):
             child.wait(timeout=5)
             os.close(master)
 
-    # A tmux configuration block is safe when sourced into the isolated server only.
     for index, block in enumerate(re.findall(r'```tmux\n(.*?)```', Path('README.md').read_text(), re.S)):
         config = root / f'tmux-{index}.conf'
         config.write_text(block)

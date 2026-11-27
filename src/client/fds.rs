@@ -1,4 +1,3 @@
-//! Bound inherited-descriptor cleanup before exec, including older Linux kernels.
 use std::io;
 pub(super) fn limit(value: i32) -> i32 {
     value.clamp(3, 65536)

@@ -45,7 +45,6 @@ async fn busy_scanner_drops_ticks_and_does_not_block_process_end() {
         .await
         .unwrap()
         .unwrap();
-    // A process-only run: no hook evidence, using a distinct pane/pid.
     worker
         .with(|s| {
             let mut run = s.active()?.remove(0);

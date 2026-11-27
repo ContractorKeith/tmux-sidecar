@@ -1,4 +1,3 @@
-//! Pin the MCP wait cap while sharing M4's ordinary/send client budgets.
 use super::{TmuxGuard, enabled, mcp_client::Mcp, mcp_daemon};
 use serde_json::{Value, json};
 use std::{

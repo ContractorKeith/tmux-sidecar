@@ -63,7 +63,6 @@ e2e_test!(stale_rows_warn_humans_and_refuse_actions, {
     fail_polls(&g);
     let run = list(&g)[0].clone();
     super::cli_verbs::fire(&g, &run, "Stop");
-    // Keep the stale interval long enough to inspect all surfaces before shutdown.
     super::lifecycle::stop(&g);
     let _daemon = ChildGuard::new(
         g.sidecar()

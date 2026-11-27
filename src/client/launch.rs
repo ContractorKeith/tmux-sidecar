@@ -1,4 +1,3 @@
-//! Shared detached-daemon launch policy for clients and hooks.
 use std::{ffi::OsStr, io, os::unix::process::CommandExt, process::Command};
 fn allowed(key: &OsStr) -> bool {
     let Some(key) = key.to_str() else {
@@ -22,7 +21,6 @@ pub(super) fn prepare(command: &mut Command) -> io::Result<()> {
     command
         .env_clear()
         .envs(std::env::vars_os().filter(|(key, _)| allowed(key)));
-    // getdtablesize can follow an agent's raised soft limit. Bound fallback work.
     // SAFETY: getdtablesize has no pointers and only queries the descriptor limit.
     let max_fd = super::fds::limit(unsafe { libc::getdtablesize() });
     // SAFETY: only async-signal-safe syscalls run after fork. Mark all fd >= 3

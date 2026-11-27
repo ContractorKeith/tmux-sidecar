@@ -1,5 +1,4 @@
 use std::{io, os::unix::net::UnixStream, path::Path, time::Duration};
-/// Unlike std's connect, this also bounds a connect to an orphaned/full backlog.
 pub fn connect(path: impl AsRef<Path>) -> io::Result<UnixStream> {
     connect_with_timeout(path.as_ref(), Duration::from_millis(250))
 }

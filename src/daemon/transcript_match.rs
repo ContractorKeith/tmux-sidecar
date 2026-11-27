@@ -12,7 +12,6 @@ pub fn agent(kind: AgentKind) -> Agent {
 pub fn assign(runs: &[AgentRun], sessions: &[Session]) -> Vec<(String, Session)> {
     let mut used = HashSet::new();
     let mut assigned = Vec::new();
-    // Reserve explicit identities and existing paths before assigning new transcripts.
     let mut ordered: Vec<_> = runs.iter().collect();
     ordered.sort_by_key(|r| {
         (
@@ -46,7 +45,6 @@ pub fn assign(runs: &[AgentRun], sessions: &[Session]) -> Vec<(String, Session)>
         });
         let reading = preferred.or_else(|| {
             sessions.iter().filter(matches).min_by_key(|s| {
-                // A resumed transcript can predate the process; prefer the nearest start.
                 (
                     s.started_at < (run.started_at / 1000) as i64,
                     s.started_at.abs_diff((run.started_at / 1000) as i64),
@@ -106,7 +104,6 @@ mod tests {
         earlier.id = "claude_code:old".into();
         earlier.started_at = 2;
         earlier.transcript_path = cwd.join("old.jsonl");
-        // Newest session first, as the scanner supplies them.
         let assigned = assign(&[old, fresh], &[session, earlier]);
         assert_eq!(
             assigned.iter().find(|(id, _)| id == "r2").unwrap().1.id,

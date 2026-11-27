@@ -10,7 +10,6 @@ use std::{
 use tokio::process::{Child, Command};
 pub use trigger::trigger_spawn;
 
-/// Locks live as long as their file; CLOEXEC prevents a spawned daemon inheriting them.
 pub struct FileLock(File);
 impl FileLock {
     pub fn try_acquire(path: &Path) -> io::Result<Self> {
@@ -38,16 +37,12 @@ impl Drop for FileLock {
     }
 }
 
-// Binding the socket hands lifecycle ownership to the daemon. Cancellation before
-// that point sends SIGTERM and reaps asynchronously, allowing normal cleanup.
 struct StartingChild {
     child: Option<Child>,
     socket: PathBuf,
 }
 impl StartingChild {
     fn release(&mut self) {
-        // Tokio's Unix orphan queue reaps a dropped Child after SIGCHLD. There is
-        // no waiting thread, and kill_on_drop is false for a handed-over daemon.
         drop(self.child.take());
     }
 }
@@ -115,8 +110,6 @@ pub(super) async fn ensure(socket: &Path, paths: &Paths) -> io::Result<()> {
         if let Some(child) = &mut starting.child
             && let Some(status) = child.try_wait()?
         {
-            // A detached hook trigger can win the lifetime lock after our connect.
-            // Join that startup rather than reporting the losing child's lock error.
             if FileLock::try_acquire(&paths.state.join("daemon.lock"))
                 .is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock)
             {

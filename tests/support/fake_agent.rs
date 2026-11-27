@@ -1,4 +1,3 @@
-//! Copied executable retains an actual agent comm while firing fixture hooks.
 use std::{
     fs,
     path::PathBuf,

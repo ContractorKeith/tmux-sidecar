@@ -52,7 +52,6 @@ e2e_test!(
             400,
             "hook.log:\n{log}"
         );
-        // Simulate a crash after claim, before any signal commits. Recovery must replay it.
         fs::rename(
             &spool,
             guard.scratch.path().join("state/spool.replaying.99999"),
@@ -61,7 +60,6 @@ e2e_test!(
         drop(spawn_lock);
         list(&guard);
         until!(|| count(&guard) == 400);
-        // Replaying the same invocations again must not duplicate their receipts/history.
         fs::write(&spool, text).unwrap();
         until!(|| tmux_sidecar::hook::spool::drained(spool.parent().unwrap()).unwrap());
         assert_eq!(count(&guard), 400);

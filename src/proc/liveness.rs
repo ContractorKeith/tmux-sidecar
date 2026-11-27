@@ -1,5 +1,4 @@
 use std::io;
-/// A zombie has exited even while its pid still responds to signal 0.
 pub fn running(pid: i32) -> io::Result<bool> {
     if !super::alive(pid) {
         return Ok(false);
@@ -14,7 +13,6 @@ fn state_running(pid: i32) -> io::Result<bool> {
 fn linux_stat(result: io::Result<Vec<u8>>) -> io::Result<bool> {
     let stat = match result {
         Ok(stat) => stat,
-        // A process can disappear after kill(0), or after opening its proc file.
         Err(error)
             if error.kind() == io::ErrorKind::NotFound
                 || error.raw_os_error() == Some(libc::ESRCH) =>

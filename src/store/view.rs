@@ -1,4 +1,3 @@
-//! Stream UI-relevant columns into a digest; never allocate or deep-compare JSON.
 use super::*;
 use std::hash::{DefaultHasher, Hash, Hasher};
 impl Store {

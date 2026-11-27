@@ -18,6 +18,7 @@ Milestones M0–M7 are GitHub issues #1–#8.
 ```bash
 scripts/accept.sh                                  # the acceptance: worker, reviewer and CI run this
 cargo fmt --all --check
+python3 scripts/comment_lint.py                    # ADR-0003 comment ratchet
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --features test-util           # skips real tmux e2e; use accept.sh or TMUX_SIDECAR_E2E=1
 TMUX_SIDECAR_E2E=1 cargo test --locked --features test-util --test e2e  # real tmux on an isolated -L socket
@@ -30,12 +31,18 @@ cargo build --release                              # target/release/tmux-sidecar
 - `docs/PLAN.md` — goal, user stories, feature matrix, architecture, data model, CLI and
   socket contract, milestones, testing, acceptance.
 - `CONTEXT.md` — glossary. Use its words in code, issues and PRs ("agent run", never "session").
-- `docs/adr/` — daemon behind a socket; hooks, not screen scraping.
+- `docs/adr/` — 0001 daemon behind a socket; 0002 hooks, not screen scraping; 0003 no code
+  comments; 0004–0009 decision records moved out of code comments (lifecycle, hook spool,
+  task ownership, state/paths/install rules, platform differences, test harness).
 - `docs/rpc.md` — the JSON-RPC contract (from M1).
 - Session logs: `~/Projects/worklog/projects/tmux-sidecar.md` (not in this repo).
 
 ## Conventions & Gotchas
 
+- No code comments (ADR-0003). Only `// SAFETY:` on unsafe blocks; CLI help goes in
+  `#[command(about = "...")]`. Record a non-obvious why in the matching ADR, file an issue for a
+  shortcut. `scripts/comment_lint.py` ratchets against `scripts/comment-baseline.txt`; the
+  `/delete-comment` skill runs an audit pass.
 - `src/engine/` is pure (signals + pane snapshots + clock in, state out). Only `store.rs`
   touches SQLite, only `tmux.rs` runs tmux, only `proc.rs` reads processes.
 - Every client goes through the socket. Nothing but the daemon reads the DB.

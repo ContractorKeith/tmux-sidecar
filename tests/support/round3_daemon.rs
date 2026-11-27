@@ -41,7 +41,6 @@ e2e_test!(spawn_sanitizes_environment_and_closes_inherited_fds, {
     );
     assert!(!g.scratch.path().join("home/leaked-fd").exists());
     super::lifecycle::stop(&g);
-    // Hook-triggered starts use the same launch policy.
     let run = super::binary_recovery::current_run(&g);
     super::cli_verbs::fire(&g, &serde_json::to_value(&run).unwrap(), "Stop");
     until!(|| g.scratch.path().join("run/sock").exists());
@@ -130,7 +129,6 @@ e2e_test!(raised_soft_fd_limit_does_not_stall_daemon_spawn, {
             let mut limit = limit.assume_init();
             limit.rlim_cur = limit.rlim_max;
             if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
-                // macOS may advertise infinity but enforce kern.maxfilesperproc.
                 if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINVAL) {
                     return Err(std::io::Error::last_os_error());
                 }

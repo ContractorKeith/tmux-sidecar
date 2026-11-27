@@ -141,7 +141,6 @@ fn ignores_nested_helpers_and_handles_missing_or_cyclic_ancestors() {
         detect(std::slice::from_ref(&pane), &processes, &[], 1).start[0].agent_pid,
         20
     );
-    // Independent agents at different depths still use the specified newest-pid rule.
     processes.insert(
         60,
         Process {

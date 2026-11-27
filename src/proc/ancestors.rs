@@ -87,8 +87,6 @@ fn mac_process(pid: u32) -> io::Result<Option<Process>> {
         if error.raw_os_error() == Some(libc::ESRCH)
             || error.kind() == io::ErrorKind::PermissionDenied
         {
-            // Ancestors can exit or cross into a root-owned launcher. Keep the
-            // readable nearest-parent chain instead of discarding a found agent.
             return Ok(None);
         }
         return Err(error);
@@ -115,7 +113,6 @@ mod tests {
         // SAFETY: getppid has no arguments or pointers and only queries our parent.
         let parent = unsafe { libc::getppid() };
         assert_eq!(walk.first().map(|p| p.0), Some(parent as u32));
-        // This module uses only libproc. Keep subprocess APIs out of the hook walk.
         let source = include_str!("ancestors.rs")
             .split("#[cfg(all(test")
             .next()

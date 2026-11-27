@@ -1,4 +1,3 @@
-//! Every non-daemon reader uses this transport; only list auto-spawns in M1.
 mod fds;
 mod launch;
 mod spawn;
@@ -133,7 +132,6 @@ async fn identified(
             hello["server_key"]
         )));
     }
-    // Internal clients leave startup warnings for a client that may auto-spawn.
     if spawn {
         crate::daemon::recovery::report(paths);
     }
@@ -159,7 +157,6 @@ pub(crate) async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + U
     params: Value,
 ) -> io::Result<Value> {
     let bytes = rpc::request_frame(method, params)?;
-    // A rejection may already be queued when the peer closes before hello's write.
     let write_error = match stream.get_mut().write_all(&bytes).await {
         Ok(()) => None,
         Err(e)
@@ -194,7 +191,6 @@ pub(crate) async fn exchange<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + U
     }
 }
 
-// One warning per client process, including UI reconnects and MCP calls.
 fn warn_version(hello: &Value) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static WARNED: AtomicBool = AtomicBool::new(false);

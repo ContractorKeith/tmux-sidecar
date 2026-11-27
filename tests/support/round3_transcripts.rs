@@ -22,7 +22,6 @@ e2e_test!(
         );
         until!(|| list(&g)[0]["state"] == "blocked");
         let blocked_at = list(&g)[0]["state_since"].as_u64().unwrap();
-        // session-board timestamps have second precision; interruption must follow the hook.
         until!(|| tmux_sidecar::daemon::now() / 1000 > blocked_at / 1000);
         let timestamp = String::from_utf8(
             output(std::process::Command::new("date").args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])).stdout,

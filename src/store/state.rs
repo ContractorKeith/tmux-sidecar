@@ -30,7 +30,6 @@ impl Store {
             [run_id(id).map_err(io::Error::other)?], |r| r.get(0),
         ).map_err(io::Error::other)
     }
-    /// Caller owns the transaction, so history and run state become visible together.
     pub(super) fn change(
         &self,
         run: &AgentRun,

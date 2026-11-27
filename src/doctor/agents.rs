@@ -1,4 +1,3 @@
-//! Optional agents are skipped until a managed hook marker or explicit request exists.
 use super::{Check, hooks, inspect};
 use crate::model::AgentKind;
 use std::{

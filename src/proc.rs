@@ -1,4 +1,3 @@
-//! M0: process snapshot adapter for Linux and macOS.
 mod ancestors;
 pub(crate) mod bounded;
 mod cwd;
@@ -61,7 +60,6 @@ impl PsProcessTree {
     }
 }
 
-/// Malformed process rows are transient; preserve the rest of the snapshot.
 pub fn parse(text: &str) -> ProcessSnapshot {
     text.lines()
         .filter_map(|line| {

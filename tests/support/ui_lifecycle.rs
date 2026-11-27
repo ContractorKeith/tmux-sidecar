@@ -1,4 +1,3 @@
-//! Exercise cleanup in a real pane, where raw mode and the alternate screen matter.
 use super::lifecycle::list;
 use super::{TmuxGuard, enabled};
 use crate::support::output;
@@ -15,7 +14,6 @@ e2e_test!(ui_signals_restore_raw_mode_and_alternate_screen, {
     for (name, signal) in [("term", libc::SIGTERM), ("hup", libc::SIGHUP)] {
         let pidfile = guard.scratch.path().join(format!("ui-{name}.pid"));
         let modes = guard.scratch.path().join(format!("ui-{name}.modes"));
-        // Foreground exec records the UI pid without a background terminal job.
         let inner = format!(
             "echo $$ > {}; exec {} --tmux-socket {} ui",
             quote(&pidfile),

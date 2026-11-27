@@ -1,7 +1,6 @@
 use super::store_worker::StoreWorker;
 use crate::hook::{context, signal::Signal, spool};
 use std::{io, path::PathBuf};
-/// Replay failures are logged, never charged to tmux/process poll health.
 pub async fn replay(state: PathBuf, runtime: PathBuf, socket: PathBuf, worker: &StoreWorker) {
     if let Err(error) = inner(state.clone(), runtime, socket, worker).await {
         let _ = tokio::task::spawn_blocking(move || {
@@ -31,7 +30,6 @@ async fn inner(
         )
         .await
         {
-            // Retain the failed claim, but let independent claims make progress.
             failure.get_or_insert(error);
         }
     }

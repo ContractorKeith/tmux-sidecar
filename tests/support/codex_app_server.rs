@@ -40,7 +40,6 @@ e2e_test!(
             }
         }
         super::lifecycle::stop(&g);
-        // Exercise the same store seam used by completed scanner results after hook delivery.
         let store =
             tmux_sidecar::store::Store::open(&g.scratch.path().join("state/tmux-sidecar.db"))
                 .unwrap();

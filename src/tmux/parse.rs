@@ -35,11 +35,9 @@ pub fn parse_scan(mut input: &[u8]) -> io::Result<PaneScan> {
         input = input.strip_prefix(b"\n").ok_or_else(invalid)?;
         let text: Vec<_> = fields.iter().map(|f| String::from_utf8_lossy(f)).collect();
         let pane_id = text[1].to_string();
-        // Without a usable id we cannot protect the previous run from this incomplete tick.
         if !matches!(pane_id.parse(), Ok(crate::model::RunSelector::Pane(_))) {
             return Err(invalid());
         }
-        // Dead panes are authoritative exits even if their old pid was reused.
         if text[8] == "1" {
             continue;
         }

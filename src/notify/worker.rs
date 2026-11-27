@@ -1,4 +1,3 @@
-//! One notification consumer; backend execution is replaceable by a recording fake.
 pub(super) use super::backend::Backend;
 use super::{Config, Debounce};
 use std::{io, path::PathBuf, time::Instant};
@@ -134,7 +133,6 @@ async fn deliver(
         )
     };
     if waiting {
-        // Deliver the summary to every affected tmux session, not just its first pane.
         let mut failure = None;
         for event in batch {
             if let Err(error) = backend

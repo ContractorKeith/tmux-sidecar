@@ -51,7 +51,6 @@ pub(super) fn fire_on_pane(
         "hook {format} {}: {elapsed} ms (e2e wall clock)",
         fixture.display()
     ));
-    // Shared-runner scheduling is outside the hook's tested internal deadline.
     assert!(elapsed < 1000, "hook wall clock exceeded 1000 ms: {result}");
     assert_eq!(fields[2], "0");
     assert_eq!(fields[3], "0");
@@ -95,7 +94,6 @@ e2e_test!(every_fixture_is_delivered_by_its_real_ancestor, {
         .collect();
         files.sort();
         for fixture in files {
-            // Auxiliary title turns are intentionally ignored, not delivered evidence.
             if fixture.file_stem().unwrap() == "title-notify" {
                 continue;
             }
@@ -110,7 +108,6 @@ e2e_test!(every_fixture_is_delivered_by_its_real_ancestor, {
             count += 1;
         }
     }
-    // A busy daemon may legitimately make a hook spool; allow its next tick to replay.
     let spool = guard.scratch.path().join("state/spool.ndjson");
     until!(|| tmux_sidecar::hook::spool::drained(spool.parent().unwrap()).unwrap());
     super::lifecycle::stop(&guard);
@@ -141,7 +138,6 @@ e2e_test!(down_daemon_spools_replays_in_order_and_deduplicates, {
     let runs = super::lifecycle::list(&guard);
     let pid = runs[0]["agent_pid"].as_u64().unwrap();
     super::lifecycle::stop(&guard);
-    // Hold the daemon lifetime lock to exercise spooling without racing auto-start.
     let lock = tmux_sidecar::client::FileLock::try_acquire(
         &guard.scratch.path().join("state/daemon.lock"),
     )
@@ -166,7 +162,6 @@ e2e_test!(down_daemon_spools_replays_in_order_and_deduplicates, {
     drop(lock);
     let _ = super::lifecycle::list(&guard);
     until!(|| tmux_sidecar::hook::spool::drained(path.parent().unwrap()).unwrap());
-    // Simulate a crash between committing the records and acknowledging the spool.
     fs::write(&path, &bytes).unwrap();
     until!(|| tmux_sidecar::hook::spool::drained(path.parent().unwrap()).unwrap());
     super::lifecycle::stop(&guard);

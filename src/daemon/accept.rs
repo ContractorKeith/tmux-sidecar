@@ -1,4 +1,3 @@
-//! Bound connections and keep descriptor exhaustion from ending the daemon.
 use super::{
     store_worker::StoreWorker,
     transport::{self, Call},
@@ -52,7 +51,6 @@ impl Acceptor {
         }
     }
     pub fn retry(&mut self, error: io::Error, state: &Path) {
-        // Free one descriptor so EMFILE itself can be recorded in the rotating log.
         drop(self.spare.take());
         let _ = super::log::write(state, &format!("accept failed; retrying: {error}"));
         self.spare = File::open("/dev/null").ok();
@@ -82,7 +80,6 @@ mod tests {
                 count += n;
             }
             assert!(count > 0);
-            // The old immediate nonblocking write loses the frame before the reader drains.
             let rejecting = tokio::spawn(reject(server));
             tokio::task::yield_now().await;
             let mut bytes = Vec::new();

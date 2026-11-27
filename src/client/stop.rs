@@ -3,7 +3,6 @@ use std::os::unix::fs::MetadataExt;
 fn identity(path: &Path) -> Option<(u64, u64)> {
     std::fs::metadata(path).ok().map(|m| (m.dev(), m.ino()))
 }
-/// Stop is idempotent and waits on the endpoint of the verified connection.
 pub async fn stop(socket: &Path, paths: &Paths) -> io::Result<bool> {
     let (mut stream, endpoint) = match identified(socket, paths, false).await {
         Ok(connection) => connection,

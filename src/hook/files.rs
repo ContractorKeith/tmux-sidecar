@@ -1,4 +1,3 @@
-//! Hook-owned files must never follow links or block on a FIFO.
 use std::{
     fs::{File, OpenOptions},
     io,

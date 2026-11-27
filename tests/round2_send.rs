@@ -24,7 +24,6 @@ fn unconfirmed_send_restores_read_waiting_without_attention_or_notification() {
     store.ack(&run, 150).unwrap();
     let run = store.list().unwrap().remove(0);
     store.sent(&run, 200).unwrap();
-    // A duplicate receipt is not new confirmation, even when replayed after send.
     store.signal(&stop).unwrap();
     store.maintain(&[], 30_201, 1_800_000).unwrap();
     let restored = store.list().unwrap().remove(0);

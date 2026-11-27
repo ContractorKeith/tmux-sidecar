@@ -1,4 +1,3 @@
-//! Line alignment and three-line unified hunks, including empty files and missing newlines.
 use std::{collections::HashMap, path::Path};
 fn lines<'a>(old: &[&'a str], new: &[&'a str]) -> Vec<(char, &'a str)> {
     let mut positions: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -14,7 +13,6 @@ fn lines<'a>(old: &[&'a str], new: &[&'a str]) -> Vec<(char, &'a str)> {
             b += 1;
             continue;
         }
-        // Resynchronize at the nearest shared line, retaining unchanged interior lines.
         let mut next = (old.len(), new.len());
         let mut distance = usize::MAX;
         for (offset, line) in old[a..].iter().enumerate() {

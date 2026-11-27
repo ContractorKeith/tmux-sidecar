@@ -1,4 +1,3 @@
-//! Desktop notifications consume committed changes outside the store and RPC tasks.
 mod backend;
 #[cfg(test)]
 mod burst_tests;

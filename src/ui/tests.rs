@@ -47,7 +47,6 @@ fn snapshot(name: &str, app: &App, width: u16) {
         std::fs::read_to_string(path).unwrap(),
         "snapshot {name}"
     );
-    // NO_COLOR leaves every cell at terminal-default foreground/background.
     if app.color {
         use ratatui::style::Color;
         for (text, color) in [
@@ -145,7 +144,7 @@ fn selection_survives_reordering_and_clamps_after_removal() {
 #[test]
 fn project_selection_stays_in_project_after_live_update() {
     let mut app = fixture();
-    app.selected = 3; // r1 under /work/alpha, after its attention duplicate.
+    app.selected = 3;
     assert_eq!(app.selected_run().unwrap().run.id, "r1");
     let mut data = app.data.clone();
     data.runs[0].run.last_assistant_text = "New answer".into();

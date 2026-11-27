@@ -100,7 +100,6 @@ e2e_test!(parallel_stop_start_twenty_cycles, true, {
     if !enabled() {
         return;
     }
-    // Twenty independent servers churn concurrently; each gets three complete cycles.
     let (send, receive) = std::sync::mpsc::channel();
     let mut workers = Vec::new();
     for _ in 0..20 {

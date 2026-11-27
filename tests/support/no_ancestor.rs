@@ -1,4 +1,3 @@
-//! A detached non-agent helper avoids inheriting the coding agent running this test.
 use super::{TmuxGuard, process::ChildGuard, watchdog};
 use std::{
     fs,

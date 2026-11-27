@@ -1,4 +1,3 @@
-//! State transitions depend only on evidence and the supplied clock.
 use crate::model::{AgentKind, AgentRun, AgentState};
 use AgentKind::*;
 use AgentState::*;
@@ -47,7 +46,6 @@ pub fn transition(run: &AgentRun, evidence: Evidence<'_>, now: u64) -> (AgentSta
                 has_hooks: false,
                 at,
             } => {
-                // Re-reading the same completed turn must not undo clock-derived idle.
                 if run.state == Done && run.state_source != "transcript" {
                     Done
                 } else if run.state == Idle

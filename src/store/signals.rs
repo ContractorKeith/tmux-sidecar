@@ -9,7 +9,6 @@ impl Store {
         })().map_err(|e|db_error(&self.path,e))
     }
 
-    /// Receipt and signal commit together; replay can safely repeat after a crash.
     pub fn signal(&self, signal: &Signal) -> io::Result<()> {
         self.record_signal(signal).map(|_| ())
     }
@@ -110,7 +109,6 @@ impl Store {
                 },
                 signal.at,
             );
-            // Detached plugin hosts can update a turn but cannot end the pane's process.
             let state = if state == AgentState::Done && !signal.pane_verified {
                 original.state
             } else {

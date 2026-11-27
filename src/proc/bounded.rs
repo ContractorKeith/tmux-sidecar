@@ -1,4 +1,3 @@
-//! Deadline-bound probes kill their child on cancellation and drain both pipes.
 use std::{
     io,
     process::{Command, Output},
