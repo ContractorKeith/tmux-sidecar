@@ -49,7 +49,7 @@ cargo build --release                              # target/release/tmux-sidecar
 - `tmux-sidecar hook` always exits 0 and prints nothing. Input has a one-second inactivity
   timeout and 64 MiB cap; the 200 ms delivery budget starts after input. It spools when
   the daemon is down.
-- rusqlite stays on session-board's version (0.38, bundled); two `libsqlite3-sys` cannot link.
+- session-board is pinned by `rev` to a07d02c (main after `Source::scan_files`, #130); move to a tag at its next release. rusqlite stays on its version (0.38, bundled); two `libsqlite3-sys` cannot link.
 - Tests never touch the real `~/.claude`, `~/.codex`, `~/.grok`, `~/.config/opencode` or the
   default tmux server: set `HOME`, `TMUX_SIDECAR_RUNTIME_DIR`, `TMUX_SIDECAR_STATE_DIR` and use
   `tmux -L tsx-<random>`. Assert fake agents are first on PATH before each e2e run.

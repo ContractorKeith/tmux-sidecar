@@ -1741,7 +1741,7 @@ dependencies = [
 [[package]]
 name = "session-board"
 version = "0.1.0"
-source = "git+https://github.com/ContractorKeith/session-board?tag=v0.1.0#83e655311437f1369cddf599ef3abf934f533a70"
+source = "git+https://github.com/ContractorKeith/session-board?rev=a07d02c6a0e86e107706bc6af37c97c4c3ac7b53#a07d02c6a0e86e107706bc6af37c97c4c3ac7b53"
 dependencies = [
  "clap",
  "crossterm",

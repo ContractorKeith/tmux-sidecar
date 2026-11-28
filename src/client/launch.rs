@@ -31,7 +31,13 @@ pub(super) fn prepare(command: &mut Command) -> io::Result<()> {
                 return Err(io::Error::last_os_error());
             }
             #[cfg(target_os = "linux")]
-            let range = if libc::close_range(3, u32::MAX, libc::CLOSE_RANGE_CLOEXEC as i32) == 0 {
+            let range = if libc::syscall(
+                libc::SYS_close_range,
+                3 as libc::c_uint,
+                libc::c_uint::MAX,
+                libc::CLOSE_RANGE_CLOEXEC,
+            ) == 0
+            {
                 Ok(())
             } else {
                 Err(io::Error::last_os_error())

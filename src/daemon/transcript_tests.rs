@@ -122,3 +122,24 @@ async fn blocked_hooked_claude_is_scanned_for_interruption() {
     );
     worker.close().await.unwrap();
 }
+#[test]
+fn transcripts_older_than_the_window_are_not_parsed() {
+    let root = tempfile::tempdir().unwrap();
+    let old = root.path().join("old.jsonl");
+    let fresh = root.path().join("fresh.jsonl");
+    for path in [&old, &fresh] {
+        std::fs::write(path, "{}\n").unwrap();
+    }
+    let now = SystemTime::now();
+    std::fs::File::options()
+        .write(true)
+        .open(&old)
+        .unwrap()
+        .set_modified(now - Duration::from_secs(3 * 86_400))
+        .unwrap();
+    let cutoff = now.checked_sub(Duration::from_secs(86_400));
+    assert!(!recent(&old, cutoff));
+    assert!(recent(&fresh, cutoff));
+    assert!(recent(&root.path().join("missing.jsonl"), cutoff));
+    assert!(recent(&old, None));
+}

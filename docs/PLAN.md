@@ -148,7 +148,7 @@ Rules that hold the shape:
 | rusqlite 0.38 (bundled) | store. Must match session-board's version: two `libsqlite3-sys` versions cannot link. |
 | ratatui 0.30, crossterm 0.29 | `ui`; same as sboard |
 | rmcp | official Rust MCP SDK for the stdio server; hand-rolling MCP framing costs more |
-| session-board (git, tag v0.1.0) | transcript readers and status derivation for all four agents |
+| session-board (git, rev a07d02c; tag at its next release) | transcript readers and status derivation for all four agents |
 | toml | config and Codex `config.toml` editing (`toml_edit` if comments must survive) |
 | libc | peer uid check on the socket, `getppid` chain |
 | tempfile (dev) | isolated homes and state dirs in tests |
