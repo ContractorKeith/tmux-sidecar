@@ -70,7 +70,6 @@ fn apply(signal: &mut super::signal::Signal, chain: &[(u32, Process)], pane_pid:
         let nearest = chain
             .iter()
             .position(|(_, p)| proc::agent_kind(&p.comm).is_some());
-        // Failed lookups do not prove orphaning. A direct child of init does.
         signal.orphaned = pane_pid.is_some() || nearest.is_some_and(|i| chain[i].1.ppid == 1);
         if signal.orphaned
             && let Some(i) = nearest

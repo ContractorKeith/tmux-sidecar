@@ -96,9 +96,7 @@ e2e_test!(hook_fallback_probes_stay_silent, {
         let _ = fs::remove_file(g.scratch.path().join(file));
     }
     let run = current_run(&g);
-    // fire asserts the hook's stdout/stderr are empty as well as its latency and exit code.
     super::cli_verbs::fire(&g, &serde_json::to_value(&run).unwrap(), "Stop");
-    // Hook startup is detached; own its lifecycle before scratch removal.
     until!(|| g.scratch.path().join("run/sock").exists());
     super::lifecycle::stop(&g);
 });

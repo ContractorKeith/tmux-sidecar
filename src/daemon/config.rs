@@ -8,7 +8,6 @@ fn error(path: &std::path::Path, message: impl std::fmt::Display) -> io::Error {
         .join(" ");
     io::Error::other(format!("config {}: {reason}", path.display()))
 }
-/// Shared validation keeps every duration safe before constructing timers.
 pub fn validate(path: &std::path::Path) -> io::Result<toml::Table> {
     let table = match fs::read_to_string(path) {
         Ok(text) => toml::from_str::<toml::Table>(&text).map_err(|e| error(path, e))?,

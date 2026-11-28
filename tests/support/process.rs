@@ -98,7 +98,6 @@ fn reader(
     });
     receive
 }
-/// Bound both process exit and pipe EOF: a detached descendant must not hold up CI.
 pub fn output(command: &mut Command) -> Output {
     try_output(command)
         .unwrap_or_else(|error| panic!("{command:?}: {error}; {}", diagnostics(command)))
@@ -194,13 +193,11 @@ e2e_test!(timeout_kills_and_reaps_the_owned_process, {
     assert!(start.elapsed() < Duration::from_secs(2));
 });
 
-// Direct writes remain visible if the test harness is waiting on a hung child.
 pub fn stage(message: &str) {
     use std::io::Write;
     let _ = writeln!(std::io::stderr(), "{message}");
 }
 
-// Keep load tuning bounded below the per-test 60-second watchdog.
 pub fn load_timeout(base: Duration) -> Duration {
     let multiplier = std::env::var("TMUX_SIDECAR_TEST_TIMEOUT_MULTIPLIER")
         .ok()

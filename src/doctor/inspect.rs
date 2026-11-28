@@ -7,7 +7,6 @@ pub(super) fn tmux_version(text: &str) -> io::Result<String> {
     if version == "master" {
         return Ok("tmux master: unknown build, assumed current".into());
     }
-    // OpenBSD's base-system releases include tmux >=3.3 starting with 7.3.
     let (version, minimum) = if let Some(v) = version.strip_prefix("openbsd-") {
         (v, (7, 3))
     } else {
@@ -44,7 +43,6 @@ pub(super) fn permissions(path: &Path, uid: u32) -> io::Result<String> {
 }
 pub(super) fn readable(path: &Path) -> io::Result<String> {
     let meta = fs::metadata(path)?;
-    // Check mode bits as well as opening: tests may run with elevated privileges.
     if meta.mode() & 0o444 == 0 || (meta.is_dir() && meta.mode() & 0o111 == 0) {
         return Err(io::Error::other(format!(
             "{} is unreadable",
@@ -130,7 +128,6 @@ pub(super) async fn local(home: &Path, binary: &Path, requested: &[AgentKind]) -
     checks
 }
 
-// access checks the current uid, ACLs and read-only mounts without modifying history.
 pub(super) fn writable(path: &Path) -> io::Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let meta =

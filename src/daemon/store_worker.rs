@@ -1,4 +1,3 @@
-//! One blocking owner keeps SQLite open, queries, transactions and close off tokio.
 use crate::store::Store;
 use std::{io, path::PathBuf, sync::mpsc};
 use tokio::sync::{broadcast, oneshot};
@@ -85,8 +84,6 @@ impl StoreWorker {
         job: impl FnOnce(&Store) -> T + Send + 'static,
     ) -> io::Result<T> {
         let _guard = self.mutation.lock().await;
-        // Only sends hold run locks. Acquire those locks in stable order; the
-        // mutation gate prevents a send registering a new lock until this job ends.
         let mut locks: Vec<_> = self
             .locks
             .lock()

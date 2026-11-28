@@ -32,7 +32,6 @@ pub fn target(path: &Path) -> io::Result<PathBuf> {
     }
     Err(io::Error::other("too many config symlinks"))
 }
-// New targets resolve existing parent symlinks just like existing files do.
 fn canonical_missing(path: &Path) -> io::Result<PathBuf> {
     let mut ancestor = path;
     let mut missing = Vec::new();

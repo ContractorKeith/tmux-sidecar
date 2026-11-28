@@ -34,7 +34,6 @@ pub fn current(socket: &Path) -> io::Result<Paths> {
     Ok(paths)
 }
 
-/// Refuse symlinks and insecure existing directories; never repair an untrusted runtime.
 pub fn prepare(paths: &Paths) -> io::Result<()> {
     secure_dir(&paths.runtime, uid())?;
     secure_dir(&paths.state, uid())

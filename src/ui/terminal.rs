@@ -1,4 +1,3 @@
-//! Restore the terminal before printing panic diagnostics or returning on a signal.
 use crossterm::{execute, terminal};
 use std::{io, panic::PanicHookInfo, sync::Arc};
 type Hook = Arc<dyn Fn(&PanicHookInfo<'_>) + Send + Sync>;
@@ -28,7 +27,6 @@ impl Restore {
 impl Drop for Restore {
     fn drop(&mut self) {
         restore();
-        // set_hook is forbidden while unwinding; the installed hook already chained.
         if !std::thread::panicking() {
             let previous = self.0.clone();
             std::panic::set_hook(Box::new(move |info| previous(info)));

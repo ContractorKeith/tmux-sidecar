@@ -1,4 +1,3 @@
-//! Bounded tmux mutations, always against the explicitly selected server.
 use std::{io, path::Path, time::Duration};
 pub(crate) async fn output(socket: &Path, args: &[&str]) -> io::Result<String> {
     let output = tokio::time::timeout(
@@ -85,8 +84,6 @@ pub(crate) async fn waiting(
         if let Some((name, attached)) = client.split_once('\t')
             && attached == session.trim()
         {
-            // display-message expands tmux formats even with argv. Escape # so the
-            // message is literal text, including any future user-provided names.
             let literal = message.replace('#', "##");
             output(socket, &["display-message", "-c", name, "--", &literal]).await?;
         }

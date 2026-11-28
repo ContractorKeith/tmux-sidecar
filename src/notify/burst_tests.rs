@@ -1,4 +1,3 @@
-//! Public worker seam: a queued burst must flush even without another event.
 use super::*;
 use serde_json::json;
 use std::sync::{Arc, Mutex};

@@ -138,7 +138,6 @@ fn dump_and_cleanup(name: &str, scope: ThreadId) {
         ));
         super::cleanup::fixture(&fixture.root, fixture.server_pid, true);
     }
-    // Terminal/daemon roots have stopped gracefully before any remaining children escalate.
     if let Some(fixture) = fixtures.first() {
         super::cleanup::children(&fixture.root, &children);
     } else {

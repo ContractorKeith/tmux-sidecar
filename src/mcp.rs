@@ -1,4 +1,3 @@
-//! Stdio MCP tools are a thin adapter over the per-tmux-server RPC socket.
 mod input;
 mod tools;
 use crate::{client, paths::Paths};
@@ -79,7 +78,6 @@ impl ServerHandler for Sidecar {
                 })
                 .map_err(|error| client::connected_error(method, error))
             } else {
-                // Share the CLI's ordinary and send budgets and outcome-unknown errors.
                 client::request(&self.socket, &self.paths, method, params, true).await
             }
         };

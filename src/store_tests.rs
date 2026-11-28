@@ -30,7 +30,6 @@ fn migrates_reopens_wal_and_preserves_history_and_pane_names() {
     let run = engine::detect(&panes, &processes, &[], 100).start.remove(0);
     let id = store.insert(&run).unwrap();
     store.name_pane(42, "%0", Some("test")).unwrap();
-    // Reopen while the writer remains open: committed data must be read from WAL.
     assert!(db.with_extension("db-wal").exists());
     let reopened = Store::open(&db).unwrap();
     assert_eq!(reopened.list().unwrap()[0].id, id);
@@ -130,7 +129,7 @@ fn failed_tick_rolls_back_and_write_errors_name_database() {
     )]
     .into();
     let mut changes = engine::detect(std::slice::from_ref(&pane), &processes, &[], 1);
-    changes.start.push(changes.start[0].clone()); // uniqueness fails after the first insert
+    changes.start.push(changes.start[0].clone());
     let error = store
         .apply(std::slice::from_ref(&pane), &changes, 1)
         .unwrap_err()

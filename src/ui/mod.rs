@@ -1,4 +1,3 @@
-//! Subscription-driven terminal client. All run data comes from the daemon socket.
 mod app;
 mod input;
 mod render;
@@ -54,7 +53,6 @@ async fn action(
     Ok(false)
 }
 pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
-    // Register before entering raw mode so termination always returns through Restore.
     use tokio::signal::unix::{SignalKind, signal};
     let mut term = signal(SignalKind::terminate())?;
     let mut hup = signal(SignalKind::hangup())?;
@@ -72,7 +70,6 @@ pub async fn run(socket: PathBuf, paths: Paths) -> io::Result<()> {
     };
     let mut ages = tokio::time::interval(Duration::from_secs(1));
     ages.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    // First-frame readiness precedes input initialization and daemon I/O.
     terminal.draw(|frame| render::draw(&app, frame, crate::daemon::now()))?;
     let mut events = EventStream::new();
     loop {

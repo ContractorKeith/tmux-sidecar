@@ -8,7 +8,6 @@ use std::{
 };
 
 pub struct Mcp {
-    // The guard owns the process before any pipe operation can fail.
     _child: ChildGuard,
     input: Option<ChildStdin>,
     output: Receiver<Value>,

@@ -25,7 +25,6 @@ fn open_stdin_never_holds_hooks_past_the_budget() {
             .env("TMUX_PANE", "%0");
         }
         let mut child = process::ChildGuard(cmd.spawn().unwrap());
-        // Keep the pipe's writer alive, including after sending a complete JSON document.
         use std::io::Write;
         child
             .0

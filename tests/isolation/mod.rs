@@ -1,4 +1,3 @@
-//! Fill every child environment explicitly; never inherit a developer's agent paths.
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -26,7 +25,6 @@ pub fn fill(command: &mut Command) -> Option<tempfile::TempDir> {
     scratch
 }
 pub fn apply(command: &mut Command, home: &Path) {
-    // Rustup still needs the installed compiler while HOME is isolated.
     let original = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();

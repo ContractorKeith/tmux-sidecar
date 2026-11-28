@@ -1,4 +1,3 @@
-//! One socket owner and one poller per tmux server.
 mod accept;
 mod actions;
 mod config;
@@ -49,7 +48,6 @@ use shutdown::RuntimeGuard;
 pub use startup::run;
 async fn run_inner(socket: PathBuf, paths: &Paths) -> io::Result<()> {
     paths::prepare(paths)?;
-    // Also protects foreground starts; never unlink a live daemon's socket.
     let _lock = FileLock::try_acquire(&paths.state.join("daemon.lock"))?;
     let _legacy = startup::legacy_lock(paths)?;
     let _guard = RuntimeGuard(paths.runtime.clone());

@@ -22,7 +22,6 @@ e2e_test!(two_failed_ps_ticks_keep_serving_then_recover, {
             .unwrap(),
     );
     let original = i32::try_from(_daemon.0.id()).unwrap();
-    // Binding the socket precedes PID publication; wait for our complete PID value.
     super::support::wait_for("daemon PID published after ps failures", || {
         fs::read_to_string(g.scratch.path().join("run/daemon.pid"))
             .ok()

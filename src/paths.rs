@@ -1,4 +1,3 @@
-//! Per-server paths and private runtime directories.
 mod runtime;
 pub use runtime::{current, prepare, uid};
 use std::{
@@ -19,16 +18,12 @@ pub struct Paths {
     pub config: PathBuf,
 }
 
-/// Absolute socket path, resolving symlinks when the socket exists.
-/// A not-yet-created socket keeps its absolute spelling until it can be resolved.
 pub fn canonical_socket(socket: &Path) -> io::Result<PathBuf> {
     socket
         .canonicalize()
         .or_else(|_| std::path::absolute(socket))
 }
 
-/// FNV-1a 64-bit over the canonical socket path bytes, truncated to 12 hex digits.
-/// Relative paths and existing symlinks identify the same server as its absolute path.
 pub fn server_key(socket: &Path) -> io::Result<String> {
     use std::os::unix::ffi::OsStrExt;
     let socket = canonical_socket(socket)?;
@@ -42,8 +37,6 @@ pub fn server_key(socket: &Path) -> io::Result<String> {
     Ok(format!("{:012x}", hash & 0xffffffffffff))
 }
 
-/// Overrides name the complete per-server directory, without appending a key.
-/// Linux without XDG_RUNTIME_DIR falls back to /tmp/tmux-sidecar-<uid>/<key>.
 pub fn resolve(
     platform: Platform,
     home: &Path,
@@ -83,7 +76,6 @@ pub fn resolve(
     }
 }
 
-/// Extract the first comma-delimited field of TMUX, preserving non-UTF-8 path bytes.
 pub fn socket_from_tmux(tmux: &OsStr) -> Option<PathBuf> {
     use std::os::unix::ffi::OsStrExt;
     let bytes = tmux.as_bytes().split(|b| *b == b',').next()?;

@@ -8,7 +8,6 @@ pub enum Action {
     Open,
     Ack,
 }
-// Decode only key presses; editing mode owns ordinary characters, including q/j/k.
 pub fn decode(app: &mut App, key: KeyEvent) -> Action {
     if key.kind == KeyEventKind::Release {
         return Action::Ignored;

@@ -1,4 +1,3 @@
-//! SQLite-only RPC operations. Project resolution is prepared outside this module.
 use crate::{model::AgentRun, rpc, store::Store};
 use serde::Deserialize;
 use serde_json::{Value, json};

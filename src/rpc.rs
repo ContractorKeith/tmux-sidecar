@@ -1,4 +1,3 @@
-//! M0: JSON-RPC 2.0 wire types; socket transport arrives in M1.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 mod frame;

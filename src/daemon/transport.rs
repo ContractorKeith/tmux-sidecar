@@ -48,7 +48,6 @@ pub(super) async fn serve_with_peer(
     let mut subscribed = false;
     let mut view_subscribed = false;
     loop {
-        // Limit a single frame so a local client cannot grow the daemon without bound.
         let mut bytes = Vec::new();
         use tokio::io::AsyncReadExt;
         let count = {
@@ -76,7 +75,6 @@ pub(super) async fn serve_with_peer(
                             Err(_)=>return Ok(()),
                         };
                         let mut encoded=serde_json::to_vec(&frame)?;encoded.push(b'\n');
-                        // A blocked socket never holds the daemon; bound even the final write.
                         match tokio::time::timeout(std::time::Duration::from_millis(250),writer.write_all(&encoded)).await {
                             Ok(result)=>result?, Err(_)=>return Ok(()),
                         }
@@ -98,7 +96,6 @@ pub(super) async fn serve_with_peer(
         let response = match serde_json::from_slice::<Value>(&bytes) {
             Err(_) => failure(None, rpc::PARSE_ERROR, "invalid JSON"),
             Ok(value) => {
-                // JSON-RPC notifications receive no response and do not execute M1's request methods.
                 if value.get("jsonrpc") == Some(&Value::String("2.0".into()))
                     && value.get("method").is_some_and(Value::is_string)
                     && value.get("id").is_none()
@@ -138,15 +135,12 @@ pub(super) async fn serve_with_peer(
                             return Ok(());
                         }
                         let mut receive = receive;
-                        // Ordinary RPCs own their reply before the next read. Only a
-                        // long-lived wait needs a concurrent disconnect monitor.
                         let response = if waiting {
                             tokio::select! {
                                 biased;
                                 response = &mut receive => response,
                                 buffered = reader.fill_buf() => {
                                     if buffered?.is_empty() && super::peer::disconnected(writer.as_ref()) { return Ok(()); }
-                                    // Preserve pipelined requests; process them after this reply.
                                     receive.await
                                 }
                             }

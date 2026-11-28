@@ -53,7 +53,6 @@ pub fn write(runtime: &Path, start: u64, socket: &Path) -> io::Result<()> {
     write!(file, "{start} {device} {inode} {changed} {nanos}")?;
     fs::rename(temp, runtime.join("server_start"))
 }
-/// A zero start is a durable frame captured before the first daemon poll.
 pub fn resolve(params: &mut serde_json::Value, runtime: &Path, socket: &Path) {
     if params["server_start"] == 0
         && let Ok(start) = read(runtime, socket)
@@ -72,14 +71,12 @@ mod tests {
         let listener = UnixListener::bind(&socket).unwrap();
         write(root.path(), 123, &socket).unwrap();
         assert_eq!(read(root.path(), &socket).unwrap(), 123);
-        // Hold the old filesystem inode so replacement never depends on allocator reuse.
         fs::rename(&socket, root.path().join("old-tmux")).unwrap();
         drop(listener);
         let _replacement = UnixListener::bind(&socket).unwrap();
         assert!(read(root.path(), &socket).is_err());
         write(root.path(), 124, &socket).unwrap();
         assert_eq!(read(root.path(), &socket).unwrap(), 124);
-        // Even a matching device/inode cannot hide a changed socket timestamp.
         let (dev, ino, time, nanos) = identity(&socket).unwrap();
         fs::write(
             root.path().join("server_start"),

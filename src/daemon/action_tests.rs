@@ -59,7 +59,6 @@ async fn wait_observes_a_transient_target_before_done() {
             1,
         );
         tokio::pin!(pending);
-        // Prime the snapshot and subscription without advancing the state yet.
         assert!(
             tokio::time::timeout(Duration::from_millis(10), &mut pending)
                 .await

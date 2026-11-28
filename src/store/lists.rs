@@ -103,7 +103,6 @@ mod tests {
             })
             .unwrap();
         store.end(&old, 2000).unwrap();
-        // If the caller walks all history, this old malformed record fails decoding.
         store
             .connection
             .execute(

@@ -1,4 +1,3 @@
-//! Pure process detection and evidence-based state transitions.
 pub mod state;
 use crate::{
     model::{AgentKind, AgentRun, AgentState},
@@ -30,7 +29,6 @@ pub fn detect_scan(
 ) -> Changes {
     let mut detected = Vec::new();
     for pane in panes {
-        // A pane may execute the agent directly, so include pane_pid itself.
         let mut candidates = Vec::new();
         for (&pid, process) in processes {
             let Some(agent) = kind(&process.comm) else {
@@ -56,7 +54,6 @@ pub fn detect_scan(
                 cursor = parent.ppid;
             }
         }
-        // Ignore nested agent helpers; newest independent agent pid wins.
         candidates.sort_by_key(|&(pid, _)| std::cmp::Reverse(pid));
         if let Some(&(pid, agent)) = candidates.first() {
             detected.push(AgentRun {

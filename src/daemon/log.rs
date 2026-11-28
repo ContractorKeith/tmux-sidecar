@@ -1,4 +1,3 @@
-//! Bounded daemon diagnostics; each write reopens after rotation.
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
@@ -44,7 +43,6 @@ pub fn write(state: &Path, message: &str) -> io::Result<()> {
     file.write_all(bytes)?;
     file.write_all(b"\n")
 }
-/// UTC RFC 3339, shared with hook diagnostics without a formatting dependency.
 pub fn timestamp() -> String {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

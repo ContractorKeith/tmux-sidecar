@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# scripts/accept.sh — the acceptance for tmux-sidecar. Worker, reviewer and CI run this
-# exact script; the orchestrator never retypes it. Keep it under a few minutes.
-# Bash 3.2 compatible (macOS): no mapfile, no ${var,,}, no associative arrays.
-# Each milestone appends its live checks below; never weaken an earlier one.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -15,7 +11,6 @@ tsock="tsx-accept-$$"
 cleanup() {
   result=$?
   trap - EXIT
-  # Stop every owned server before deleting its socket tree or escalating signals.
   python3 tests/support/leak_check.py cleanup "$scratch" || result=1
   python3 tests/support/leak_check.py check "$leak_snapshot" || result=1
   rm "$leak_snapshot"
@@ -27,7 +22,6 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 echo "== isolate"
-# All tests and live checks use scratch agent configs, state and tmux sockets.
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
 export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_STATE_HOME="$scratch/state"
 export TMUX_SIDECAR_RUNTIME_DIR="$scratch/run" TMUX_SIDECAR_STATE_DIR="$scratch/data"
@@ -44,6 +38,8 @@ unset TMUX TMUX_PANE
 
 echo "== gate"
 python3 tests/support/leak_check_test.py
+python3 tests/support/comment_lint_test.py
+python3 scripts/comment_lint.py
 cargo fmt --all --check
 rustfmt --edition 2024 --check tests/support/fake_agent.rs
 cargo clippy --locked --all-targets -- -D warnings
@@ -59,7 +55,6 @@ echo "== e2e (real tmux)"
 TMUX_SIDECAR_E2E=1 cargo test --locked --features test-util --test e2e
 
 echo "== live checks"
-# M1: the script owns this server and daemon; the EXIT trap handles failures too.
 tmux -L "$tsock" -f /dev/null new-session -d -s fixture 'sleep 120'
 socket="$(tmux -L "$tsock" display -p '#{socket_path}')"
 printf '%s' "$socket" > "$scratch/tmux.socket"
@@ -73,14 +68,12 @@ daemon_pid="$(cat "$TMUX_SIDECAR_RUNTIME_DIR/daemon.pid")"
 "$bin" --tmux-socket "$socket" daemon stop
 test ! -e "$TMUX_SIDECAR_RUNTIME_DIR/sock"
 if kill -0 "$daemon_pid" 2>/dev/null; then
-  # A just-exited orphan can briefly be a zombie; it is no longer a daemon.
   if ps -p "$daemon_pid" -o args= | grep -q 'tmux-sidecar.*daemon.*run'; then
     echo "accept: daemon still running" >&2
     exit 1
   fi
 fi
 
-# M2: dry-run must leave the scratch agent config tree unchanged.
 echo "== hook live checks"
 mkdir -p "$HOME/.claude" "$HOME/.codex"
 printf '%s\n' '{"user": true}' > "$HOME/.claude/settings.json"
@@ -96,7 +89,6 @@ test ! -e "$XDG_CONFIG_HOME/opencode/plugins/tmux-sidecar.js"
 "$bin" hook claude </dev/null > "$scratch/hook.stdout" 2> "$scratch/hook.stderr"
 test ! -s "$scratch/hook.stdout"
 test ! -s "$scratch/hook.stderr"
-# M3: a permission fixture puts a live run first in the attention queue.
 echo "== state live checks"
 rustc --edition 2024 tests/support/fake_agent.rs -o "$scratch/claude"
 tmux -L "$tsock" new-window -d -t fixture -n state "$scratch/claude"
@@ -124,7 +116,6 @@ python3 - "$scratch/attention.json" <<'PYLIVE'
 import json, sys
 assert json.load(open(sys.argv[1]))[0]['state'] == 'blocked'
 PYLIVE
-# M4: guarded send, daemon-enforced wait timeout and missing selectors.
 status=0
 "$bin" --tmux-socket "$socket" send "$pane" refused >/dev/null 2>&1 || status=$?
 test "$status" -eq 3
@@ -134,7 +125,6 @@ test "$status" -eq 4
 status=0
 "$bin" --tmux-socket "$socket" history r999999 >/dev/null 2>&1 || status=$?
 test "$status" -eq 5
-# M6: keep stdin open through initialize and tools/list; EOF cancels SDK requests.
 echo "== MCP live checks"
 python3 - "$bin" "$socket" <<'PYMCP'
 import json, selectors, subprocess, sys
@@ -162,11 +152,9 @@ finally:
 PYMCP
 
 
-# M5: terminal fixtures, decoder, notifier policy, and real-tmux Enter run in the gate above.
 echo "== ui live checks"
 "$bin" ui --help | grep -q "Open the terminal interface"
 grep -q "display-popup.*ui" "$scratch/hooks.diff"
-# M7: missing hooks fail, installed hooks pass even when unused stores are absent.
 echo "== doctor live checks"
 status=0
 "$bin" --tmux-socket "$socket" doctor --agent claude --agent codex --agent grok --agent opencode --json > "$scratch/doctor-before.json" || status=$?
@@ -180,5 +168,4 @@ before, after = [json.load(open(p)) for p in sys.argv[1:]]
 assert all(c['status'] == 'fail' for c in before if c['name'].startswith('hooks '))
 assert len([c for c in after if c['name'].startswith('hooks ') and c['status'] == 'ok']) == 4
 PYDOCTOR
-# Execute the README's safe bash blocks verbatim, including the UI under a PTY.
 python3 tests/support/readme_commands.py "$bin" "$socket" "$scratch"

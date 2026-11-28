@@ -1,4 +1,3 @@
-//! Preserve the original 200-hook concurrency while scaling the number of deliveries.
 use super::{ChildGuard, command};
 use std::{
     fs,

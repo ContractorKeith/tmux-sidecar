@@ -56,7 +56,6 @@ fn definition(name: &'static str, description: &str, properties: Value, required
     )
 }
 
-/// Validate even when an MCP client bypasses the advertised input schema.
 pub fn prepare(
     name: &str,
     mut args: Map<String, Value>,

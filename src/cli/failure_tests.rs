@@ -70,7 +70,6 @@ async fn wait_eof_after_handshake_is_exit_one() {
             serde_json::from_str::<serde_json::Value>(&line).unwrap()["method"],
             "wait"
         );
-        // Dropping an established daemon connection must not become unreachable.
     });
     let error = tokio::time::timeout(
         Duration::from_secs(1),

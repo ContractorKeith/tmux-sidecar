@@ -150,8 +150,6 @@ e2e_test!(mcp_sdk_ignores_malformed_json_and_continues, {
     }
     let guard = TmuxGuard::start();
     let mut mcp = Mcp::start(&guard, false);
-    // rmcp 3.8 ignores syntactically invalid JSON (rust-sdk#938), rather than
-    // emitting parse errors. A subsequent correlated reply proves recovery.
     mcp.raw("{broken JSON");
     assert!(mcp.request("tools/list", json!({}))["tools"].is_array());
 });

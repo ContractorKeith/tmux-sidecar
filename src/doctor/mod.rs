@@ -1,4 +1,3 @@
-//! Local diagnostics never auto-start or modify the daemon or agent stores.
 #[cfg(test)]
 mod agent_tests;
 mod agents;
@@ -58,7 +57,6 @@ impl Check {
         if self.status == Status::Fail {
             line.push_str(&format!("; fix: {}", self.fix));
         }
-        // Keep each diagnostic on one line without quoting readable paths.
         line.replace(['\n', '\r'], " ")
     }
 }
@@ -100,7 +98,6 @@ pub async fn run(
     let home = std::path::PathBuf::from(home);
     let binary = std::env::current_exe().map_err(|e| (1, e.to_string()))?;
     let socket = client::select_socket(explicit);
-    // Resolve without the normal runtime security rejection so doctor can report it.
     let key = socket.as_ref().ok().and_then(|s| paths::server_key(s).ok());
     let dirs = key.as_ref().map(|key| {
         paths::resolve(

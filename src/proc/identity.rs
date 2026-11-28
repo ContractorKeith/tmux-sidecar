@@ -1,4 +1,3 @@
-//! Resolve exact agent identities without starting subprocesses.
 use super::agent_kind;
 use std::path::Path;
 fn basename(bytes: &[u8]) -> Option<String> {
@@ -51,7 +50,6 @@ fn names(pid: u32) -> [Option<Vec<u8>>; 2] {
 }
 #[cfg(any(test, target_os = "macos"))]
 fn mac_names(bytes: &[u8]) -> [Option<Vec<u8>>; 2] {
-    // KERN_PROCARGS2: argc, executable path, NUL padding, then argv[0].
     let Some(rest) = bytes.get(std::mem::size_of::<libc::c_int>()..) else {
         return [None, None];
     };

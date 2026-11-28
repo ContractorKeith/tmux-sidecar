@@ -1,4 +1,3 @@
-//! Socket lookups and notification commands run only on the notification task.
 use super::command;
 use std::{future::Future, io, path::PathBuf};
 pub(super) trait Backend {

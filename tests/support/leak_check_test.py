@@ -1,4 +1,3 @@
-"""Negative checks for each acceptance boundary, without writing to real paths."""
 import json
 import os
 from pathlib import Path
@@ -8,7 +7,6 @@ import tempfile
 sys.dont_write_bytecode = True
 from leak_check import snapshot, processes, cleanup
 
-# macOS reports /tmp in process environments and /private/tmp from realpath.
 from unittest.mock import patch
 from types import SimpleNamespace
 from leak_check import references
@@ -52,7 +50,6 @@ with tempfile.TemporaryDirectory() as directory:
         assert result.returncode != 0 and pid in result.stderr, result
     finally:
         cleanup(private)
-    # Removed scratch paths are allowed. An unrelated server must be ignored.
     with tempfile.TemporaryDirectory() as elsewhere:
         other = Path(elsewhere)
         other_env = {key: value.replace(str(root), elsewhere) for key, value in env.items()}

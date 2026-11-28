@@ -64,7 +64,6 @@ e2e_test!(mcp_stdio_tools_read_fixtures_and_guard_registration, {
         mcp.call("run_history", json!({"selector":"r999999"}))["isError"],
         true
     );
-    // A tool absent from discovery is also unavailable by direct invocation.
     let id = mcp.begin(
         "tools/call",
         json!({"name":"send_prompt","arguments":{"selector":run["id"],"text":"no"}}),

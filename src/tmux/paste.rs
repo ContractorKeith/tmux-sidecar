@@ -1,4 +1,3 @@
-//! Named buffers keep prompts out of tmux's key parser and other clients' buffers.
 use super::RealTmux;
 use std::{
     io::{self, Write},

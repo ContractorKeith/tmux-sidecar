@@ -81,7 +81,6 @@ e2e_test!(focus_with_two_attached_clients_and_detached_session, {
             pane.pane_active && pane.window_active && pane.session_attached
         );
     }
-    // Switching to the previously hidden window reads that run on the next tick.
     assert!(
         output(guard.command().args(["select-window", "-t", "fixture:1"]))
             .status

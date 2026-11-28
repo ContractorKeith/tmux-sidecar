@@ -52,7 +52,6 @@ pub async fn run(socket: std::path::PathBuf, paths: Paths) -> io::Result<()> {
     result
 }
 
-// Keep the legacy lock for this lifetime too, so an old binary cannot start later.
 pub(super) fn legacy_lock(paths: &Paths) -> io::Result<crate::client::FileLock> {
     crate::client::FileLock::try_acquire(&paths.runtime.join("daemon.lock")).map_err(|error| {
         if error.kind()!=io::ErrorKind::WouldBlock {return error;}

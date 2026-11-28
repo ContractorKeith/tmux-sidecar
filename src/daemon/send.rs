@@ -42,7 +42,6 @@ pub(super) async fn send(
     };
     let prepared = async {
         let selected = select(worker, &params.sel, start).await?;
-        // Slow probes run before the lock; cancellation kills them before any paste can start.
         let scan = tmux.scan_before(deadline).await.map_err(failure)?;
         let processes = crate::proc::PsProcessTree::snapshot_before(deadline)
             .await
@@ -110,8 +109,6 @@ pub(super) async fn send(
         .map_err(|_| (rpc::TIMEOUT, "send exceeded 3 s before paste".into()))??;
     let live = run.clone();
     let health = worker.poll_error.clone();
-    // Always join terminal work before replying. Its absolute deadline is checked
-    // before every command, so even a delayed blocking task cannot paste after timeout.
     let _guard = tokio::task::spawn_blocking(move || {
         if Instant::now() >= deadline {
             return Err((rpc::TIMEOUT, "send deadline exceeded before paste".into()));

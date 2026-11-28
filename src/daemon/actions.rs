@@ -1,4 +1,3 @@
-//! Long-lived operations run independently of the RPC dispatcher and SQLite owner.
 use super::{
     store_worker::StoreWorker,
     transport::{Call, failure},
@@ -84,7 +83,6 @@ async fn wait(worker: &StoreWorker, params: Wait, start: u64) -> Result<Value> {
                 .ok_or((rpc::INVALID_PARAMS, "timeout is too large".into()))
         })
         .transpose()?;
-    // Subscribe before reading, so a change between the snapshot and recv cannot be lost.
     let mut events = worker.events.subscribe();
     let waiting = async {
         let run = select(worker, &params.sel, start).await?;
@@ -104,7 +102,6 @@ async fn wait(worker: &StoreWorker, params: Wait, start: u64) -> Result<Value> {
         loop {
             match events.recv().await {
                 Ok(event) if event["run_id"] == id => {
-                    // Inspect the committed transition, including transient states already followed by another.
                     let state: AgentState =
                         serde_json::from_value(event["to"].clone()).map_err(internal)?;
                     if state == params.until {

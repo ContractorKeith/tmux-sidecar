@@ -1,9 +1,7 @@
-//! Read to EOF while input progresses; bound silence and the retained payload.
 use serde_json::Value;
 use std::io::{self, Read};
 const INPUT_LIMIT: usize = 64 * 1024 * 1024;
 const INPUT_IDLE: std::time::Duration = std::time::Duration::from_secs(1);
-/// Give up only after a second without input progress; EOF and the size cap end reading.
 pub fn read_stdin() -> io::Result<(Vec<u8>, bool)> {
     use std::os::fd::AsRawFd;
     let mut stdin = io::stdin();

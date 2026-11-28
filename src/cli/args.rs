@@ -14,7 +14,7 @@ pub struct Cli {
 }
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// List agent runs on this tmux server.
+    #[command(about = "List agent runs on this tmux server")]
     List {
         #[arg(long)]
         all: bool,
@@ -27,17 +27,17 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Show agent runs that need attention.
+    #[command(about = "Show agent runs that need attention")]
     Attention {
         #[arg(long)]
         json: bool,
     },
-    /// Stream agent state changes.
+    #[command(about = "Stream agent state changes")]
     Watch {
         #[arg(long)]
         json: bool,
     },
-    /// Wait for an agent run to reach a state.
+    #[command(about = "Wait for an agent run to reach a state")]
     Wait {
         sel: RunSelector,
         #[arg(long, value_enum)]
@@ -47,7 +47,7 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Paste a prompt into an agent run.
+    #[command(about = "Paste a prompt into an agent run")]
     #[command(
         after_help = "Use - to read text from stdin. For text starting with a hyphen, use --: send %0 -- -text"
     )]
@@ -57,12 +57,12 @@ pub enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// Mark attention items read.
+    #[command(about = "Mark attention items read")]
     Ack {
         #[arg(required = true, num_args = 1..)]
         sel: Vec<RunSelector>,
     },
-    /// Show signals and state changes.
+    #[command(about = "Show signals and state changes")]
     History {
         sel: RunSelector,
         #[arg(long)]
@@ -70,7 +70,7 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Set or clear a pane name.
+    #[command(about = "Set or clear a pane name")]
     Name {
         sel: RunSelector,
         #[arg(required_unless_present = "clear", conflicts_with = "clear")]
@@ -78,17 +78,17 @@ pub enum Command {
         #[arg(long)]
         clear: bool,
     },
-    /// Manage manual pane groups.
+    #[command(about = "Manage manual pane groups")]
     Group {
         #[command(subcommand)]
         command: Group,
     },
-    /// Install or remove agent hooks.
+    #[command(about = "Install or remove agent hooks")]
     Hooks {
         #[command(subcommand)]
         command: Hooks,
     },
-    /// Receive an agent hook payload.
+    #[command(about = "Receive an agent hook payload")]
     #[command(disable_help_flag = true)]
     Hook {
         #[arg(
@@ -100,21 +100,21 @@ pub enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         payload: Vec<String>,
     },
-    /// Manage the per-tmux-server daemon.
+    #[command(about = "Manage the per-tmux-server daemon")]
     Daemon {
         #[command(subcommand)]
         command: Daemon,
     },
-    /// Check tmux, hooks and daemon health.
+    #[command(about = "Check tmux, hooks and daemon health")]
     Doctor {
         #[arg(long)]
         json: bool,
         #[arg(long, value_enum, action = clap::ArgAction::Append)]
         agent: Vec<AgentKind>,
     },
-    /// Open the terminal interface.
+    #[command(about = "Open the terminal interface")]
     Ui,
-    /// Serve MCP over standard input and output.
+    #[command(about = "Serve MCP over standard input and output")]
     Mcp {
         #[arg(long)]
         allow_send: bool,
@@ -128,19 +128,19 @@ pub enum WaitState {
 }
 #[derive(Debug, Subcommand)]
 pub enum Group {
-    /// Add panes to a manual group.
+    #[command(about = "Add panes to a manual group")]
     Add {
         group: String,
         #[arg(required = true, num_args = 1..)]
         sel: Vec<RunSelector>,
     },
-    /// Remove panes from a manual group.
+    #[command(about = "Remove panes from a manual group")]
     Rm {
         group: String,
         #[arg(required = true, num_args = 1..)]
         sel: Vec<RunSelector>,
     },
-    /// List manual groups.
+    #[command(about = "List manual groups")]
     Ls {
         #[arg(long)]
         json: bool,
@@ -148,7 +148,7 @@ pub enum Group {
 }
 #[derive(Debug, Subcommand)]
 pub enum Hooks {
-    /// Install marked hook entries.
+    #[command(about = "Install marked hook entries")]
     Install {
         #[arg(long)]
         chain: bool,
@@ -157,7 +157,7 @@ pub enum Hooks {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Remove marked hook entries.
+    #[command(about = "Remove marked hook entries")]
     Uninstall {
         #[arg(long, value_enum, action = clap::ArgAction::Append)]
         agent: Vec<AgentKind>,
@@ -167,13 +167,13 @@ pub enum Hooks {
 }
 #[derive(Debug, Subcommand)]
 pub enum Daemon {
-    /// Show daemon status.
+    #[command(about = "Show daemon status")]
     Status {
         #[arg(long)]
         json: bool,
     },
-    /// Stop the daemon.
+    #[command(about = "Stop the daemon")]
     Stop,
-    /// Run the daemon in the foreground.
+    #[command(about = "Run the daemon in the foreground")]
     Run,
 }

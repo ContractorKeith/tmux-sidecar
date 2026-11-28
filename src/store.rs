@@ -1,4 +1,3 @@
-//! The daemon's SQLite boundary. History is never pruned.
 use crate::model::{AgentRun, RunSelector};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{
@@ -131,7 +130,6 @@ impl Store {
         }
         Ok(())
     }
-    /// All changes from one snapshot commit together; a failure rolls back the tick.
     pub fn apply(
         &self,
         panes: &[crate::seams::PaneSnapshot],

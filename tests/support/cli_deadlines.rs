@@ -46,8 +46,6 @@ e2e_test!(
                 .spawn()
                 .unwrap(),
         );
-        // Wait until send has begun probing, then deliver independent hook evidence.
-        // The daemon's first scan starts immediately; hook retries also cover scheduler order.
         fire(&guard, &run, "UserPromptSubmit");
         let deadline = Instant::now() + Duration::from_secs(1);
         while list(&guard)[0]["state"] != "working" {

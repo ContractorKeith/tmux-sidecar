@@ -1,4 +1,3 @@
-//! Subscribe before loading: changes during the snapshot remain queued on the socket.
 use super::{Group, Run, Snapshot};
 use crate::{client, paths::Paths};
 use serde_json::{Value, json};

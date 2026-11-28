@@ -34,7 +34,6 @@ e2e_test!(opencode_plugin_host_hooks_change_the_tracked_outer_run, {
         .parse()
         .unwrap();
     assert_ne!(run["agent_pid"].as_u64().unwrap(), child);
-    // Establish ownership, then emulate a reused server carrying another pane id.
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks/opencode");
     super::hooks::fire(
         &guard,

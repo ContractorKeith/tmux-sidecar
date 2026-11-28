@@ -2,3 +2,4 @@
 *.swp
 .env
 .tmux-sidecar-dev/
+__pycache__/

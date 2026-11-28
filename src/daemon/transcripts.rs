@@ -1,4 +1,3 @@
-//! Transcript scans run independently of pane/process polling.
 use super::{store_worker::StoreWorker, transcript_match};
 use crate::model::AgentRun;
 use session_board::{config::Config, model::Session, source};
@@ -106,8 +105,6 @@ fn read(runs: &[AgentRun], since: u64) -> Vec<Session> {
             .iter()
             .any(|r| transcript_match::agent(r.agent) == source.agent())
         {
-            // v0.1.0 filters age after parsing. Pre-parse filtering is deferred to
-            // https://github.com/ContractorKeith/session-board/issues/130.
             sessions.extend(source.scan(&config).sessions);
         }
     }

@@ -1,4 +1,3 @@
-//! Default installation follows PATH; explicit agents and uninstall remain deterministic.
 use super::{
     Hooks,
     execute::{Failure, output_error},

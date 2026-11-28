@@ -8,7 +8,6 @@ fn installer_and_doctor_share_all_agent_home_overrides() {
     let root = tempfile::tempdir().unwrap();
     let home = root.path();
     fakes::fixture(home, Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")));
-    // Remove baseline hooks so only the override paths can pass doctor.
     tmux_sidecar::install::run(
         home,
         Path::new(env!("CARGO_BIN_EXE_tmux-sidecar")),
@@ -97,7 +96,6 @@ fn broken_pipe_is_quiet_for_data_output() {
     ] {
         let (writer, reader) = UnixStream::pair().unwrap();
         drop(reader);
-        // /dev/stdout is not used: pass the closed pipe directly to the child.
         let mut cmd = command(root.path());
         cmd.args(args)
             .stdout(Stdio::from(OwnedFd::from(writer)))

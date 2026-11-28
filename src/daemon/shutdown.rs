@@ -1,4 +1,3 @@
-//! Finish signals already accepted before closing SQLite; idle clients have a deadline.
 use super::{
     store_worker::StoreWorker,
     transport::{self, Call},

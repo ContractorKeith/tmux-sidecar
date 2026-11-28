@@ -4,7 +4,6 @@ use std::{
     path::Path,
     process::{Command, Stdio},
 };
-/// Daemon lifetime locking arbitrates concurrent triggers; the hook never waits for startup.
 pub fn trigger_spawn(socket: &Path, paths: &Paths) -> io::Result<()> {
     let _lock = FileLock::try_acquire(&paths.state.join("spawn.lock"))?;
     let log = crate::daemon::log::open(&paths.state)?;

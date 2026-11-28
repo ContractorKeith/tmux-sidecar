@@ -55,7 +55,6 @@ fn codex_auxiliary_notify_cannot_finish_the_main_turn() {
     let run = &store.list().unwrap()[0];
     assert_eq!(run.state, tmux_sidecar::model::AgentState::Working);
     assert_eq!(run.agent_session_id.as_deref(), Some("main-thread"));
-    // Before native identity is known, the title prompt still cannot finish work.
     hook.agent_pid = 2;
     hook.pane_id = "%2".into();
     hook.nonce = format!("{:032x}", 200);
