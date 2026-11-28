@@ -31,7 +31,7 @@ fn cache() -> &'static Path {
                 String::from_utf8_lossy(&output.stderr)
             );
             for agent in ["claude", "codex", "grok", "opencode", "opencode.exe"] {
-                fs::copy(&executable, root.path().join(agent)).unwrap();
+                fs::hard_link(&executable, root.path().join(agent)).unwrap();
             }
             // SAFETY: cleanup takes no arguments and remains valid for the process lifetime.
             assert_eq!(unsafe { libc::atexit(cleanup) }, 0);
@@ -56,5 +56,7 @@ e2e_test!(fake_agents_reuse_copied_inodes, {
         let b = fs::symlink_metadata(second.path().join(agent)).unwrap();
         assert!(a.is_file() && !a.file_type().is_symlink());
         assert_eq!((a.dev(), a.ino()), (b.dev(), b.ino()));
+        let built = fs::metadata(cache().join("fake-agent")).unwrap();
+        assert_eq!((a.dev(), a.ino()), (built.dev(), built.ino()));
     }
 });
