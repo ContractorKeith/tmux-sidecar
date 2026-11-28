@@ -1,5 +1,4 @@
 mod cleanup;
-mod copy_fixture;
 mod scratch;
 pub use scratch::Scratch;
 mod fake_binary;
@@ -183,18 +182,7 @@ impl Drop for TmuxGuard {
     }
 }
 fn spawn_fixture(command: &mut Command) -> Child {
-    let deadline =
-        std::time::Instant::now() + process::load_timeout(std::time::Duration::from_secs(1));
-    loop {
-        match command.spawn() {
-            Ok(child) => return child,
-            Err(error)
-                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
-                    && std::time::Instant::now() < deadline =>
-            {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            Err(error) => panic!("fake agent startup: {error}"),
-        }
-    }
+    command
+        .spawn()
+        .unwrap_or_else(|error| panic!("fake agent startup: {error}"))
 }

@@ -107,6 +107,9 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     #[test]
     fn database_requires_writable_database_sidecars_and_directory() {
+        if crate::paths::uid() == 0 {
+            return;
+        }
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("tmux-sidecar.db");
         let db = rusqlite::Connection::open(&path).unwrap();

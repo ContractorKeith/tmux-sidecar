@@ -50,7 +50,7 @@ fn readable_stores_notifier_and_private_directories() {
     fs::write(&file, "fixture").unwrap();
     assert!(inspect::readable(&file).is_ok());
     fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
-    assert!(inspect::readable(&file).is_err());
+    assert_eq!(inspect::readable(&file).is_ok(), paths::uid() == 0);
     fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
     assert!(inspect::executable(&file));
     fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();

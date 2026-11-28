@@ -20,9 +20,11 @@ platform behaviour the code or tests depend on.
 - macOS sockets accepted from a nonblocking listener inherit O_NONBLOCK; Linux sockets do not.
   Fake peers set blocking mode explicitly (`tests/support/doctor_fakes.rs`,
   `hooks_identity.rs`, `mcp_rpc.rs`).
-- macOS scans each fresh unsigned executable on first exec. Fake agents are copied once per
-  test process and hard-linked into fixtures, keeping both the name and the scanned inode
-  (`tests/support/fake_binary.rs`).
+- macOS scans each fresh unsigned executable on first exec. Fake agents are built once per
+  test process and every agent name is a hard link to that one inode, keeping both the name
+  and the scanned inode (`tests/support/fake_binary.rs`). The test process never opens a fake
+  for writing, so a concurrent fork cannot inherit a writable descriptor and make exec fail
+  with ETXTBSY (#64).
 - Darwin can reject socket-option changes after the daemon closes an over-capacity peer, so
   connection-limit tests keep deadlines in the tokio runtime instead of socket options. Darwin
   also refuses a full backlog rather than waiting for accept

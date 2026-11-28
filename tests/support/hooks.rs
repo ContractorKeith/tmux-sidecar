@@ -54,6 +54,13 @@ pub(super) fn fire_on_pane(
     assert!(elapsed < 1000, "hook wall clock exceeded 1000 ms: {result}");
     assert_eq!(fields[2], "0");
     assert_eq!(fields[3], "0");
+    if !format.starts_with("burst") {
+        let log = fs::read_to_string(state.join("hook.log")).unwrap_or_default();
+        assert!(
+            !log.contains("budget exceeded"),
+            "hook exceeded its post-input delivery budget: {log}"
+        );
+    }
 }
 fn inspect(guard: &TmuxGuard) -> Vec<Value> {
     tmux_sidecar::store::Store::open(&guard.scratch.path().join("state/tmux-sidecar.db"))

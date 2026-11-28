@@ -56,7 +56,7 @@ cargo build --release                              # target/release/tmux-sidecar
 - Every test that starts a process (daemon, tmux, fake agent) kills it in a drop guard.
 - `/tmp` on Omarchy is a small tmpfs; set `TMPDIR` to a scratch dir outside any checkout if it fills.
 - `TMUX_SIDECAR_POLL_MS` overrides config `poll_ms` (default 1000); tests use 100.
-- Fake agents are copied once per test process and hard-linked into fixtures so macOS
+- Fake agents are built once per test process and only hard-linked (never copied) so macOS
   reuses its first-exec scan. `TMUX_SIDECAR_TEST_TIMEOUT_MULTIPLIER` (1–4, default 1)
   scales readiness and command deadlines under load. With `--features test-util`, it also
   scales the doctor tmux probe; production builds keep the one-second probe. Doctor fake scripts
