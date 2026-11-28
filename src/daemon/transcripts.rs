@@ -1,7 +1,11 @@
 use super::{store_worker::StoreWorker, transcript_match};
 use crate::model::AgentRun;
 use session_board::{config::Config, model::Session, source};
-use std::{io, path::PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    time::{Duration, SystemTime},
+};
 #[derive(Default)]
 pub struct Reader {
     running: Option<tokio::task::JoinHandle<()>>,
@@ -99,17 +103,28 @@ fn read(runs: &[AgentRun], since: u64) -> Vec<Session> {
         window_days: u32::try_from(age / 86_400_000 + 1).unwrap_or(u32::MAX),
         ..Config::default()
     };
+    let cutoff =
+        SystemTime::now().checked_sub(Duration::from_secs(u64::from(config.window_days) * 86_400));
+    let include = |path: &Path| recent(path, cutoff);
     let mut sessions = Vec::new();
     for source in source::registry() {
         if runs
             .iter()
             .any(|r| transcript_match::agent(r.agent) == source.agent())
         {
-            sessions.extend(source.scan(&config).sessions);
+            sessions.extend(source.scan_files(&config, &include).sessions);
         }
     }
     sessions.sort_by_key(|s| std::cmp::Reverse(s.last_activity_at));
     sessions
+}
+fn recent(path: &Path, cutoff: Option<SystemTime>) -> bool {
+    let Some(cutoff) = cutoff else {
+        return true;
+    };
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .map_or(true, |modified| modified >= cutoff)
 }
 #[cfg(test)]
 #[path = "transcript_tests.rs"]

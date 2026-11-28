@@ -19,7 +19,7 @@ rmcp = { version = "3", default-features = false, features = ["server", "transpo
 rusqlite = { version = "0.38", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-session-board = { git = "https://github.com/ContractorKeith/session-board", tag = "v0.1.0" }
+session-board = { git = "https://github.com/ContractorKeith/session-board", rev = "a07d02c6a0e86e107706bc6af37c97c4c3ac7b53" }
 tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time", "signal", "sync", "process"] }
 toml = "0.9"
 toml_edit = "0.23"
