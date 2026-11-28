@@ -41,6 +41,9 @@ fn optional_agents_skip_and_explicit_or_marked_hooks_fail() {
     let alias = root.path().join("alias");
     symlink(&store, &alias).unwrap();
     assert!(inspect::readable(&alias).is_ok());
+    if crate::paths::uid() == 0 {
+        return;
+    }
     fs::set_permissions(&store, fs::Permissions::from_mode(0o000)).unwrap();
     let checks = agents::checks(root.path(), binary, &[], &stores);
     assert_eq!(checks[1].status, Status::Fail);

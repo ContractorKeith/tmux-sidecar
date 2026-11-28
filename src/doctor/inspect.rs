@@ -43,14 +43,15 @@ pub(super) fn permissions(path: &Path, uid: u32) -> io::Result<String> {
 }
 pub(super) fn readable(path: &Path) -> io::Result<String> {
     let meta = fs::metadata(path)?;
-    if meta.mode() & 0o444 == 0 || (meta.is_dir() && meta.mode() & 0o111 == 0) {
+    if !meta.is_dir() && !meta.is_file() {
+        return Err(io::Error::other("store is not a file or directory"));
+    }
+    let mode = libc::R_OK | if meta.is_dir() { libc::X_OK } else { 0 };
+    if !access(path, mode)? {
         return Err(io::Error::other(format!(
             "{} is unreadable",
             path.display()
         )));
-    }
-    if !meta.is_dir() && !meta.is_file() {
-        return Err(io::Error::other("store is not a file or directory"));
     }
     fs::File::open(path)?;
     Ok(format!("{} readable", path.display()))
@@ -129,19 +130,20 @@ pub(super) async fn local(home: &Path, binary: &Path, requested: &[AgentKind]) -
 }
 
 pub(super) fn writable(path: &Path) -> io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-    let meta =
-        fs::metadata(path).map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
-    let name = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
-    // SAFETY: name is a live NUL-terminated path; access does not retain it.
-    let allowed = unsafe { libc::access(name.as_ptr(), libc::W_OK) } == 0;
-    if !allowed || meta.mode() & 0o222 == 0 {
+    fs::metadata(path).map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+    if !access(path, libc::W_OK)? {
         return Err(io::Error::other(format!(
             "{} is not writable; check write permissions",
             path.display()
         )));
     }
     Ok(())
+}
+fn access(path: &Path, mode: libc::c_int) -> io::Result<bool> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let name = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
+    // SAFETY: name is a live NUL-terminated path; access does not retain it.
+    Ok(unsafe { libc::access(name.as_ptr(), mode) } == 0)
 }
 
 fn probe_timeout() -> Duration {
