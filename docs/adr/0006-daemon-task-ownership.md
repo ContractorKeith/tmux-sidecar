@@ -66,6 +66,11 @@ socket or subprocess operation has a bound.
   advertised input schema. A tool absent from discovery (`send_prompt` without `--allow-send`)
   is also refused on direct invocation.
 - `src/mcp/input.rs`: stdin EOF is signalled before rmcp begins draining outstanding handlers.
+- Malformed MCP frames get no reply. rmcp 3.8 drops syntactically invalid JSON, and upstream
+  settled on that (modelcontextprotocol/rust-sdk#938): no official SDK answers unparseable
+  input, because a parse-error reply to a peer that logs to stdout can start a reply storm.
+  `tests/support/mcp_lifecycle.rs` asserts that the next correlated request still succeeds
+  (#63).
 - `src/proc/bounded.rs`: deadline-bound probes kill their child on cancellation and drain both
   pipes.
 
